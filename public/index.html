@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>MUGR DEATHMATCH</title>
+<!-- empty: the server is wherever this page came from. GitHub Pages builds fill in the server's address. -->
+<meta name="game-server" content="">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&display=swap">
+<style>
+:root {
+  --hud: rgb(255, 220, 0);
+  --hud-dim: rgba(255, 220, 0, 0.55);
+  --hud-bg: rgba(0, 0, 0, 0.3);
+  --hud-warn: rgb(255, 0, 0);
+  --panel: rgba(62, 64, 58, 0.94);
+  --panel-edge: rgba(255, 255, 255, 0.08);
+  --panel-dark: rgba(34, 35, 32, 0.95);
+  --text: #e8e2d0;
+  --text-dim: #a29d8c;
+  --accent: #ffb000;
+  --menu: rgba(255, 255, 255, 0.82);
+  --ui: Verdana, Tahoma, "DejaVu Sans", sans-serif;
+  --num: "Chakra Petch", Verdana, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #000; color: var(--text); font: 13px/1.4 var(--ui); overflow: hidden; user-select: none; }
+canvas#view { position: fixed; inset: 0; display: block; }
+[hidden] { display: none !important; }
+button, input, select { font: inherit; color: inherit; }
+
+/* ---------- main menu (left column list over the live map) ---------- */
+#menu { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 0 12vh 7vw; background: linear-gradient(90deg, rgba(0,0,0,.65), rgba(0,0,0,0) 55%); z-index: 20; }
+#menu h1 { font: bold clamp(28px, 4.4vw, 54px)/1 var(--ui); letter-spacing: .02em; margin: 0 0 4px; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.6); }
+#menu .sub { color: var(--text-dim); margin: 0 0 6vh; font-size: 12px; letter-spacing: .25em; text-transform: uppercase; }
+#menu nav { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+#menu nav button { background: none; border: 0; padding: 2px 0; font: bold 17px var(--ui); color: var(--menu); cursor: pointer; text-transform: uppercase; letter-spacing: .04em; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+#menu nav button:hover, #menu nav button:focus-visible { color: #fff; outline: none; text-shadow: 0 0 10px rgba(255,255,255,.35); }
+#menu nav button:disabled { color: rgba(255,255,255,.3); cursor: default; }
+#menu .status { margin-top: 3vh; color: var(--text-dim); font-size: 12px; min-height: 1.4em; }
+
+/* ---------- Source-style dialogs ---------- */
+.dialog { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 6px; box-shadow: 0 20px 60px rgba(0,0,0,.6); z-index: 30; padding: 18px 20px 16px; }
+.dialog h2 { margin: 0 0 14px; font: bold 15px var(--ui); color: #fff; letter-spacing: .02em; }
+.dialog p { margin: 0 0 12px; color: var(--text-dim); line-height: 1.55; }
+.dialog .row { display: grid; grid-template-columns: 150px 1fr; gap: 10px; align-items: center; margin-bottom: 10px; }
+.dialog label { color: var(--text); }
+.dialog input[type=text], .dialog select { width: 100%; background: var(--panel-dark); border: 1px solid rgba(255,255,255,.12); border-radius: 3px; padding: 6px 8px; outline: none; }
+.dialog input[type=text]:focus, .dialog select:focus { border-color: var(--accent); }
+.dialog input[type=range] { width: 100%; accent-color: var(--accent); }
+.dialog .val { color: var(--text-dim); font-size: 11px; margin-left: 6px; }
+.dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+.btn { background: linear-gradient(#5c5e56, #4a4c45); border: 1px solid rgba(255,255,255,.12); border-radius: 3px; padding: 6px 16px; cursor: pointer; color: #fff; }
+.btn:hover { background: linear-gradient(#6b6d64, #55574f); }
+.btn.primary { border-color: rgba(255,176,0,.6); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn:disabled { opacity: .45; cursor: default; }
+.content-opts { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 6px; }
+.content-opts .btn { text-align: left; padding: 10px 14px; }
+.content-opts .btn small { display: block; color: var(--text-dim); font-size: 11px; margin-top: 2px; }
+.err { color: #ff8a70; min-height: 1.4em; margin-top: 8px; }
+.dialog.wide { width: min(760px, calc(100vw - 32px)); }
+.tabs { display: flex; gap: 4px; margin: -4px 0 14px; border-bottom: 1px solid rgba(255,255,255,.12); }
+.tab { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--text-dim); padding: 8px 14px; cursor: pointer; font: 600 13px var(--ui); margin-bottom: -1px; }
+.tab:hover { color: #fff; }
+.tab.on { color: #fff; border-bottom-color: var(--accent); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#zhud { position: absolute; inset: 0; pointer-events: none; }
+#zhud .zround { position: absolute; left: 26px; bottom: 92px; font: 700 64px/1 var(--num); color: #c2141c; text-shadow: 0 0 12px rgba(255,0,0,.45), 0 2px 0 #3a0003; letter-spacing: .04em; }
+#zhud .zleft { position: absolute; left: 28px; bottom: 162px; font: 600 12px var(--ui); color: #ff9a9a; letter-spacing: .04em; text-shadow: 0 1px 2px #000; }
+#zhud .zpoints { position: absolute; right: 26px; bottom: 96px; font: 700 30px/1 var(--num); color: #ffe680; text-shadow: 0 2px 4px rgba(0,0,0,.8); text-align: right; }
+#zhud .zpoints.pulse { animation: znope .35s; }
+@keyframes znope { 0%, 100% { transform: none; color: #ffe680; } 30% { transform: translateX(-6px); color: #ff5a5a; } 60% { transform: translateX(6px); color: #ff5a5a; } }
+#zhud .zgain { position: absolute; right: 0; bottom: 30px; font: 700 16px var(--num); color: #fff7b0; animation: zgain .9s ease-out forwards; }
+@keyframes zgain { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-34px); } }
+#zhud .zperks { position: absolute; left: 110px; bottom: 100px; display: flex; gap: 6px; }
+#zhud .zperks span { width: 26px; height: 26px; border-radius: 5px; display: grid; place-items: center; font: 700 13px var(--ui); color: #fff; box-shadow: 0 0 8px rgba(0,0,0,.6), inset 0 0 0 2px rgba(255,255,255,.35); }
+#zhud .zpow { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); display: flex; gap: 14px; }
+#zhud .zpow span { font: 700 14px var(--num); color: #ffd24d; letter-spacing: .08em; text-shadow: 0 0 10px rgba(255,200,0,.6); }
+#zhud .zprompt { position: absolute; left: 50%; bottom: 30%; transform: translateX(-50%); }
+#zhud .zprompt span { background: rgba(0,0,0,.55); color: #fff; padding: 6px 14px; border-radius: 4px; font: 600 14px var(--ui); white-space: nowrap; }
+#zhud .zprompt span.no { color: #ff8a80; }
+#zhud .zdown { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: radial-gradient(ellipse at center, rgba(120,0,0,0) 30%, rgba(120,0,0,.55) 100%); }
+#zhud .zdown[hidden] { display: none; }
+#zhud .zdown b { font: 700 28px var(--num); color: #ff4a4a; letter-spacing: .1em; text-shadow: 0 2px 6px #000; }
+#zhud .zdown span { color: #fff; font: 600 13px var(--ui); text-shadow: 0 1px 3px #000; }
+#zhud .zdown i { width: 220px; height: 8px; background: rgba(255,255,255,.2); border-radius: 4px; overflow: hidden; }
+#zhud .zdown em { display: block; height: 100%; width: 0; background: #7fd77f; }
+.lobby-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.lobby-bar .grow { flex: 1; }
+#l-code { width: 120px; background: var(--panel-dark); border: 1px solid rgba(255,255,255,.12); border-radius: 3px; padding: 6px 8px; text-transform: uppercase; letter-spacing: .2em; font-family: var(--num); outline: none; }
+#l-code:focus { border-color: var(--accent); }
+.rooms-wrap { max-height: 46vh; overflow: auto; border: 1px solid rgba(255,255,255,.08); border-radius: 4px; }
+.rooms { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.rooms th { text-align: left; font: bold 10px var(--ui); color: var(--text-dim); padding: 6px 10px; background: var(--panel-dark); position: sticky; top: 0; }
+.rooms td { padding: 7px 10px; border-top: 1px solid rgba(255,255,255,.06); }
+.rooms td small { display: block; color: var(--text-dim); font-size: 11px; }
+.rooms tr.full td { opacity: .5; }
+.rooms .empty { color: var(--text-dim); text-align: center; padding: 18px; }
+label.check { display: flex; gap: 8px; align-items: center; color: var(--text-dim); }
+#scope { position: fixed; inset: 0; pointer-events: none; z-index: 9; background: radial-gradient(circle at center, transparent 0, transparent 34vmin, rgba(0,0,0,.92) 34.3vmin); }
+#scope::before, #scope::after { content: ""; position: absolute; background: rgba(0,0,0,.85); }
+#scope::before { left: 50%; top: 16vh; bottom: 16vh; width: 1px; }
+#scope::after { top: 50%; left: 30vw; right: 30vw; height: 1px; }
+#room-tag { position: fixed; top: 34px; left: 24px; color: var(--hud-dim); font: bold 11px var(--ui); letter-spacing: .06em; z-index: 10; pointer-events: none; }
+#ctf { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); text-align: center; font: 700 15px var(--num); letter-spacing: .08em; background: rgba(0,0,0,.4); border-radius: 8px; padding: 6px 14px 5px; color: #fff; }
+#ctf > span { padding: 0 8px; }
+#ctf .red { color: #ff7a6a; }
+#ctf .blue { color: #7ab4ff; }
+#ctf .mid { font: 11px var(--ui); color: var(--text-dim); letter-spacing: .02em; }
+#ctf .flags { display: flex; gap: 14px; justify-content: center; font: 11px var(--ui); margin-top: 2px; }
+/* touch controls (phones and tablets) */
+#touch { position: fixed; inset: 0; z-index: 11; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+#touch[hidden] { display: none; }
+#touch .stick { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; background: rgba(255,255,255,.08); border: 2px solid rgba(255,255,255,.25); pointer-events: none; }
+#touch .stick[hidden] { display: none; }
+#touch .stick i { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; margin: -24px 0 0 -24px; border-radius: 50%; background: rgba(255,255,255,.35); }
+#touch .tb { position: absolute; width: 56px; height: 56px; border-radius: 50%; border: 2px solid rgba(255,255,255,.3); background: rgba(0,0,0,.32); color: rgba(255,255,255,.85); font: 700 13px var(--num); letter-spacing: .04em; padding: 0; touch-action: none; }
+#touch .tb.on { background: rgba(255,210,77,.45); border-color: #ffd24d; color: #fff; }
+#touch .tb-fire { right: calc(28px + env(safe-area-inset-right)); bottom: 120px; width: 84px; height: 84px; font-size: 15px; background: rgba(200,40,30,.35); border-color: rgba(255,120,100,.6); }
+#touch .tb-aim { right: calc(126px + env(safe-area-inset-right)); bottom: 132px; }
+#touch .tb-jump { right: calc(40px + env(safe-area-inset-right)); bottom: 218px; }
+#touch .tb-rj { right: calc(44px + env(safe-area-inset-right)); bottom: 290px; width: 46px; height: 46px; font-size: 12px; background: rgba(230,120,20,.3); border-color: rgba(255,170,80,.6); }
+#touch .tb-duck { right: calc(116px + env(safe-area-inset-right)); bottom: 204px; }
+#touch .tb-reload { right: calc(190px + env(safe-area-inset-right)); bottom: 150px; width: 46px; height: 46px; }
+#touch .tb-use { right: calc(186px + env(safe-area-inset-right)); bottom: 210px; width: 46px; height: 46px; }
+#touch .tb-prev, #touch .tb-next, #touch .tb-scores, #touch .tb-chat, #touch .tb-menu { top: calc(10px + env(safe-area-inset-top)); width: 44px; height: 34px; border-radius: 8px; font-size: 11px; }
+#touch .tb-prev, #touch .tb-next { font-size: 22px; line-height: 1; }
+#touch .tb-menu { right: calc(12px + env(safe-area-inset-right)); }
+#touch .tb-chat { right: calc(62px + env(safe-area-inset-right)); }
+#touch .tb-scores { right: calc(112px + env(safe-area-inset-right)); }
+#touch .tb-next { right: calc(172px + env(safe-area-inset-right)); }
+#touch .tb-prev { right: calc(222px + env(safe-area-inset-right)); }
+body.touch #killfeed { top: 54px; }
+/* short screens (small phones on their side): pull the button cluster down */
+@media (max-height: 340px) {
+  #touch .tb-fire { bottom: 96px; width: 74px; height: 74px; }
+  #touch .tb-aim { bottom: 104px; right: calc(114px + env(safe-area-inset-right)); }
+  #touch .tb-jump { bottom: 180px; width: 50px; height: 50px; }
+  #touch .tb-rj { bottom: 238px; right: calc(46px + env(safe-area-inset-right)); width: 40px; height: 40px; }
+  #touch .tb-duck { bottom: 166px; right: calc(106px + env(safe-area-inset-right)); width: 50px; height: 50px; }
+  #touch .tb-reload { bottom: 118px; right: calc(172px + env(safe-area-inset-right)); }
+  #touch .tb-use { bottom: 170px; right: calc(166px + env(safe-area-inset-right)); }
+}
+body.touch .pickpanel li { pointer-events: auto; cursor: pointer; padding: 10px 10px; }
+body.touch .pickpanel { pointer-events: auto; }
+body.touch .pickpanel p { font-size: 0; }
+body.touch .pickpanel p::after { content: 'Tap to choose'; font-size: 12px; }
+body.touch #netinfo { display: none; }
+#rotate { position: fixed; inset: 0; z-index: 50; display: none; place-items: center; text-align: center; background: #0b0d10; color: #fff; font: 600 16px var(--ui); padding: 24px; }
+@media (orientation: portrait) { body.touch.playing #rotate { display: grid; } }
+.pickpanel { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); width: min(420px, calc(100vw - 32px)); background: rgba(10,12,14,.82); border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 14px 18px; z-index: 12; color: #fff; }
+.pickpanel h3 { margin: 0 0 4px; font: 700 18px var(--num); letter-spacing: .06em; }
+.pickpanel p { margin: 0 0 10px; color: var(--text-dim); font-size: 12px; }
+.pickpanel ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.pickpanel li { display: flex; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 5px; background: rgba(255,255,255,.05); }
+.pickpanel li.mine { background: rgba(255,220,0,.18); outline: 1px solid rgba(255,220,0,.5); }
+.pickpanel li span { flex: 1; }
+.pickpanel kbd { font: 11px var(--num); border: 1px solid rgba(255,255,255,.25); border-radius: 4px; padding: 1px 6px; }
+.pickpanel b { font: 700 14px var(--num); color: var(--hud); }
+.pickpanel li.red span { color: #ff7a6a; }
+.pickpanel li.blue span { color: #7ab4ff; }
+#ctf .zombie { color: #9be36a; }
+#powers { position: absolute; left: 24px; bottom: 96px; display: flex; gap: 8px; }
+#powers span { background: rgba(0,0,0,.45); border-radius: 6px; padding: 4px 10px; font: 700 11px var(--ui); letter-spacing: .06em; color: #e6b8ff; }
+#powers b { font: 700 13px var(--num); color: #fff; margin-left: 4px; }
+#scoreboard tr.team.human td { color: #7ab4ff; }
+#scoreboard tr.team.zombie td { color: #9be36a; }
+#scoreboard tr.team td { font: 700 11px var(--ui); letter-spacing: .06em; padding-top: 10px; }
+#scoreboard tr.team.red td { color: #ff7a6a; }
+#scoreboard tr.team.blue td { color: #7ab4ff; }
+.credits { margin: 0 0 12px; padding: 0; list-style: none; display: grid; gap: 6px; }
+.credits li { color: var(--text); line-height: 1.45; }
+.credits a { color: var(--accent); }
+.credits small { color: var(--text-dim); display: block; }
+.progress { color: var(--text-dim); font-size: 12px; min-height: 1.4em; }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; font-family: var(--ui); }
+.hbox { position: absolute; bottom: 24px; background: var(--hud-bg); border-radius: 8px; color: var(--hud); padding: 6px 14px 4px 12px; display: flex; align-items: flex-end; gap: 12px; height: 56px; }
+.hbox .lbl { font: bold 11px var(--ui); letter-spacing: .02em; margin-bottom: 9px; color: var(--hud-dim); }
+.hbox .big { font: 42px/1 var(--num); letter-spacing: 0; text-shadow: 0 0 6px rgba(255,220,0,.35); min-width: 1.4ch; text-align: left; }
+.hbox .big { font-weight: 700; }
+#hp-box { left: 24px; }
+#ar-box { left: 196px; }
+#ammo-box { right: 24px; }
+#ammo-box .res { font: 24px/1 var(--num); margin-bottom: 3px; color: var(--hud); }
+.hbox.low { color: var(--hud-warn); }
+.hbox.low .lbl { color: rgba(255, 60, 40, .7); }
+.hbox.low .big { text-shadow: 0 0 8px rgba(255,0,0,.45); }
+.hbox.pulse { animation: pulse .5s ease-out; }
+@keyframes pulse { 0% { background: rgba(255,220,0,.35); } 100% { background: var(--hud-bg); } }
+
+#crosshair { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; transform: translate(-50%, -50%); }
+#crosshair::before, #crosshair::after { content: ""; position: absolute; background: rgba(255,220,0,.85); }
+#crosshair::before { left: 14px; top: 4px; width: 2px; height: 22px; clip-path: polygon(0 0,100% 0,100% 35%,0 35%,0 65%,100% 65%,100% 100%,0 100%); }
+#crosshair::after { top: 14px; left: 4px; height: 2px; width: 22px; clip-path: polygon(0 0,35% 0,35% 100%,0 100%,0 0,65% 0,100% 0,100% 100%,65% 100%,65% 0); }
+
+#wsel { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; opacity: 0; transition: opacity .2s; }
+#wsel.show { opacity: 1; }
+#wsel .slot { display: flex; flex-direction: column; gap: 4px; }
+#wsel .num { color: var(--hud); font: bold 11px var(--ui); padding-left: 4px; }
+#wsel .wbox { width: 150px; height: 44px; background: var(--hud-bg); border-radius: 6px; color: var(--hud-dim); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+#wsel .wbox.on { color: var(--hud); background: rgba(0,0,0,.45); outline: 1px solid rgba(255,220,0,.35); }
+#wsel .wbox.empty { height: 22px; width: 150px; }
+#wsel .wname { font: 700 12px var(--num); letter-spacing: .08em; }
+
+#killfeed { position: absolute; top: 16px; right: 16px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.kf { background: rgba(0,0,0,.45); border-radius: 5px; padding: 3px 10px; color: var(--hud); font-size: 12px; display: flex; align-items: center; gap: 8px; transition: opacity 1s; }
+.kf.mine { outline: 1px solid rgba(255,220,0,.5); }
+.kf .v { color: #fff; }
+.kf .kfw { font: 700 10px var(--num); letter-spacing: .08em; color: var(--hud); padding: 1px 6px; border: 1px solid rgba(255,220,0,.35); border-radius: 3px; }
+.kf .hs { font: bold 9px var(--ui); color: #ff6040; }
+.kf.fade, .cl.fade { opacity: 0; }
+
+#chatlog { position: absolute; left: 24px; bottom: 120px; width: min(520px, 60vw); display: flex; flex-direction: column; gap: 2px; }
+.cl { color: #fff; text-shadow: 0 1px 2px #000, 0 0 4px #000; font-size: 13px; transition: opacity 1s; }
+.cl b { color: var(--hud); }
+.cl.sys { color: var(--text-dim); }
+#chatbox { position: absolute; left: 24px; bottom: 92px; width: min(520px, 60vw); pointer-events: auto; }
+#chatbox input { width: 100%; background: rgba(0,0,0,.6); border: 1px solid rgba(255,220,0,.4); color: #fff; padding: 5px 8px; border-radius: 3px; outline: none; }
+
+#center-msg { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); text-align: center; color: #fff; text-shadow: 0 1px 4px #000; font: bold 18px var(--ui); }
+#center-msg small { display: block; font: 12px var(--ui); color: var(--text-dim); margin-top: 4px; }
+#timer { position: absolute; top: 18px; left: 24px; color: var(--hud-dim); font: bold 11px var(--ui); letter-spacing: .06em; }
+#netinfo { position: absolute; bottom: 4px; right: 8px; color: rgba(255,255,255,.35); font: 10px var(--ui); }
+
+#dmg { position: absolute; inset: 0; }
+#dmg.flash { animation: dmgflash .45s ease-out; }
+@keyframes dmgflash { 0% { box-shadow: inset 0 0 160px rgba(200,0,0,.55); } 100% { box-shadow: inset 0 0 160px rgba(200,0,0,0); } }
+.dmgarc { position: absolute; left: 50%; top: 50%; width: 240px; height: 240px; border-radius: 50%; border-top: 6px solid rgba(255,30,0,.8); animation: fadeout .9s forwards; }
+@keyframes fadeout { to { opacity: 0; } }
+
+#scoreboard { position: absolute; left: 50%; top: 12%; transform: translateX(-50%); width: min(640px, calc(100vw - 32px)); background: rgba(0,0,0,.7); border-radius: 8px; padding: 14px 18px; color: var(--hud); }
+.sb-head { display: flex; justify-content: space-between; font: bold 13px var(--ui); margin-bottom: 8px; color: #fff; }
+#scoreboard table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+#scoreboard th { text-align: left; font: bold 10px var(--ui); color: var(--hud-dim); padding: 4px 6px; border-bottom: 1px solid rgba(255,220,0,.25); }
+#scoreboard th:not(:first-child), #scoreboard td:not(:first-child) { text-align: right; width: 70px; }
+#scoreboard td { padding: 4px 6px; }
+#scoreboard tr.me td { color: #fff; background: rgba(255,220,0,.08); }
+
+#loading { position: fixed; inset: 0; background: #000; display: flex; align-items: flex-end; justify-content: flex-end; padding: 32px; z-index: 40; }
+#loading .box { width: min(420px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 6px; padding: 14px 16px; }
+#loading .bar { height: 10px; background: var(--panel-dark); border-radius: 2px; margin-top: 10px; overflow: hidden; }
+#loading .bar i { display: block; height: 100%; width: 30%; background: var(--accent); animation: slide 1.1s linear infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { #loading .bar i { animation: none; width: 100%; opacity: .6; } }
+@media (max-width: 640px) { #ar-box { left: 24px; bottom: 90px; } #wsel .wbox { width: 70px; } #wsel .wname { display: none; } }
+/* ---------- coins, shop and wardrobe ---------- */
+.coins { display: inline-flex; align-items: center; gap: 6px; font: bold 15px var(--num, var(--ui)); color: #ffd23a; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+.coins::before { content: ''; width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff2a8, #e8a810 60%, #9a6a00); box-shadow: 0 0 0 1px #6a4800 inset; }
+#menu .coins { margin: 0 0 3vh; }
+#coin-toast { position: fixed; left: 50%; top: 62%; transform: translateX(-50%); pointer-events: none; z-index: 15; opacity: 0; transition: opacity .25s, transform .25s; font-size: 18px; }
+#coin-toast.show { opacity: 1; transform: translateX(-50%) translateY(-8px); }
+#dlg-locker { width: min(820px, calc(100vw - 32px)); }
+.lk-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.lk-body { display: grid; grid-template-columns: 220px 1fr; gap: 16px; }
+#lk-preview { width: 100%; height: 300px; display: block; background: radial-gradient(ellipse at 50% 80%, rgba(255,255,255,.08), rgba(0,0,0,.25)); border-radius: 4px; }
+#lk-look { margin-top: 10px; }
+#lk-look .row { grid-template-columns: 80px 1fr; margin-bottom: 6px; }
+#lk-slots { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.lk-slot { background: var(--panel-dark); border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 4px 12px; color: var(--text-dim); cursor: pointer; }
+.lk-slot.on { color: #fff; border-color: var(--accent); }
+#lk-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; max-height: 330px; overflow: auto; align-content: start; }
+.lk-card { display: flex; flex-direction: column; gap: 4px; padding: 10px; background: var(--panel-dark); border: 1px solid rgba(255,255,255,.08); border-radius: 4px; }
+.lk-card.worn { border-color: var(--accent); }
+.lk-card b { color: #fff; }
+.lk-price { color: #ffd23a; font-size: 11px; min-height: 1.2em; }
+.lk-own { color: var(--text-dim); font-size: 12px; padding: 6px 0; }
+.lk-sw { width: 100%; height: 6px; border-radius: 3px; }
+.lk-empty { grid-column: 1 / -1; }
+#lk-msg { min-height: 1.4em; margin-top: 8px; color: var(--text-dim); }
+@media (max-width: 600px) { .lk-body { grid-template-columns: 1fr; } #lk-preview { height: 200px; } }
+/* ---------- devlog ---------- */
+.devlog { margin: 0; padding: 0; list-style: none; }
+.devlog > li { margin: 0 0 14px; }
+.devlog h3 { margin: 0 0 4px; font: bold 13px var(--ui); color: #fff; }
+.devlog h3 small { color: var(--text-dim); font-weight: normal; margin-left: 8px; }
+.devlog ul { margin: 0; padding-left: 18px; color: var(--text-dim); line-height: 1.5; }
+</style>
+</head>
+<body>
+<div id="rotate"><div><div style="font-size:42px">⟲</div>Turn your phone sideways to play</div></div>
+<canvas id="view"></canvas>
+
+<div id="hud" hidden>
+  <div id="timer"></div>
+  <div id="crosshair"></div>
+  <div id="wsel"></div>
+  <div id="killfeed"></div>
+  <div id="chatlog"></div>
+  <div id="chatbox" hidden><input id="chatinput" maxlength="160" autocomplete="off" placeholder="Say:"></div>
+  <div id="center-msg"></div>
+  <div id="dmg"></div>
+  <div class="hbox" id="hp-box"><span class="lbl">HEALTH</span><span class="big" id="hp-val">100</span></div>
+  <div class="hbox" id="ar-box" hidden><span class="lbl">SUIT</span><span class="big" id="ar-val">0</span></div>
+  <div class="hbox" id="ammo-box" hidden><span class="lbl">AMMO</span><span class="big" id="ammo-clip">0</span><span class="res" id="ammo-res">0</span></div>
+  <div id="scoreboard" hidden></div>
+  <div id="netinfo"></div>
+</div>
+
+<div id="menu">
+  <h1>MUGR DEATHMATCH</h1>
+  <p class="sub">Browser arena shooter</p>
+  <div class="coins" id="menu-coins" title="Coins: 10 per kill, 100 for winning a team deathmatch or capture the flag match">0</div>
+  <nav>
+    <button id="btn-join" disabled>Play</button>
+    <button id="btn-resume" hidden>Resume game</button>
+    <button id="btn-invite" hidden>Copy invite link</button>
+    <button id="btn-disconnect" hidden>Leave game</button>
+    <button id="btn-shop">Shop</button>
+    <button id="btn-wardrobe">Wardrobe</button>
+    <button id="btn-options">Options</button>
+    <button id="btn-devlog">Devlog</button>
+    <button id="btn-credits">Credits</button>
+  </nav>
+  <div class="status" id="menu-status"></div>
+</div>
+
+<div class="dialog wide" id="dlg-lobby" hidden role="dialog" aria-labelledby="dlg-lobby-title">
+  <h2 id="dlg-lobby-title">Find a game</h2>
+  <div class="tabs" role="tablist">
+    <button class="tab on" id="tab-online" role="tab" aria-selected="true" aria-controls="pane-online">Online games</button>
+    <button class="tab" id="tab-bots" role="tab" aria-selected="false" aria-controls="pane-bots">Vs Bots</button>
+  </div>
+  <div id="pane-online" role="tabpanel">
+  <div class="lobby-bar">
+    <input type="text" id="l-code" maxlength="4" placeholder="Room code" autocomplete="off" aria-label="Room code">
+    <button class="btn" id="l-join-code">Join with code</button>
+    <span class="grow"></span>
+    <button class="btn primary" id="l-create">Create game</button>
+  </div>
+  <div class="rooms-wrap"><table class="rooms"><thead><tr><th>Game</th><th>Map</th><th>Players</th><th>Weapons</th><th></th></tr></thead><tbody id="l-rooms"></tbody></table></div>
+  </div>
+  <div id="pane-bots" role="tabpanel" hidden>
+    <p>Play against computer players. Your game is private, but friends can join it with its code.</p>
+    <div class="row"><label for="b-mode">Game mode</label><select id="b-mode"><option value="dm">Deathmatch</option><option value="tdm">Team deathmatch</option><option value="ctf">Capture the flag</option><option value="infection">Infection</option></select></div>
+    <div class="row"><label for="b-map">Map</label><select id="b-map"></select></div>
+    <div class="row"><label for="b-count">Bots</label><div><input type="range" id="b-count" min="1" max="15" step="1" value="5"><span class="val" id="b-count-v"></span></div></div>
+    <div class="row"><label for="b-skill">Difficulty</label><select id="b-skill"></select></div>
+    <div class="row"><label for="b-loadout">Starting weapons</label><select id="b-loadout"></select></div>
+    <div class="row"><label for="b-frags">Frag limit</label><div><input type="range" id="b-frags" min="0" max="100" step="5" value="30"><span class="val" id="b-frags-v"></span></div></div>
+    <div class="actions"><button class="btn primary" id="b-go">Start bot match</button></div>
+  </div>
+  <div class="err" id="l-err"></div>
+  <div class="actions"><button class="btn" id="l-close">Back</button></div>
+</div>
+
+<div class="dialog" id="dlg-create" hidden role="dialog" aria-labelledby="dlg-create-title">
+  <h2 id="dlg-create-title">Create game</h2>
+  <div class="row"><label for="c-name">Game name</label><input type="text" id="c-name" maxlength="32"></div>
+  <div class="row"><label for="c-mode">Game mode</label><select id="c-mode"></select></div>
+  <div class="row"><label for="c-map">Map</label><select id="c-map"></select></div>
+  <div class="row" id="c-caps-row" hidden><label for="c-caps">Capture limit</label><div><input type="range" id="c-caps" min="1" max="10" step="1"><span class="val" id="c-caps-v"></span></div></div>
+  <div class="row"><label for="c-loadout">Starting weapons</label><select id="c-loadout"></select></div>
+  <div class="row"><label for="c-max">Max players</label><div><input type="range" id="c-max" min="2" max="16" step="1"><span class="val" id="c-max-v"></span></div></div>
+  <div class="row"><label for="c-frags">Frag limit</label><div><input type="range" id="c-frags" min="0" max="100" step="5"><span class="val" id="c-frags-v"></span></div></div>
+  <div class="row"><label for="c-time">Time limit</label><div><input type="range" id="c-time" min="0" max="60" step="5"><span class="val" id="c-time-v"></span></div></div>
+  <div class="row"><label for="c-grav">Gravity</label><div><input type="range" id="c-grav" min="0.25" max="2" step="0.05"><span class="val" id="c-grav-v"></span></div></div>
+  <div class="row"><label for="c-speed">Run speed</label><div><input type="range" id="c-speed" min="0.5" max="2" step="0.05"><span class="val" id="c-speed-v"></span></div></div>
+  <div class="row"><label for="c-jump">Jump height</label><div><input type="range" id="c-jump" min="0.5" max="2.5" step="0.05"><span class="val" id="c-jump-v"></span></div></div>
+  <div class="row"><label for="c-items">Pickups</label><label class="check"><input type="checkbox" id="c-items"> Health, armour, ammo and weapons on the map</label></div>
+  <div class="row"><label for="c-private">Private</label><label class="check"><input type="checkbox" id="c-private"> Hide from the list; friends join with a code</label></div>
+  <div class="row"><label for="c-pass">Password</label><input type="text" id="c-pass" maxlength="24" placeholder="Optional" autocomplete="off"></div>
+  <div class="err" id="c-err"></div>
+  <div class="actions"><button class="btn" id="c-cancel">Cancel</button><button class="btn primary" id="c-go">Create and join</button></div>
+</div>
+
+<div class="dialog" id="dlg-pass" hidden role="dialog" aria-labelledby="dlg-pass-title">
+  <h2 id="dlg-pass-title">Password</h2>
+  <p id="p-what"></p>
+  <div class="row"><label for="p-pass">Password</label><input type="text" id="p-pass" maxlength="24" autocomplete="off"></div>
+  <div class="err" id="p-err"></div>
+  <div class="actions"><button class="btn" id="p-cancel">Cancel</button><button class="btn primary" id="p-go">Join</button></div>
+</div>
+
+<div id="scope" hidden></div>
+<div id="room-tag" hidden></div>
+
+<div class="dialog" id="dlg-locker" hidden role="dialog" aria-labelledby="dlg-locker-title">
+  <div class="lk-head"><h2 id="dlg-locker-title">Locker</h2><div class="coins" id="lk-coins">0</div></div>
+  <div class="tabs" role="tablist">
+    <button class="tab lk-tab" data-tab="shop" role="tab">Shop</button>
+    <button class="tab lk-tab" data-tab="wardrobe" role="tab">Wardrobe</button>
+  </div>
+  <div class="lk-body">
+    <div>
+      <canvas id="lk-preview" aria-label="Your character"></canvas>
+      <div id="lk-look">
+        <div class="row"><label for="lk-model">Character</label><select id="lk-model"></select></div>
+        <div class="row"><label for="lk-color">Colour</label><select id="lk-color"></select></div>
+      </div>
+    </div>
+    <div>
+      <div id="lk-slots"></div>
+      <div id="lk-items"></div>
+      <div id="lk-msg" role="status"></div>
+    </div>
+  </div>
+  <p style="margin:10px 0 0">Earn 10 coins for every kill and 100 for winning a team deathmatch or capture the flag match. Coins stay with this browser on this server.</p>
+  <div class="actions"><button class="btn primary" id="lk-close">Close</button></div>
+</div>
+
+<div class="dialog wide" id="dlg-devlog" hidden role="dialog" aria-labelledby="dlg-devlog-title">
+  <h2 id="dlg-devlog-title">Devlog</h2>
+  <ul class="devlog" id="devlog-list"></ul>
+  <div class="actions"><button class="btn primary" id="dv-ok">Close</button></div>
+</div>
+
+<div class="coins" id="coin-toast" aria-live="polite"></div>
+
+<div class="dialog" id="dlg-credits" hidden role="dialog" aria-labelledby="dlg-credits-title">
+  <h2 id="dlg-credits-title">Credits</h2>
+  <p>3D models are used under the Creative Commons Attribution licence (CC BY 4.0). Models not yet added to the server use built-in stand-ins.</p>
+  <ul class="credits" id="credit-list"></ul>
+  <p>Everything else, including the Foundry arena, the player character, surface shaders and synthesised sounds, is made for this game.</p>
+  <div class="actions"><button class="btn primary" id="cr-ok">Close</button></div>
+</div>
+
+<div class="dialog" id="dlg-options" hidden role="dialog" aria-labelledby="dlg-options-title">
+  <h2 id="dlg-options-title">Options</h2>
+  <div class="row"><label for="o-name">Player name</label><input type="text" id="o-name" maxlength="24"></div>
+  <div class="row"><label for="o-model">Character</label><select id="o-model"></select></div>
+  <div class="row"><label for="o-color">Suit colour</label><select id="o-color"></select></div>
+  <div class="row"><label for="o-sens">Mouse sensitivity</label><div><input type="range" id="o-sens" min="0.5" max="8" step="0.1"><span class="val" id="o-sens-v"></span></div></div>
+  <div class="row"><label for="o-fov">Field of view</label><div><input type="range" id="o-fov" min="75" max="110" step="1"><span class="val" id="o-fov-v"></span></div></div>
+  <div class="row"><label for="o-vol">Volume</label><div><input type="range" id="o-vol" min="0" max="1" step="0.05"><span class="val" id="o-vol-v"></span></div></div>
+  <div class="row"><label for="o-quality">Graphics</label><select id="o-quality"><option value="potato">Potato: for old or slow devices, plain look, fastest</option><option value="low">Low: no bloom, simple shadows</option><option value="medium">Medium: bloom, soft shadows</option><option value="high">High: adds ambient occlusion and sharper shadows</option></select></div>
+  <p style="margin-top:8px">Graphics changes apply straight away from the main menu. During a match they apply the next time the page loads.</p>
+  <div class="actions"><button class="btn primary" id="o-ok">OK</button></div>
+</div>
+
+<div id="loading" hidden><div class="box"><div id="loading-text">Loading…</div><div class="bar"><i></i></div></div></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

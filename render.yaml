@@ -1,0 +1,14 @@
+# Render Blueprint: one free web service running the game server (Render → New → Blueprint → this repo).
+# Render sets PORT itself. To keep coins when the free server sleeps or restarts, add UPSTASH_REDIS_REST_URL
+# and UPSTASH_REDIS_REST_TOKEN under the service's Environment tab (see README → Online hosting).
+services:
+  - type: web
+    name: mugr-deathmatch
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /api/info
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

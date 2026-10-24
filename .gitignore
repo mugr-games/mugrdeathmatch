@@ -1,0 +1,12 @@
+node_modules/
+# build output and Windows binaries (rebuilt with tools/build_exe.mjs and the launcher project)
+dist/
+*.exe
+launcher/bin/
+launcher/obj/
+launcher/publish/
+# players' coins and save codes: never publish these
+data/
+*.log
+# local editor and assistant settings
+.claude/
