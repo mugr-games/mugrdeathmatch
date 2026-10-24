@@ -1,4 +1,5 @@
 # Render Blueprint: one free web service running the game server (Render → New → Blueprint → this repo).
+# The GitHub Pages copy of the game page connects to it (see .github/workflows/pages.yml).
 # Render sets PORT itself. To keep coins when the free server sleeps or restarts, add UPSTASH_REDIS_REST_URL
 # and UPSTASH_REDIS_REST_TOKEN under the service's Environment tab (see README → Online hosting).
 services:

@@ -38,21 +38,24 @@ cloudflared tunnel --url http://localhost:8027
 Settings (environment variables): `PORT` (default 8027), `MAPS` (rotation, default `csdm,foundry`),
 `FRAGLIMIT` (30), `TIMELIMIT` in minutes (15).
 
-## Online hosting (free, on Render)
+## Online hosting (free): a GitHub link plus a Render server
 
-The repository includes `render.yaml`, so Render can run the server with a permanent
-`https://<name>.onrender.com` address that works with the PC off:
+The game page lives on GitHub Pages at `https://<your-username>.github.io/<repo>`. GitHub Pages only serves
+files, so the multiplayer server runs on Render's free plan and the page connects to it.
 
-1. Push this folder to a GitHub repository (it can be private).
-2. On render.com, sign in with GitHub, choose New → Blueprint, pick the repository and apply. The first build
-   takes a few minutes.
-3. Optional but recommended, so coins survive: Render's free servers lose their files when they sleep (after
+1. Push this folder to a public GitHub repository (free GitHub Pages needs a public repository).
+2. On render.com, sign in with GitHub, choose New → Blueprint, pick the repository and apply (`render.yaml`
+   describes the server). Note the address it gets, like `https://mugr-deathmatch.onrender.com`.
+3. In the GitHub repository: Settings → Secrets and variables → Actions → Variables, add `GAME_SERVER_URL` with
+   that address. Then Settings → Pages → Source: GitHub Actions, and re-run the "Publish the game page"
+   workflow from the Actions tab.
+4. Optional but recommended, so coins survive: Render's free servers lose their files when they sleep (after
    15 idle minutes) or restart. Create a free Redis database on upstash.com, then in Render open the service →
    Environment and add `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` from the database's REST API
    section. Without them, coins and cosmetics reset whenever the server restarts.
 
-The free server sleeps when nobody has visited for 15 minutes; the next visit wakes it in about a minute.
-Every push to the repository redeploys it.
+The free server sleeps when nobody has played for 15 minutes; the page wakes it, which takes about a minute.
+Every push redeploys both. Coins belong to the browser and the address: share one link (the GitHub one).
 
 ## Models
 
