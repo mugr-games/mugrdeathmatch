@@ -52,7 +52,10 @@ files, so the multiplayer server runs on Render's free plan and the page connect
 4. The owner account: in Render open the service → Environment and add `OWNER_PASSWORD` with the password you
    want for the account `watermelon` (1,000,000 coins and the Owner cape). The server creates the account when
    it starts; change the variable to change the password. Nobody can register that name.
-5. Strongly recommended, so accounts and coins survive: Render's free servers lose their files when they sleep (after
+5. Moderation reports: in Discord, open a channel's settings → Integrations → Webhooks → New Webhook → Copy
+   Webhook URL. Add it in Render's Environment as `DISCORD_WEBHOOK_URL`. Filtered chat and direct messages,
+   bans, unbans and kicks are posted there. Keep that address private: anyone with it can post to the channel.
+6. Strongly recommended, so accounts and coins survive: Render's free servers lose their files when they sleep (after
    15 idle minutes) or restart. Create a free Redis database on upstash.com, then in Render open the service →
    Environment and add `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` from the database's REST API
    section. Without them, accounts, coins and cosmetics reset whenever the server restarts.
@@ -100,6 +103,19 @@ Add `?touch=1` to the address to try the touch controls on a computer.
 Gamepads: left stick move (click it to sprint), right stick look (click it to rocket jump), RT fire, LT aim, A jump, B crouch, X reload,
 Y use, LB / RB or d-pad left / right switch weapon, d-pad up last weapon, Back scores, Start menu. In the menus
 the d-pad moves between buttons, A presses, B goes back and Start resumes the game.
+
+## Friends, messages and moderation
+
+Signed-in players add friends by account name, see who's online and which game they're in (with a Join
+button), and send each other direct messages (friends only; the last 100 per pair are kept).
+
+Every chat line, direct message and name goes through `filter.js`: swearing is starred out, while slurs, hate
+and telling someone to hurt themselves are blocked. Both kinds are reported to the Discord webhook.
+
+The owner (`watermelon`) has a Moderation button in the menu, listing everyone online with Kick and Ban, and
+the current bans with Unban. In a match the same works from chat: `/kick name [reason]`, `/ban name [reason]`,
+`/unban name`, `/bans`. A ban covers the player's account, their browser's save code and their internet
+address, so it sticks when they make a new account (it can also catch others sharing that connection).
 
 ## Coins and cosmetics
 

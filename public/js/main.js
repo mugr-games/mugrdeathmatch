@@ -6,6 +6,7 @@ import { esc } from './hud.js';
 import { TouchControls, isTouch } from './touch.js';
 import { Locker, setSaveToken } from './locker.js';
 import { GamepadInput } from './gamepad.js';
+import { Social } from './social.js';
 import { DEVLOG } from './devlog.js';
 import { api, pageUrl, SERVER } from './net.js';
 
@@ -23,6 +24,7 @@ let game = null;
 let locker = null;
 let account = null; // the signed-in username, or null for a guest
 let pad = null;
+let social = null;
 let serverInfo = null;
 let playing = false;
 const touchMode = isTouch();
@@ -43,6 +45,7 @@ async function boot() {
   game = new Game(canvas, settings);
   locker = new Locker({ settings, save, sound: game.sound, onLook: (color, model) => game.send({ t: 'color', color, model }) });
   game.token = locker.token;
+  social = new Social({ game, account: () => account, join: (code) => play({ t: 'join', room: code }, $('l-err'), code) });
   game.pad = pad = new GamepadInput({
     sens: () => settings.sens / 3,
     look(dyaw, dpitch) {
@@ -61,6 +64,7 @@ async function boot() {
     account = p.name || null;
     $('acct-name').textContent = account || 'Guest';
     $('btn-account').textContent = account ? 'Account' : 'Sign in / Register';
+    $('btn-mod').hidden = account !== 'watermelon'; // the server checks too
     if (account && settings.name !== account) { settings.name = account; save(); }
   });
   game.onCoins = (m) => {
@@ -178,6 +182,10 @@ $('acct-logout').onclick = () => {
   save();
   location.reload();
 };
+
+$('btn-friends').onclick = () => { game?.sound.start(); social?.open(); };
+$('btn-mod').onclick = () => social?.openMod();
+$('fr-signin').onclick = () => { social?.close(); $('btn-account').click(); };
 
 $('btn-devlog').onclick = () => {
   $('devlog-list').innerHTML = DEVLOG.map((d) => `<li><h3>${esc(d.title)}<small>${esc(d.date)}</small></h3><ul>${d.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></li>`).join('');
@@ -555,7 +563,7 @@ requestAnimationFrame(loop);
 // ------------------------------------------------------------------ helpers
 function show(id) { $(id).hidden = false; }
 function hide(id) { $(id).hidden = true; }
-function closeDialogs() { hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
+function closeDialogs() { hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
 function status(t) { $('menu-status').textContent = t; }
 function loading(t) { $('loading').hidden = !t; $('loading-text').textContent = t; }
 

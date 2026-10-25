@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { COSMETIC, COS_SLOTS } from './public/js/cosmetics.js';
+import { badName } from './filter.js';
 
 const TOKEN = /^[a-f0-9]{32}$/;
 const NAME = /^[A-Za-z0-9_]{3,16}$/;
@@ -30,7 +31,7 @@ function fileStore(file) {
     async load(key) { return all[key] || null; },
     count() { return Object.keys(all).length; },
     async save(dirty) {
-      for (const [key, v] of dirty) all[key] = v;
+      for (const [key, v] of dirty) { if (v === null) delete all[key]; else all[key] = v; }
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file + '.tmp', JSON.stringify(all));
       fs.renameSync(file + '.tmp', file);
@@ -50,7 +51,7 @@ function redisStore(url, token, prefix) {
     async load(key) { const v = await call(['GET', prefix + key]); return v ? JSON.parse(v) : null; },
     count() { return 0; }, // no cap: Redis holds them, not this server's memory
     async save(dirty) {
-      for (const [key, v] of dirty) await call(['SET', prefix + key, JSON.stringify(v)]);
+      for (const [key, v] of dirty) await call(v === null ? ['DEL', prefix + key] : ['SET', prefix + key, JSON.stringify(v)]);
     },
   };
 }
@@ -108,6 +109,8 @@ export function createProfiles(file) {
   const mk = (f, prefix) => (redis ? redisStore(process.env.UPSTASH_REDIS_REST_URL, process.env.UPSTASH_REDIS_REST_TOKEN, prefix) : fileStore(f));
   const profiles = cachedStore(mk(file, 'mugr:p:'), 'profiles');
   const accounts = cachedStore(mk(path.join(path.dirname(file), 'accounts.json'), 'mugr:u:'), 'accounts');
+  const dms = cachedStore(mk(path.join(path.dirname(file), 'messages.json'), 'mugr:d:'), 'messages');
+  const bans = cachedStore(mk(path.join(path.dirname(file), 'bans.json'), 'mugr:b:'), 'bans');
   console.log(`[profiles] saving coins, cosmetics and accounts to ${profiles.name}`);
   const tokenOf = (pr) => pr._token;
   const touch = (pr) => profiles.save(tokenOf(pr), pr);
@@ -166,6 +169,7 @@ export function createProfiles(file) {
       if (password.length < 6 || password.length > 100) return { error: 'Passwords need at least 6 characters.' };
       const key = name.toLowerCase();
       if (key === OWNER_NAME) return { error: 'That name is reserved.' };
+      if (badName(name)) return { error: 'Please pick a different name.' };
       if (await accounts.get(key)) return { error: 'That name is taken.' };
       let pr = await load(guestToken);
       const token = pr && !pr.name ? guestToken : newToken(); // a save code already tied to an account can't be reused
@@ -187,6 +191,82 @@ export function createProfiles(file) {
       pr.coins += n;
       touch(pr);
     },
+
+    // ---------------------------------------------------------------- friends (account keys are lower-case names)
+    account: (key) => accounts.get(String(key || '').toLowerCase()),
+    // { friends, incoming, outgoing } as display names
+    async friendsOf(key) {
+      const acc = await accounts.get(key);
+      const names = async (list) => (await Promise.all((list || []).map((k) => accounts.get(k)))).filter(Boolean).map((a) => a.name);
+      return acc ? { friends: await names(acc.friends), incoming: await names(acc.incoming), outgoing: await names(acc.outgoing) } : { friends: [], incoming: [], outgoing: [] };
+    },
+    // action: add (send a request, or accept theirs), accept, decline, remove. Returns an error or null.
+    async friend(meKey, action, otherName) {
+      const me = await accounts.get(meKey);
+      const okey = String(otherName || '').trim().toLowerCase();
+      const other = NAME.test(okey) ? await accounts.get(okey) : null;
+      if (!me) return 'Sign in to add friends.';
+      if (!other) return `There's no player called ${String(otherName || '').slice(0, 16)}.`;
+      if (okey === meKey) return 'That\'s you!';
+      for (const a of [me, other]) { a.friends ||= []; a.incoming ||= []; a.outgoing ||= []; }
+      const drop = (list, k) => { const i = list.indexOf(k); if (i >= 0) list.splice(i, 1); };
+      if (action === 'add' || action === 'accept') {
+        if (me.friends.includes(okey)) return `You're already friends with ${other.name}.`;
+        if (me.incoming.includes(okey)) { // they asked first: accept
+          drop(me.incoming, okey); drop(other.outgoing, meKey);
+          me.friends.push(okey); other.friends.push(meKey);
+        } else if (action === 'accept') return 'There\'s no request to accept.';
+        else {
+          if (me.outgoing.includes(okey)) return 'You already sent a request.';
+          if (me.friends.length >= 200) return 'Your friends list is full.';
+          if (other.incoming.length >= 100) return `${other.name} has too many requests waiting.`;
+          me.outgoing.push(okey); other.incoming.push(meKey);
+        }
+      } else if (action === 'decline') { drop(me.incoming, okey); drop(other.outgoing, meKey); }
+      else if (action === 'remove') { drop(me.friends, okey); drop(other.friends, meKey); drop(me.outgoing, okey); drop(other.incoming, meKey); }
+      else return 'Unknown action.';
+      accounts.save(meKey, me);
+      accounts.save(okey, other);
+      return null;
+    },
+    areFriends: async (a, b) => !!(await accounts.get(a))?.friends?.includes(b),
+
+    // ---------------------------------------------------------------- direct messages (the last 100 per pair)
+    async dmHistory(a, b) {
+      return (await dms.get([a, b].sort().join('|'))) || [];
+    },
+    async dmAdd(a, b, msg) {
+      const key = [a, b].sort().join('|');
+      const list = (await dms.get(key)) || [];
+      list.push(msg);
+      if (list.length > 100) list.splice(0, list.length - 100);
+      dms.save(key, list);
+    },
+
+    // ---------------------------------------------------------------- bans: by account, save code and address
+    // keys: ['a:<account>', 't:<token>', 'i:<address>']; the index lists every ban for the owner's panel
+    async isBanned(keys) {
+      for (const k of keys) { const b = k && (await bans.get(k)); if (b) return b; }
+      return null;
+    },
+    async ban(name, keys, by, reason) {
+      const rec = { name, by, reason: String(reason || '').slice(0, 120), at: Date.now(), keys: keys.filter(Boolean) };
+      for (const k of rec.keys) bans.save(k, rec);
+      const index = (await bans.get('_index')) || [];
+      index.push(rec);
+      bans.save('_index', index);
+      return rec;
+    },
+    // lift every ban on that name; returns how many
+    async unban(name) {
+      const key = String(name || '').trim().toLowerCase();
+      const index = (await bans.get('_index')) || [];
+      const gone = index.filter((r) => r.name.toLowerCase() === key);
+      for (const r of gone) for (const k of r.keys) bans.save(k, null);
+      bans.save('_index', index.filter((r) => !gone.includes(r)));
+      return gone.length;
+    },
+    listBans: async () => ((await bans.get('_index')) || []).map(({ name, by, reason, at }) => ({ name, by, reason, at })),
     buy(pr, id) {
       const item = COSMETIC[id];
       if (!item || item.hidden) return 'There is no such item.';

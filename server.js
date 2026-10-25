@@ -15,6 +15,8 @@ import { buildNav, boxBounds } from './public/js/nav.js';
 import { SKILLS, newBrain, botName, botCommand } from './bots.js';
 import { createZombies } from './cod.js';
 import { createProfiles, OWNER_NAME } from './profiles.js';
+import { checkText, badName } from './filter.js';
+import { createReporter } from './moderation.js';
 import { COIN_KILL, COIN_TEAM_WIN } from './public/js/cosmetics.js';
 
 // Packed build (the standalone .exe, see tools/build_exe.mjs): game files are assets inside the executable,
@@ -34,6 +36,8 @@ function readGameFile(rel) {
 }
 // coins and cosmetics, saved beside the server (the .exe, or this folder when run from source)
 const profiles = createProfiles(process.env.PROFILES || path.join(ROOT, 'data', 'profiles.json'));
+// filtered messages and the owner's bans go to a Discord channel (set DISCORD_WEBHOOK_URL)
+const reporter = createReporter(process.env.DISCORD_WEBHOOK_URL);
 const PORT = +(process.env.PORT || 8027);
 const TICK = 1 / 60;
 const SNAP_EVERY = 2; // 30 snapshots/s
@@ -276,8 +280,8 @@ function newPlayer(ws, name, color, model) {
 
 function clean(s) {
   const name = String(s || '').replace(/[^\p{L}\p{N} _\-.!?'()[\]·]/gu, '').trim().slice(0, 32);
-  // the owner's name only comes from logging in to the owner account
-  return name.toLowerCase() === OWNER_NAME ? 'Player' + Math.floor(100 + Math.random() * 900) : name;
+  // the owner's name only comes from logging in to the owner account; rude names become guest names
+  return name.toLowerCase() === OWNER_NAME || badName(name) ? 'Player' + Math.floor(100 + Math.random() * 900) : name;
 }
 
 function respawn(R, p) {
@@ -1180,12 +1184,208 @@ function serveFile(res, file, req, fromDisk = false) {
 // ------------------------------------------------------------------ websocket
 const wss = new WebSocketServer({ server, perMessageDeflate: false, maxPayload: 64 * 1024 });
 wss.on('error', () => {}); // listen errors are handled on the http server below
-wss.on('connection', (ws) => {
+// ------------------------------------------------------------------ people: who's online, friends, messages, bans
+// signed-in sockets by account key (lower-case name). A socket says who it is with 'hello' as soon as it opens.
+const online = new Map();
+const ipOf = (req) => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+const banKeys = (ws, token) => [ws.acct && 'a:' + ws.acct, (token || ws.token) && 't:' + (token || ws.token), ws.ip && 'i:' + ws.ip];
+const isOwner = (ws) => ws.acct === OWNER_NAME && !!ws.profile?.owner;
+const sys = (ws, text) => wsSend(ws, { t: 'sys', text });
+
+function playerOf(ws) {
+  for (const R of rooms.values()) for (const p of R.players.values()) if (p.ws === ws) return p;
+  return null;
+}
+
+// a friends list with who's online and where, as the account `key` sees it
+async function friendsPayload(key) {
+  const f = await profiles.friendsOf(key);
+  return {
+    t: 'friends', incoming: f.incoming, outgoing: f.outgoing,
+    friends: f.friends.map((name) => {
+      const socks = online.get(name.toLowerCase());
+      const pl = socks && [...socks].map(playerOf).find((x) => x && x.room);
+      const R = pl && pl.room;
+      return { name, online: !!(socks && socks.size), room: R ? { id: R.id, code: R.code, name: R.settings.name, map: R.map.name, locked: !!R.settings.password } : null };
+    }),
+  };
+}
+async function pushFriends(key) {
+  const socks = online.get(key);
+  if (!socks || !socks.size) return;
+  const msg = await friendsPayload(key);
+  for (const ws of socks) wsSend(ws, msg);
+}
+// tell someone's friends their online status changed
+async function presence(key) {
+  const f = await profiles.friendsOf(key);
+  for (const name of f.friends) pushFriends(name.toLowerCase());
+}
+
+async function hello(ws, token) {
+  const pr = await profiles.load(token);
+  const key = pr && pr.name ? pr.name.toLowerCase() : null;
+  if (ws.acct && ws.acct !== key) { online.get(ws.acct)?.delete(ws); presence(ws.acct); }
+  ws.token = pr ? token : null;
+  ws.profile = pr;
+  ws.acct = key;
+  const ban = await profiles.isBanned(banKeys(ws));
+  if (ban) return bounce(ws, ban);
+  if (key) {
+    if (!online.has(key)) online.set(key, new Set());
+    online.get(key).add(ws);
+    pushFriends(key);
+    presence(key);
+  }
+}
+
+function bounce(ws, ban, kicked) {
+  wsSend(ws, { t: 'banned', kicked: !!kicked, reason: ban.reason || '' });
+  setTimeout(() => ws.close(), 300);
+}
+
+// chat in a match: owner commands, the filter, and a little flood control
+function chat(ws, p, text) {
+  if (!text) return;
+  if (text.startsWith('/')) return command(ws, text);
+  const now = Date.now();
+  ws.chatTimes = (ws.chatTimes || []).filter((t) => now - t < 5000);
+  if (ws.chatTimes.length >= 5) return sys(ws, 'Slow down a little.');
+  ws.chatTimes.push(now);
+  const f = checkText(text);
+  if (f.level) reporter.flagged({ kind: 'chat message', who: p.name, account: ws.acct, where: `${p.room.settings.name} (room ${p.room.code})`, text, level: f.level });
+  if (f.level === 2) return sys(ws, 'Your message was blocked by the chat filter.');
+  broadcast(p.room, { t: 'chat', id: p.id, text: f.clean });
+}
+
+// everyone (players and signed-in sockets) matching a name: a player name or an account name
+function findTargets(name) {
+  const key = String(name || '').trim().toLowerCase();
+  const socks = new Set(online.get(key) || []);
+  let display = null;
+  for (const R of rooms.values()) for (const p of R.players.values()) {
+    if (!p.bot && p.ws && p.name.toLowerCase() === key) { socks.add(p.ws); display = p.name; }
+  }
+  for (const ws of socks) if (!display) display = ws.profile?.name || name;
+  return { key, socks: [...socks], display: display || String(name || '').trim() };
+}
+
+async function modAction(ws, action, name, reason) {
+  if (!isOwner(ws)) return sys(ws, 'Only the owner can do that.');
+  name = String(name || '').trim();
+  if (!name) return sys(ws, 'Who? Add a player name.');
+  if (name.toLowerCase() === OWNER_NAME) return sys(ws, 'You can\'t do that to yourself.');
+  if (action === 'unban') {
+    const n = await profiles.unban(name);
+    if (n) reporter.action('Unbanned', `${name}, by ${OWNER_NAME}`);
+    return sys(ws, n ? `Unbanned ${name}.` : `${name} isn't banned.`);
+  }
+  const t = findTargets(name);
+  const acc = await profiles.account(t.key);
+  if (!t.socks.length && !acc) return sys(ws, `Nobody called ${name} is online, and there's no such account.`);
+  if (action === 'kick') {
+    if (!t.socks.length) return sys(ws, `${t.display} isn't online.`);
+    for (const s of t.socks) bounce(s, { reason: reason || 'Kicked by the owner.' }, true);
+    reporter.action('Kicked', `${t.display}, by ${OWNER_NAME}${reason ? ': ' + reason : ''}`);
+    return sys(ws, `Kicked ${t.display}.`);
+  }
+  if (action === 'ban') {
+    const keys = new Set(acc ? ['a:' + t.key] : []);
+    for (const s of t.socks) for (const k of banKeys(s)) if (k) keys.add(k);
+    const rec = await profiles.ban(acc ? acc.name : t.display, [...keys], OWNER_NAME, reason || 'Banned by the owner.');
+    for (const s of t.socks) bounce(s, rec);
+    reporter.action('Banned', `${rec.name}, by ${OWNER_NAME}${reason ? ': ' + reason : ''} (${t.socks.length} connection${t.socks.length === 1 ? '' : 's'} closed)`);
+    return sys(ws, `Banned ${rec.name}.`);
+  }
+}
+
+// owner chat commands: /kick name [reason], /ban name [reason], /unban name, /bans
+async function command(ws, text) {
+  const [cmd, name, ...rest] = text.slice(1).split(/\s+/);
+  const reason = rest.join(' ');
+  const c = (cmd || '').toLowerCase();
+  if (!isOwner(ws)) return sys(ws, 'Commands are for the owner.');
+  if (c === 'kick' || c === 'ban' || c === 'unban') return modAction(ws, c, name, reason);
+  if (c === 'bans') {
+    const list = await profiles.listBans();
+    return sys(ws, list.length ? 'Banned: ' + list.map((b) => b.name).join(', ') : 'Nobody is banned.');
+  }
+  sys(ws, 'Commands: /kick name [reason], /ban name [reason], /unban name, /bans');
+}
+
+async function modList(ws) {
+  if (!isOwner(ws)) return;
+  const players = [];
+  for (const R of rooms.values()) for (const p of R.players.values()) {
+    if (!p.bot) players.push({ name: p.name, account: p.ws?.acct || null, room: R.settings.name });
+  }
+  for (const [key, socks] of online) if (![...socks].some(playerOf)) players.push({ name: [...socks][0].profile?.name || key, account: key, room: null });
+  wsSend(ws, { t: 'mod', players, bans: await profiles.listBans() });
+}
+
+async function directMessage(ws, to, text) {
+  if (!ws.acct) return sys(ws, 'Sign in to send messages.');
+  const toKey = String(to || '').trim().toLowerCase();
+  text = String(text || '').slice(0, 300).trim();
+  if (!text) return;
+  if (!(await profiles.areFriends(ws.acct, toKey))) return sys(ws, 'You can only message your friends.');
+  const now = Date.now();
+  ws.dmTimes = (ws.dmTimes || []).filter((t) => now - t < 10000);
+  if (ws.dmTimes.length >= 8) return sys(ws, 'Slow down a little.');
+  ws.dmTimes.push(now);
+  const other = await profiles.account(toKey);
+  const f = checkText(text);
+  if (f.level) reporter.flagged({ kind: 'direct message', who: ws.profile.name, account: ws.acct, where: `Message to ${other.name}`, text, level: f.level });
+  if (f.level === 2) return sys(ws, 'Your message was blocked by the chat filter.');
+  const msg = { from: ws.profile.name, to: other.name, text: f.clean, at: now };
+  await profiles.dmAdd(ws.acct, toKey, msg);
+  for (const s of new Set([...(online.get(ws.acct) || []), ...(online.get(toKey) || [])])) wsSend(s, { t: 'dm', ...msg });
+}
+
+async function social(ws, m) {
+  if (m.t === 'friends') {
+    if (!ws.acct) return wsSend(ws, { t: 'friends', guest: true, friends: [], incoming: [], outgoing: [] });
+    return wsSend(ws, await friendsPayload(ws.acct));
+  }
+  if (m.t === 'friend') {
+    if (!ws.acct) return sys(ws, 'Sign in to add friends.');
+    const otherKey = String(m.name || '').trim().toLowerCase();
+    const before = await profiles.friendsOf(otherKey);
+    const err = await profiles.friend(ws.acct, String(m.action || ''), m.name);
+    if (err) return wsSend(ws, { t: 'friend-error', text: err });
+    pushFriends(ws.acct);
+    pushFriends(otherKey);
+    const me = ws.profile.name;
+    if (m.action === 'add' && !before.friends.some((n) => n.toLowerCase() === ws.acct)) {
+      const nowFriends = (await profiles.friendsOf(otherKey)).friends.some((n) => n.toLowerCase() === ws.acct);
+      for (const s of online.get(otherKey) || []) sys(s, nowFriends ? `${me} accepted your friend request.` : `${me} sent you a friend request. Open Friends to answer.`);
+    }
+    return;
+  }
+  if (m.t === 'dm') return directMessage(ws, m.to, m.text);
+  if (m.t === 'dms') {
+    if (!ws.acct) return;
+    const other = await profiles.account(m.with);
+    if (!other || !(await profiles.areFriends(ws.acct, other.name.toLowerCase()))) return;
+    return wsSend(ws, { t: 'dms', with: other.name, msgs: await profiles.dmHistory(ws.acct, other.name.toLowerCase()) });
+  }
+  if (m.t === 'mod') {
+    if (m.action === 'list') return modList(ws);
+    await modAction(ws, m.action, m.name, m.reason);
+    return modList(ws);
+  }
+}
+const SOCIAL = new Set(['friends', 'friend', 'dm', 'dms', 'mod']);
+
+wss.on('connection', (ws, req) => {
   let p = null;
+  ws.ip = ipOf(req);
   const fail = (text) => ws.send(JSON.stringify({ t: 'error', text }));
   ws.on('message', (data) => {
     let m;
     try { m = JSON.parse(data); } catch { return; }
+    if (m.t === 'hello') return void hello(ws, m.token);
+    if (SOCIAL.has(m.t)) return void social(ws, m);
     if (m.t === 'watch') {
       if (p && p.room) return;
       unwatch(ws);
@@ -1197,44 +1397,46 @@ wss.on('connection', (ws) => {
     if (m.t === 'unwatch') return unwatch(ws);
     if (m.t === 'join' || m.t === 'create') {
       unwatch(ws);
-      let R;
-      if (m.t === 'create') {
-        if (rooms.size >= MAX_ROOMS) return fail('The server has too many games running. Join one from the list instead.');
-        R = createRoom({ ...m.settings });
-      } else {
-        const key = String(m.room || '').trim().toUpperCase();
-        R = /^\d+$/.test(key) ? rooms.get(+key) : [...rooms.values()].find((r) => r.code === key);
-        if (!R) return fail(/^\d+$/.test(key) ? 'That game has ended.' : `No game with the code ${key}.`);
-        if (R.settings.private && !/^[A-Z0-9]{4}$/.test(key)) return fail('That game is private. Ask for its code.');
-        if (R.settings.password && m.password !== R.settings.password) return fail('Wrong password.');
-      }
-      if (humanCount(R) >= R.settings.maxPlayers) return fail('That game is full.');
-      if (!p) p = newPlayer(ws, m.name, m.color, m.model);
-      else { p.name = clean(m.name) || p.name; if (Number.isInteger(m.color)) p.color = m.color % NUM_COLORS; p.model = validModel(m.model); }
-      if (m.t === 'create') R.owner = p.id;
-      joinRoom(R, p);
-      // coins and cosmetics arrive a moment later (they may come from an online database)
-      const me = p;
-      profiles.load(m.token).then(async (pr) => {
-        me.profile = pr;
-        if (!pr) return;
-        send(me, { t: 'coins', coins: pr.coins });
-        let changed = Object.keys(pr.eq).length > 0;
-        // signed in: play under the account name. A guest using someone's account name gets a guest name.
-        if (pr.name && me.name !== pr.name) { me.name = pr.name; changed = true; }
-        else if (!pr.name && (await profiles.nameTaken(me.name))) { me.name = 'Player' + Math.floor(100 + Math.random() * 900); changed = true; }
-        if (me.room && changed) broadcast(me.room, { t: 'info', p: info(me) });
+      // banned people (by account, save code or address) can't play
+      return void profiles.isBanned(banKeys(ws, m.token)).then((ban) => {
+        if (ban) return bounce(ws, ban);
+        let R;
+        if (m.t === 'create') {
+          if (rooms.size >= MAX_ROOMS) return fail('The server has too many games running. Join one from the list instead.');
+          R = createRoom({ ...m.settings });
+        } else {
+          const key = String(m.room || '').trim().toUpperCase();
+          R = /^\d+$/.test(key) ? rooms.get(+key) : [...rooms.values()].find((r) => r.code === key);
+          if (!R) return fail(/^\d+$/.test(key) ? 'That game has ended.' : `No game with the code ${key}.`);
+          if (R.settings.private && !/^[A-Z0-9]{4}$/.test(key)) return fail('That game is private. Ask for its code.');
+          if (R.settings.password && m.password !== R.settings.password) return fail('Wrong password.');
+        }
+        if (humanCount(R) >= R.settings.maxPlayers) return fail('That game is full.');
+        if (!p) p = newPlayer(ws, m.name, m.color, m.model);
+        else { p.name = clean(m.name) || p.name; if (Number.isInteger(m.color)) p.color = m.color % NUM_COLORS; p.model = validModel(m.model); }
+        if (m.t === 'create') R.owner = p.id;
+        joinRoom(R, p);
+        // coins and cosmetics arrive a moment later (they may come from an online database)
+        const me = p;
+        profiles.load(m.token).then(async (pr) => {
+          me.profile = pr;
+          if (!pr) return;
+          send(me, { t: 'coins', coins: pr.coins });
+          let changed = Object.keys(pr.eq).length > 0;
+          // signed in: play under the account name. A guest using someone's account name gets a guest name.
+          if (pr.name && me.name !== pr.name) { me.name = pr.name; changed = true; }
+          else if (!pr.name && (await profiles.nameTaken(me.name))) { me.name = 'Player' + Math.floor(100 + Math.random() * 900); changed = true; }
+          if (me.room && changed) broadcast(me.room, { t: 'info', p: info(me) });
+        });
+        return;
       });
-      return;
     }
     if (!p || !p.room) return;
     const R = p.room;
     if (m.t === 'c' && Array.isArray(m.c)) onCmds(p, m.c.slice(0, 32));
     else if (m.t === 'leave') { leaveRoom(p); ws.send(JSON.stringify({ t: 'left' })); }
-    else if (m.t === 'chat') {
-      const text = String(m.text || '').slice(0, 160).trim();
-      if (text) broadcast(R, { t: 'chat', id: p.id, text });
-    } else if (m.t === 'ping') send(p, { t: 'pong', c: m.c });
+    else if (m.t === 'chat') chat(ws, p, String(m.text || '').slice(0, 160).trim());
+    else if (m.t === 'ping') send(p, { t: 'pong', c: m.c });
     else if (m.t === 'rtt') p.ping = Math.max(0, Math.min(999, m.v | 0));
     else if (m.t === 'color' && Number.isInteger(m.color) && m.color >= 0 && m.color < NUM_COLORS) {
       p.color = m.color;
@@ -1246,6 +1448,7 @@ wss.on('connection', (ws) => {
   });
   ws.on('close', () => {
     unwatch(ws);
+    if (ws.acct) { online.get(ws.acct)?.delete(ws); if (!online.get(ws.acct)?.size) online.delete(ws.acct); presence(ws.acct); }
     if (p) { console.log(`[leave] ${p.name}`); leaveRoom(p); }
   });
 });

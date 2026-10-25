@@ -1,8 +1,9 @@
 # Render Blueprint: one free web service running the game server (Render → New → Blueprint → this repo).
 # The GitHub Pages copy of the game page connects to it (see .github/workflows/pages.yml).
 # Render sets PORT itself. Under the service's Environment tab add OWNER_PASSWORD (the owner account's
-# password) and, to keep accounts and coins when the free server sleeps or restarts, UPSTASH_REDIS_REST_URL and
-# UPSTASH_REDIS_REST_TOKEN (see README → Online hosting). Never put these values in this file.
+# password), DISCORD_WEBHOOK_URL (moderation reports) and, to keep accounts and coins when the free server
+# sleeps or restarts, UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN (see README → Online hosting).
+# Never put these values in this file.
 services:
   - type: web
     name: mugr-deathmatch

@@ -21,6 +21,8 @@ import { ZombiesView } from './zview.js';
 import { socketUrl } from './net.js';
 
 const DEG = Math.PI / 180;
+// friends, messages, notices and moderation: handled by the page (social.js) whether or not we're in a match
+const SOCIAL = new Set(['friends', 'friend-error', 'dm', 'dms', 'sys', 'mod', 'banned']);
 const INTERP = 0.1; // seconds behind the server for remote players
 const TEAM_COLOR = { red: 3, blue: 1 }; // suit colour index for each team
 const TEAM_RGB = { red: '#e0473a', blue: '#3a7fe0' };
@@ -365,7 +367,8 @@ export class Game {
     if (this.ws && this.ws.readyState === 1) return go();
     if (this.ws && this.ws.readyState === 0) return this.ws.addEventListener('open', go, { once: true });
     const ws = (this.ws = new WebSocket(socketUrl()));
-    ws.onopen = go;
+    // say who we are first (for friends, messages and bans), then do what was asked
+    ws.onopen = () => { ws.send(JSON.stringify({ t: 'hello', token: this.token })); go(); };
     ws.onerror = () => this.settle(new Error('Could not reach the server.'));
     ws.onclose = () => {
       this.ws = null;
@@ -386,6 +389,7 @@ export class Game {
         this.connected = false;
         try { await this.onWelcome(m); this.resetView(); this.connected = true; this.settle(); } catch (err) { this.settle(err); }
       } else if (m.t === 'watch-none') { this.stopWatching(); this.onWatch?.(null); }
+      else if (SOCIAL.has(m.t)) this.onSocial?.(m);
       else if (m.t === 'error') this.settle(new Error(m.text));
       else if (m.t === 'left') this.connected = false;
       else if (this.connected || this.watching) this.onMessage(m);

@@ -293,6 +293,38 @@ body.touch #netinfo { display: none; }
 #menu .account button { background: none; border: 0; padding: 0 0 0 8px; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
 #dlg-account form { margin: 0; }
 #dlg-account .hint { font-size: 12px; }
+/* ---------- friends, messages, moderation ---------- */
+#menu nav .badge { display: inline-block; min-width: 18px; padding: 1px 5px; margin-left: 6px; border-radius: 9px; background: #e0473a; color: #fff; font-size: 11px; text-align: center; vertical-align: middle; text-shadow: none; }
+#dlg-friends, #dlg-mod { width: min(820px, calc(100vw - 32px)); }
+.fr-body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.fr-list { list-style: none; margin: 0; padding: 0; max-height: 330px; overflow: auto; }
+.fr-list li { display: flex; align-items: center; gap: 6px; padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.fr-list li.empty { color: var(--text-dim); border: 0; }
+.fr-list .btn { padding: 3px 10px; font-size: 12px; }
+.fr-list .btn.x { padding: 3px 8px; }
+.fr-list .btn.danger, #dlg-mod .btn.danger { border-color: rgba(224,71,58,.7); }
+.fr-who { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.fr-who b { color: #fff; display: flex; align-items: center; gap: 6px; }
+.fr-who small { color: var(--text-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #666; margin-right: 6px; }
+.dot.on { background: #4cd964; box-shadow: 0 0 6px #4cd964; }
+#fr-add { display: flex; gap: 6px; margin-bottom: 8px; }
+#fr-add input, #fr-msg { flex: 1; background: var(--panel-dark); border: 1px solid rgba(255,255,255,.12); border-radius: 3px; padding: 6px 8px; color: #fff; }
+#fr-chat { display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,.08); border-radius: 4px; padding: 8px; min-height: 300px; }
+#fr-chat h3 { margin: 0 0 6px; font: bold 13px var(--ui); color: #fff; }
+#fr-msgs { flex: 1; overflow: auto; max-height: 270px; display: flex; flex-direction: column; gap: 4px; padding: 2px; }
+.dm { align-self: flex-start; max-width: 85%; background: var(--panel-dark); border-radius: 8px; padding: 5px 9px; }
+.dm.mine { align-self: flex-end; background: rgba(255,176,0,.18); }
+.dm span { color: #fff; word-break: break-word; }
+.dm small { display: block; color: var(--text-dim); font-size: 10px; }
+#fr-msg-form { display: flex; gap: 6px; margin-top: 6px; }
+#fr-err { color: #ff8a70; min-height: 1.2em; font-size: 12px; }
+#notice { position: fixed; right: 16px; bottom: 16px; max-width: min(360px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--panel-edge); border-left: 3px solid var(--accent); border-radius: 4px; padding: 10px 14px; z-index: 60; opacity: 0; transform: translateY(8px); transition: opacity .25s, transform .25s; pointer-events: none; color: #fff; }
+#notice.show { opacity: 1; transform: none; }
+#banned { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.88); display: grid; place-items: center; text-align: center; }
+#banned h2 { font: bold 28px var(--ui); color: #ff6a5a; margin: 0 0 10px; }
+#banned p { color: var(--text-dim); margin: 0 0 16px; }
+@media (max-width: 640px) { .fr-body { grid-template-columns: 1fr; } }
 /* ---------- devlog ---------- */
 .devlog { margin: 0; padding: 0; list-style: none; }
 .devlog > li { margin: 0 0 14px; }
@@ -333,6 +365,8 @@ body.touch #netinfo { display: none; }
     <button id="btn-disconnect" hidden>Leave game</button>
     <button id="btn-shop">Shop</button>
     <button id="btn-wardrobe">Wardrobe</button>
+    <button id="btn-friends">Friends<span class="badge" id="fr-badge" hidden></span></button>
+    <button id="btn-mod" hidden>Moderation</button>
     <button id="btn-options">Options</button>
     <button id="btn-devlog">Devlog</button>
     <button id="btn-credits">Credits</button>
@@ -444,6 +478,41 @@ body.touch #netinfo { display: none; }
     <div class="actions"><button type="button" class="btn" id="acct-logout">Sign out</button><button type="button" class="btn primary" id="acct-close">Close</button></div>
   </div>
 </div>
+
+<div class="dialog" id="dlg-friends" hidden role="dialog" aria-labelledby="dlg-friends-title">
+  <h2 id="dlg-friends-title">Friends</h2>
+  <div id="fr-guest" hidden>
+    <p>Sign in to add friends and send messages.</p>
+    <div class="actions"><button type="button" class="btn primary" id="fr-signin">Sign in / Register</button></div>
+  </div>
+  <div class="fr-body" id="fr-body">
+    <div>
+      <form id="fr-add"><input type="text" id="fr-name" maxlength="16" placeholder="Add a friend by account name" autocomplete="off"><button type="submit" class="btn primary">Add</button></form>
+      <div id="fr-err" role="alert"></div>
+      <ul class="fr-list" id="fr-list"></ul>
+    </div>
+    <div id="fr-chat" hidden>
+      <h3 id="fr-chat-title"></h3>
+      <div id="fr-msgs" aria-live="polite"></div>
+      <form id="fr-msg-form"><input type="text" id="fr-msg" maxlength="300" placeholder="Message" autocomplete="off"><button type="submit" class="btn primary">Send</button></form>
+    </div>
+  </div>
+  <div class="actions"><button type="button" class="btn primary" id="fr-close">Close</button></div>
+</div>
+
+<div class="dialog" id="dlg-mod" hidden role="dialog" aria-labelledby="dlg-mod-title">
+  <h2 id="dlg-mod-title">Moderation</h2>
+  <div class="row"><label for="mod-reason">Reason (optional)</label><input type="text" id="mod-reason" maxlength="120" placeholder="Shown to the player and posted to Discord"></div>
+  <div class="fr-body">
+    <div><h3>Online now</h3><ul class="fr-list" id="mod-players"></ul></div>
+    <div><h3>Banned</h3><ul class="fr-list" id="mod-bans"></ul></div>
+  </div>
+  <p style="margin-top:10px">In a match you can also type <b>/kick name</b>, <b>/ban name reason</b>, <b>/unban name</b> or <b>/bans</b> in chat.</p>
+  <div class="actions"><button type="button" class="btn primary" id="mod-close">Close</button></div>
+</div>
+
+<div id="notice" role="status" aria-live="polite"></div>
+<div id="banned" hidden><div><h2 id="ban-title">You are banned</h2><p id="ban-reason"></p><button type="button" class="btn primary" id="ban-ok" hidden>OK</button></div></div>
 
 <div class="dialog wide" id="dlg-devlog" hidden role="dialog" aria-labelledby="dlg-devlog-title">
   <h2 id="dlg-devlog-title">Devlog</h2>
