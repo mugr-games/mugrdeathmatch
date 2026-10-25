@@ -7,6 +7,7 @@ import { TouchControls, isTouch } from './touch.js';
 import { Locker, setSaveToken } from './locker.js';
 import { GamepadInput } from './gamepad.js';
 import { Social } from './social.js';
+import { COSMETICS } from './cosmetics.js';
 import { DEVLOG } from './devlog.js';
 import { api, pageUrl, SERVER } from './net.js';
 
@@ -45,7 +46,10 @@ async function boot() {
   game = new Game(canvas, settings);
   locker = new Locker({ settings, save, sound: game.sound, onLook: (color, model) => game.send({ t: 'color', color, model }) });
   game.token = locker.token;
-  social = new Social({ game, account: () => account, join: (code) => play({ t: 'join', room: code }, $('l-err'), code) });
+  social = new Social({
+    game, account: () => account, join: (code) => play({ t: 'join', room: code }, $('l-err'), code),
+    refresh: () => locker?.load(), maps: () => serverInfo?.maps || [], cosmetics: COSMETICS,
+  });
   game.pad = pad = new GamepadInput({
     sens: () => settings.sens / 3,
     look(dyaw, dpitch) {

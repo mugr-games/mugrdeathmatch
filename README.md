@@ -112,8 +112,17 @@ button), and send each other direct messages (friends only; the last 100 per pai
 Every chat line, direct message and name goes through `filter.js`: swearing is starred out, while slurs, hate
 and telling someone to hurt themselves are blocked. Both kinds are reported to the Discord webhook.
 
-The owner (`watermelon`) has a Moderation button in the menu, listing everyone online with Kick and Ban, and
-the current bans with Unban. In a match the same works from chat: `/kick name [reason]`, `/ban name [reason]`,
+The owner (`watermelon`) has an **Owner menu** in the main menu:
+
+- **Players**: everyone online, with Kick, Ban, Mute (for a set number of minutes), and in a match Slay, Heal,
+  give every gun, and (in your own game) Go to and Bring.
+- **Accounts**: every registered account (searchable), with coins and join date. Open one to give, take or set
+  coins, give or remove any cosmetic (including the Owner cape), see their stats, and ban or unban them.
+- **Server**: a big announcement to everyone online; your own God mode and Infinite ammo; and for your current
+  match: change the map, end it, add or remove bots. It also shows whether saving works.
+- **Bans**: everyone banned, with Unban.
+
+Coin, cosmetic, mute and ban changes are posted to the Discord webhook. In a match the same bans work from chat: `/kick name [reason]`, `/ban name [reason]`,
 `/unban name`, `/bans`. A ban covers the player's account, their browser's save code and their internet
 address, so it sticks when they make a new account (it can also catch others sharing that connection).
 

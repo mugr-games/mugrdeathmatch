@@ -22,7 +22,7 @@ import { socketUrl } from './net.js';
 
 const DEG = Math.PI / 180;
 // friends, messages, notices and moderation: handled by the page (social.js) whether or not we're in a match
-const SOCIAL = new Set(['friends', 'friend-error', 'dm', 'dms', 'sys', 'mod', 'banned']);
+const SOCIAL = new Set(['friends', 'friend-error', 'dm', 'dms', 'sys', 'mod', 'mod-accounts', 'mod-account', 'banned', 'announce', 'refresh']);
 const INTERP = 0.1; // seconds behind the server for remote players
 const TEAM_COLOR = { red: 3, blue: 1 }; // suit colour index for each team
 const TEAM_RGB = { red: '#e0473a', blue: '#3a7fe0' };
@@ -390,6 +390,7 @@ export class Game {
         try { await this.onWelcome(m); this.resetView(); this.connected = true; this.settle(); } catch (err) { this.settle(err); }
       } else if (m.t === 'watch-none') { this.stopWatching(); this.onWatch?.(null); }
       else if (SOCIAL.has(m.t)) this.onSocial?.(m);
+      else if (m.t === 'coins' && !this.connected) this.onCoins?.(m);
       else if (m.t === 'error') this.settle(new Error(m.text));
       else if (m.t === 'left') this.connected = false;
       else if (this.connected || this.watching) this.onMessage(m);

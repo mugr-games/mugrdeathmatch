@@ -17,7 +17,7 @@ import { createZombies } from './cod.js';
 import { createProfiles, OWNER_NAME } from './profiles.js';
 import { checkText, badName } from './filter.js';
 import { createReporter } from './moderation.js';
-import { COIN_KILL, COIN_TEAM_WIN } from './public/js/cosmetics.js';
+import { COIN_KILL, COIN_TEAM_WIN, COSMETIC } from './public/js/cosmetics.js';
 
 // Packed build (the standalone .exe, see tools/build_exe.mjs): game files are assets inside the executable,
 // keyed by their path from the project root ("public/index.html"). Models still load from a "models" folder beside it.
@@ -424,6 +424,16 @@ function runCmd(R, p, cmd, dt, seq) {
   weaponThink(ps, cmd, dt, (wi) => fire(R, p, wi, cmd, seq), (name) => {
     if (name === 'reload' || name === 'reloadstart' || name === 'reloadshell') pushEvent(R, { e: 'snd', id: p.id, w: ps.cur, k: 'reload' });
   });
+  if (p.infAmmo) fillAmmo(ps);
+}
+
+// every weapon the player has, full: clips and reserve ammo
+function fillAmmo(ps) {
+  WEAPONS.forEach((w, i) => {
+    if (!((ps.owned >> i) & 1)) return;
+    if (w.clip > 0) ps.clips[i] = w.clip;
+    if (w.ammo) ps.ammo[w.ammo] = w.maxAmmo;
+  });
 }
 
 // Rocket jump (Q): a small blast at your own feet throws you up and the way you're moving (or facing), and
@@ -726,7 +736,7 @@ function norm(v) {
 
 function damage(R, victim, attacker, dmg, weapon, head, dir) {
   const ps = victim.ps;
-  if (!ps.alive) return;
+  if (!ps.alive || victim.god) return; // the owner's god mode
   if (R.cz) {
     if (ps.downed) return; // zombies leave downed players alone
     victim.lastHurt = R.time;
@@ -1267,6 +1277,7 @@ function bounce(ws, ban, kicked) {
 function chat(ws, p, text) {
   if (!text) return;
   if (text.startsWith('/')) return command(ws, text);
+  if (mutedFor(ws)) return sys(ws, `You're muted for ${mutedFor(ws)} more minute${mutedFor(ws) === 1 ? '' : 's'}.`);
   const now = Date.now();
   ws.chatTimes = (ws.chatTimes || []).filter((t) => now - t < 5000);
   if (ws.chatTimes.length >= 5) return sys(ws, 'Slow down a little.');
@@ -1332,14 +1343,108 @@ async function command(ws, text) {
   sys(ws, 'Commands: /kick name [reason], /ban name [reason], /unban name, /bans');
 }
 
+// mutes, by account and address, until a time (kept in memory: a restart lifts them)
+const mutes = new Map();
+function mutedFor(ws) {
+  const now = Date.now();
+  const until = Math.max(mutes.get('a:' + ws.acct) || 0, mutes.get('i:' + ws.ip) || 0);
+  return until > now ? Math.ceil((until - now) / 60000) : 0;
+}
+
 async function modList(ws) {
   if (!isOwner(ws)) return;
   const players = [];
   for (const R of rooms.values()) for (const p of R.players.values()) {
-    if (!p.bot) players.push({ name: p.name, account: p.ws?.acct || null, room: R.settings.name });
+    if (!p.bot && p.ws !== ws) players.push({ name: p.name, account: p.ws?.acct || null, room: R.settings.name, here: R === playerOf(ws)?.room, muted: p.ws ? mutedFor(p.ws) : 0, alive: p.ps.alive });
   }
-  for (const [key, socks] of online) if (![...socks].some(playerOf)) players.push({ name: [...socks][0].profile?.name || key, account: key, room: null });
-  wsSend(ws, { t: 'mod', players, bans: await profiles.listBans(), storage: profiles.storage });
+  for (const [key, socks] of online) if (key !== ws.acct && ![...socks].some(playerOf)) players.push({ name: [...socks][0].profile?.name || key, account: key, room: null, muted: mutedFor([...socks][0]) });
+  const me = playerOf(ws);
+  wsSend(ws, {
+    t: 'mod', players, bans: await profiles.listBans(), storage: profiles.storage,
+    me: me ? { room: me.room.settings.name, map: me.room.map.id, god: !!me.god, ammo: !!me.infAmmo, bots: [...me.room.players.values()].filter((o) => o.bot).length } : null,
+  });
+}
+
+// the owner's menu: everything else it can do (kick, ban and unban go through modAction)
+async function ownerAction(ws, m) {
+  if (!isOwner(ws)) return sys(ws, 'Only the owner can do that.');
+  const a = m.action, me = playerOf(ws);
+  const say = (t) => sys(ws, t);
+  // accounts
+  if (a === 'accounts') return wsSend(ws, { t: 'mod-accounts', accounts: await profiles.listAccounts() });
+  if (a === 'account') return wsSend(ws, { t: 'mod-account', account: await profiles.accountDetail(m.name) });
+  if (a === 'coins' || a === 'item') {
+    const r = a === 'coins' ? await profiles.adjustCoins(m.name, m.mode, m.amount) : await profiles.setItem(m.name, m.id, !!m.give);
+    if (r.error) return say(r.error);
+    // tell them, update their coins, and redraw their cosmetics in any match they're in
+    for (const s of online.get(String(m.name).toLowerCase()) || []) {
+      wsSend(s, { t: 'coins', coins: r.pr.coins });
+      wsSend(s, { t: 'refresh' });
+      if (a === 'coins' && m.mode === 'give') sys(s, `The owner gave you ${Number(m.amount).toLocaleString()} coins!`);
+      if (a === 'item' && m.give) sys(s, `The owner gave you the ${COSMETIC[m.id].name}!`);
+      const p = playerOf(s);
+      if (p && p.room) broadcast(p.room, { t: 'info', p: info(p) });
+    }
+    reporter.action(a === 'coins' ? 'Coins changed' : 'Cosmetic changed', a === 'coins' ? `${m.name}: ${m.mode} ${m.amount} (now ${r.pr.coins})` : `${m.name}: ${m.give ? 'gave' : 'removed'} ${COSMETIC[m.id]?.name}`);
+    return wsSend(ws, { t: 'mod-account', account: await profiles.accountDetail(m.name) });
+  }
+  // the whole server
+  if (a === 'announce') {
+    const text = String(m.text || '').slice(0, 200).trim();
+    if (!text) return;
+    for (const c of wss.clients) wsSend(c, { t: 'announce', text });
+    reporter.action('Announcement', text);
+    return say('Announced.');
+  }
+  // online players: mute, slay, heal, guns, teleport
+  const t = findTargets(m.name);
+  const targetPlayers = t.socks.map(playerOf).filter(Boolean);
+  if (a === 'mute' || a === 'unmute') {
+    if (!t.socks.length && !(await profiles.account(t.key))) return say(`Nobody called ${m.name} is online.`);
+    const mins = Math.max(1, Math.min(1440, Number(m.minutes) || 10));
+    const keys = new Set([(await profiles.account(t.key)) && 'a:' + t.key, ...t.socks.flatMap((s) => [s.acct && 'a:' + s.acct, s.ip && 'i:' + s.ip])].filter(Boolean));
+    for (const k of keys) { if (a === 'mute') mutes.set(k, Date.now() + mins * 60000); else mutes.delete(k); }
+    for (const s of t.socks) sys(s, a === 'mute' ? `The owner muted you for ${mins} minutes.` : 'You can chat again.');
+    reporter.action(a === 'mute' ? 'Muted' : 'Unmuted', `${t.display}${a === 'mute' ? ` for ${mins} minutes` : ''}`);
+    return say(a === 'mute' ? `Muted ${t.display} for ${mins} minutes.` : `Unmuted ${t.display}.`);
+  }
+  if (['slay', 'heal', 'guns', 'goto', 'bring'].includes(a)) {
+    if (!targetPlayers.length) return say(`${t.display} isn't in a match.`);
+    for (const p of targetPlayers) {
+      const R = p.room;
+      if (a === 'slay' && p.ps.alive) kill(R, p, null, 'admin', false);
+      if (a === 'heal' && p.ps.alive) { p.ps.hp = MAX_HP; p.ps.armor = MAX_ARMOR; }
+      if (a === 'guns' && p.ps.alive) { WEAPONS.forEach((w, i) => { if (!w.zombie) giveWeapon(p.ps, i); }); fillAmmo(p.ps); }
+      if (a === 'goto' || a === 'bring') {
+        if (!me || me.room !== R) return say(`${t.display} is in another game (${R.settings.name}). Join it first.`);
+        const [from, to] = a === 'goto' ? [p, me] : [me, p];
+        if (!from.ps.alive || !to.ps.alive) return say('You both need to be alive.');
+        const y = (from.yaw * Math.PI) / 180;
+        to.ps.origin = [from.ps.origin[0] - Math.cos(y) * 60, from.ps.origin[1] - Math.sin(y) * 60, from.ps.origin[2] + 8];
+        to.ps.velocity = [0, 0, 0];
+      }
+    }
+    return say({ slay: 'Slain', heal: 'Healed', guns: 'Gave every gun to', goto: 'Teleported to', bring: 'Brought' }[a] + ` ${t.display}.`);
+  }
+  // your own powers and your match
+  if (!me) return say('Join a match first.');
+  const R = me.room;
+  if (a === 'god') { me.god = !me.god; return say(`God mode ${me.god ? 'on' : 'off'}.`); }
+  if (a === 'ammo') { me.infAmmo = !me.infAmmo; if (me.infAmmo) fillAmmo(me.ps); return say(`Infinite ammo ${me.infAmmo ? 'on' : 'off'}.`); }
+  if (a === 'map') {
+    if (!MAP_IDS.includes(m.map)) return say('There is no such map.');
+    startMatch(R, m.map);
+    reporter.action('Map changed', `${R.settings.name} → ${mapName(m.map)}`);
+    return say(`Changed the map to ${mapName(m.map)}.`);
+  }
+  if (a === 'end') {
+    const s = R.teamScore;
+    endMatch(R, R.zm ? (R.zm.started ? 'human' : null) : teamMode(R) ? (s.red > s.blue ? 'red' : s.blue > s.red ? 'blue' : 'draw') : null);
+    return say('Ended the match.');
+  }
+  if (a === 'addbot') { if (R.players.size >= 16) return say('The game is full.'); addBot(R); return say('Added a bot.'); }
+  if (a === 'kickbot') { const b = [...R.players.values()].find((o) => o.bot); if (!b) return say('There are no bots.'); leaveRoom(b); return say('Removed a bot.'); }
+  say('Unknown action.');
 }
 
 async function directMessage(ws, to, text) {
@@ -1348,6 +1453,7 @@ async function directMessage(ws, to, text) {
   text = String(text || '').slice(0, 300).trim();
   if (!text) return;
   if (!(await profiles.areFriends(ws.acct, toKey))) return sys(ws, 'You can only message your friends.');
+  if (mutedFor(ws)) return sys(ws, `You're muted for ${mutedFor(ws)} more minute${mutedFor(ws) === 1 ? '' : 's'}.`);
   const now = Date.now();
   ws.dmTimes = (ws.dmTimes || []).filter((t) => now - t < 10000);
   if (ws.dmTimes.length >= 8) return sys(ws, 'Slow down a little.');
@@ -1390,7 +1496,8 @@ async function social(ws, m) {
   }
   if (m.t === 'mod') {
     if (m.action === 'list') return modList(ws);
-    await modAction(ws, m.action, m.name, m.reason);
+    if (['kick', 'ban', 'unban'].includes(m.action)) await modAction(ws, m.action, m.name, m.reason);
+    else await ownerAction(ws, m);
     return modList(ws);
   }
 }

@@ -44,6 +44,8 @@ function fileStore(file) {
     name: `file ${file}`,
     kind: 'file',
     async load(key) { return all[key] || null; },
+    async loadMany(keys) { return keys.map((k) => all[k] || null); },
+    async keys() { return Object.keys(all); },
     count() { return Object.keys(all).length; },
     async save(dirty) {
       for (const [key, v] of dirty) { if (v === null) delete all[key]; else all[key] = v; }
@@ -66,6 +68,25 @@ function redisStore(url, token, prefix) {
     name: 'Upstash Redis',
     kind: 'redis',
     async load(key) { const v = await call(['GET', prefix + key]); return v ? JSON.parse(v) : null; },
+    async loadMany(keys) {
+      const out = [];
+      for (let i = 0; i < keys.length; i += 100) { // MGET in chunks
+        const vals = await call(['MGET', ...keys.slice(i, i + 100).map((k) => prefix + k)]);
+        for (const v of vals) out.push(v ? JSON.parse(v) : null);
+      }
+      return out;
+    },
+    // every key under this prefix (SCAN, so it never blocks the database)
+    async keys() {
+      const found = [];
+      let cursor = '0';
+      do {
+        const [next, batch] = await call(['SCAN', cursor, 'MATCH', prefix + '*', 'COUNT', '500']);
+        cursor = String(next);
+        for (const k of batch) found.push(k.slice(prefix.length));
+      } while (cursor !== '0' && found.length < 100000);
+      return found;
+    },
     count() { return 0; }, // no cap: Redis holds them, not this server's memory
     // a whole batch in at most two requests: one MSET for the changes, one DEL for removals
     async save(dirty) {
@@ -134,7 +155,18 @@ function cachedStore(store, label, status) {
     }
     return loading.get(key);
   };
-  return { get, save, flush, pending: () => dirty.size, count: () => store.count(), name: store.name, kind: store.kind, check: store.check };
+  // several at once: cached ones from memory, the rest in one go from the store
+  async function getMany(keys) {
+    const missing = keys.filter((k) => !cache.has(k));
+    if (missing.length) {
+      const vals = await store.loadMany(missing);
+      missing.forEach((k, i) => { if (vals[i] && !cache.has(k)) cache.set(k, vals[i]); });
+    }
+    return keys.map((k) => cache.get(k) || null);
+  }
+  // every key: the saved ones plus any not saved yet
+  const keys = async () => [...new Set([...(await store.keys()), ...cache.keys()])];
+  return { get, getMany, keys, save, flush, pending: () => dirty.size, count: () => store.count(), name: store.name, kind: store.kind, check: store.check };
 }
 
 const scrypt = (password, salt) => new Promise((res, rej) => crypto.scrypt(password, salt, 64, (e, k) => (e ? rej(e) : res(k))));
@@ -292,6 +324,55 @@ export function createProfiles(file) {
     award(pr, n) {
       pr.coins += n;
       this.stat(pr, { coins: n });
+    },
+
+    // ---------------------------------------------------------------- owner tools
+    // every registered account with its coins, newest first
+    async listAccounts() {
+      const keys = (await accounts.keys()).filter((k) => !k.startsWith('_'));
+      const accs = (await accounts.getMany(keys)).filter(Boolean);
+      const prs = await profiles.getMany(accs.map((a) => a.token));
+      return accs.map((a, i) => ({ name: a.name, created: a.created || 0, coins: prs[i]?.coins || 0, kills: prs[i]?.stats?.kills || 0 }))
+        .sort((a, b) => b.created - a.created);
+    },
+    async accountDetail(name) {
+      const acc = await accounts.get(String(name || '').toLowerCase());
+      if (!acc) return null;
+      const pr = await load(acc.token);
+      return { name: acc.name, created: acc.created || 0, coins: pr.coins, owned: pr.owned, eq: pr.eq, stats: pr.stats || {}, friends: (acc.friends || []).length };
+    },
+    // the profile behind an account name (for the server to notify and refresh them)
+    async profileOf(name) {
+      const acc = await accounts.get(String(name || '').toLowerCase());
+      return acc ? load(acc.token) : null;
+    },
+    // mode: give, take or set; returns the new balance or an error
+    async adjustCoins(name, mode, amount) {
+      const pr = await this.profileOf(name);
+      if (!pr) return { error: `There's no account called ${name}.` };
+      amount = Math.floor(Math.abs(Number(amount) || 0));
+      if (amount > 1e9) return { error: 'That\'s too many coins.' };
+      if (mode === 'give') pr.coins += amount;
+      else if (mode === 'take') pr.coins = Math.max(0, pr.coins - amount);
+      else if (mode === 'set') pr.coins = amount;
+      else return { error: 'Unknown action.' };
+      touch(pr);
+      return { coins: pr.coins, pr };
+    },
+    // give or remove one cosmetic; removing takes it off too
+    async setItem(name, id, give) {
+      const pr = await this.profileOf(name);
+      if (!pr) return { error: `There's no account called ${name}.` };
+      const item = COSMETIC[id];
+      if (!item) return { error: 'There is no such item.' };
+      if (give) {
+        if (!pr.owned.includes(id)) pr.owned.push(id);
+      } else {
+        pr.owned = pr.owned.filter((x) => x !== id);
+        if (pr.eq[item.slot] === id) delete pr.eq[item.slot];
+      }
+      touch(pr);
+      return { pr };
     },
 
     // ---------------------------------------------------------------- stats

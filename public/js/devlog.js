@@ -12,6 +12,7 @@ export const DEVLOG = [
       'Sharper surfaces: cracks, moss, rust, scratches, wood knots, pebbles, rain streaks and puddles. Big walls repeat less.',
       'All new sounds: guns have a crack, a punch and an echo, with a clack from the action. There are new footsteps for each surface, debris after explosions, ricochets and reload sounds. Far-off sounds are muffled and echoey.',
       'Rocket jumping: press Q (right stick click on a controller, RJ on phones) for a blast at your feet that launches you. Last weapon moved to X.',
+      'Owner menu: every account with coins and cosmetics to give or take, plus mutes, slay, heal, guns, teleports, god mode, infinite ammo, announcements and match controls.',
       'Stats and a leaderboard: kills, deaths, K/D, headshots, wins, matches, best streak, zombie kills and coins earned, with top-50 boards for signed-in players.',
       'Saving: accounts, coins, cosmetics, friends and messages are kept in an online database, and coins you earn as a guest move into your account when you sign in.',
       'Friends and messages: add friends by account name, see who is online and which game they are in, join them, and send direct messages.',

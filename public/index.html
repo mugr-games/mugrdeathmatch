@@ -325,6 +325,29 @@ body.touch #netinfo { display: none; }
 #banned h2 { font: bold 28px var(--ui); color: #ff6a5a; margin: 0 0 10px; }
 #banned p { color: var(--text-dim); margin: 0 0 16px; }
 @media (max-width: 640px) { .fr-body { grid-template-columns: 1fr; } }
+#dlg-mod { width: min(900px, calc(100vw - 32px)); }
+#mod-storage { margin: -6px 0 8px; font-size: 12px; }
+#mod-storage.err { color: #ff8a70; font-weight: bold; }
+#mod-pane h4 { margin: 12px 0 6px; font: bold 12px var(--ui); color: #fff; text-transform: uppercase; letter-spacing: .05em; }
+.mod-opts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.mod-opts input[type=text], .mod-opts select, #mod-amount, #mod-mins { background: var(--panel-dark); border: 1px solid rgba(255,255,255,.12); border-radius: 3px; padding: 6px 8px; color: #fff; }
+.mod-opts input[type=text] { flex: 1; min-width: 180px; }
+#mod-mins { width: 64px; } #mod-amount { width: 120px; }
+.mod-list { max-height: 380px; }
+.mod-btns { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.mod-acct-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.mod-acct-head h3 { margin: 0; color: #fff; }
+.mod-coins { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.mod-coins .coins { min-width: 110px; }
+.mod-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; max-height: 230px; overflow: auto; }
+.mod-item { display: flex; flex-direction: column; gap: 3px; padding: 7px; background: var(--panel-dark); border: 1px solid rgba(255,255,255,.06); border-radius: 4px; }
+.mod-item.has { border-color: rgba(255,176,0,.6); }
+.mod-item b { color: #fff; font-size: 12px; } .mod-item small { color: var(--text-dim); font-size: 11px; }
+.mod-item .btn { padding: 3px 8px; font-size: 12px; }
+.mod-stats { color: var(--text-dim); }
+#announce { position: fixed; left: 50%; top: 14%; transform: translateX(-50%); z-index: 95; max-width: min(900px, calc(100vw - 32px)); padding: 14px 26px; background: rgba(10,10,14,.82); border: 2px solid #ffb000; border-radius: 6px; color: #fff; font: bold clamp(18px, 3vw, 30px) var(--ui); text-align: center; text-shadow: 0 2px 8px rgba(0,0,0,.8); pointer-events: none; }
+#announce.show { animation: annIn .35s ease-out; }
+@keyframes annIn { from { opacity: 0; transform: translate(-50%, -12px) scale(.96); } to { opacity: 1; transform: translateX(-50%); } }
 /* ---------- leaderboard ---------- */
 #dlg-leaders { width: min(760px, calc(100vw - 32px)); }
 .lb-body { display: grid; grid-template-columns: 1fr 230px; gap: 16px; }
@@ -384,7 +407,7 @@ body.touch #netinfo { display: none; }
     <button id="btn-wardrobe">Wardrobe</button>
     <button id="btn-leaders">Leaderboard</button>
     <button id="btn-friends">Friends<span class="badge" id="fr-badge" hidden></span></button>
-    <button id="btn-mod" hidden>Moderation</button>
+    <button id="btn-mod" hidden>Owner menu</button>
     <button id="btn-options">Options</button>
     <button id="btn-devlog">Devlog</button>
     <button id="btn-credits">Credits</button>
@@ -529,18 +552,15 @@ body.touch #netinfo { display: none; }
 </div>
 
 <div class="dialog" id="dlg-mod" hidden role="dialog" aria-labelledby="dlg-mod-title">
-  <h2 id="dlg-mod-title">Moderation</h2>
+  <h2 id="dlg-mod-title">Owner menu</h2>
   <p id="mod-storage" role="status"></p>
-  <div class="row"><label for="mod-reason">Reason (optional)</label><input type="text" id="mod-reason" maxlength="120" placeholder="Shown to the player and posted to Discord"></div>
-  <div class="fr-body">
-    <div><h3>Online now</h3><ul class="fr-list" id="mod-players"></ul></div>
-    <div><h3>Banned</h3><ul class="fr-list" id="mod-bans"></ul></div>
-  </div>
-  <p style="margin-top:10px">In a match you can also type <b>/kick name</b>, <b>/ban name reason</b>, <b>/unban name</b> or <b>/bans</b> in chat.</p>
+  <div class="tabs" role="tablist" id="mod-tabs"></div>
+  <div id="mod-pane"></div>
   <div class="actions"><button type="button" class="btn primary" id="mod-close">Close</button></div>
 </div>
 
 <div id="notice" role="status" aria-live="polite"></div>
+<div id="announce" role="alert" hidden></div>
 <div id="banned" hidden><div><h2 id="ban-title">You are banned</h2><p id="ban-reason"></p><button type="button" class="btn primary" id="ban-ok" hidden>OK</button></div></div>
 
 <div class="dialog wide" id="dlg-devlog" hidden role="dialog" aria-labelledby="dlg-devlog-title">
