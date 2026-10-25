@@ -174,7 +174,7 @@ export class ZombiesView {
       if (!n) {
         n = { id, snaps: [], obj: null, pos: [x, y, z + 36] };
         this.npcs.set(id, n);
-        this.g.makeCharacter(ZOMBIE_SKIN, 'claws').then((c) => {
+        this.g.makeCharacter(ZOMBIE_SKIN, null).then((c) => {
           if (!this.npcs.has(id)) { c.dispose(); return; }
           // a horde of shadow casters is expensive: zombies don't cast shadows
           c.root.traverse((o) => { o.castShadow = false; });
@@ -206,7 +206,7 @@ export class ZombiesView {
         return true;
       }
       case 'zgone': this.remove(ev.id); return true;
-      case 'zatk': { const n = this.npcs.get(ev.id); g.sound.swing(n ? n.pos : null); if (n) n.attackAt = performance.now() / 1000; return true; }
+      case 'zatk': { const n = this.npcs.get(ev.id); g.sound.swing(n ? n.pos : null); n?.obj?.melee(); return true; }
       case 'drop': this.addDrop(ev.id, ev.k, ev.o); g.sound.ui(1300); return true;
       case 'dropgone': { const d = this.drops.get(ev.id); if (d) { g.scene.remove(d.obj); this.drops.delete(ev.id); } return true; }
       case 'power':
@@ -296,9 +296,7 @@ export class ZombiesView {
       n.pos = [o[0], o[1], o[2] + 36];
       if (!n.obj) continue;
       const v = b.v, speed = Math.hypot(v[0], v[1]), yr = yaw * DEG;
-      // arms up and leaning in while swinging
-      const swing = n.attackAt && now - n.attackAt < 0.5;
-      n.obj.animate(dt, { speed, fwdSpeed: v[0] * Math.cos(yr) + v[1] * Math.sin(yr), sideSpeed: v[0] * Math.sin(yr) - v[1] * Math.cos(yr), ground: true, ducked: false, pitch: swing ? -35 : 10, alive: true });
+      n.obj.animate(dt, { speed, fwdSpeed: v[0] * Math.cos(yr) + v[1] * Math.sin(yr), sideSpeed: v[0] * Math.sin(yr) - v[1] * Math.cos(yr), ground: true, ducked: false, pitch: 10, alive: true });
       n.obj.root.matrix.copy(new THREE.Matrix4().makeRotationZ(yr).setPosition(o[0], o[1], o[2]));
       n.obj.root.matrixWorldNeedsUpdate = true;
     }

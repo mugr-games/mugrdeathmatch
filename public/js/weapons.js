@@ -25,7 +25,7 @@ export const WEAPONS = [
   { id: 'lmg', slot: 2, name: 'MACHINE GUN', damage: 13, rate: 0.068, spread: 0.06, clip: 100, ammo: 'lmg', maxAmmo: 300, spawnAmmo: 100, reload: 3.2 },
   { id: 'autoshotgun', slot: 3, name: 'AUTO SHOTGUN', damage: 7, rate: 0.26, spread: 0.11, pellets: 6, clip: 8, ammo: 'buckshot', maxAmmo: 30, spawnAmmo: 8, reload: 2.4 },
   { id: 'railgun', slot: 4, name: 'RAILGUN', damage: 90, rate: 1.4, semi: true, spread: 0, clip: 4, ammo: 'cells', maxAmmo: 12, spawnAmmo: 4, reload: 2.5, pierce: true },
-  { id: 'claws', slot: 0, name: 'CLAWS', melee: true, damage: 40, rate: 0.5, range: 70, clip: -1, ammo: null, zombie: true },
+  { id: 'claws', slot: 0, name: 'FISTS', melee: true, damage: 40, rate: 0.5, range: 70, clip: -1, ammo: null, zombie: true },
 ];
 
 export const WEAPON_INDEX = Object.fromEntries(WEAPONS.map((w, i) => [w.id, i]));

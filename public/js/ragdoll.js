@@ -1,7 +1,8 @@
 // Ragdolls: a verlet skeleton (points joined by fixed-length sticks) that falls and tumbles through the map,
-// drawn in the same suit and with the same head as the live player. Purely visual, so each client simulates its own.
+// drawn as the player's own character: the same model, colours, cosmetics and visor, its body parts placed on
+// the skeleton every frame. Purely visual, so each client simulates its own.
 import * as THREE from 'three';
-import { avatarMaterials, headGroup } from './avatar.js';
+import { Avatar } from './avatar.js';
 
 // joint positions for a standing body facing +X, feet at 0 (game units)
 const JOINTS = {
@@ -21,8 +22,9 @@ const R = 2.5; // collision radius of every joint
 const GRAVITY = 600;
 
 export class Ragdoll {
-  // origin: feet position, yaw in degrees, vel: velocity at death, color: suit colour index, model: character
-  constructor(world, origin, yaw, vel, color, ducked, model = 0) {
+  // origin: feet position, yaw in degrees, vel: velocity at death, color: suit colour index, model: character,
+  // cos: the cosmetics they wore
+  constructor(world, origin, yaw, vel, color, ducked, model = 0, cos = {}) {
     this.world = world;
     this.t = 0;
     const c = Math.cos((yaw * Math.PI) / 180), s = Math.sin((yaw * Math.PI) / 180);
@@ -40,26 +42,20 @@ export class Ragdoll {
     }
     this.links = [...BONES.map(([a, b]) => [a, b]), ...STIFF].map(([a, b]) => [a, b, dist(this.p[a], this.p[b])]);
 
-    // meshes
-    const M = avatarMaterials(color);
-    const suit = M.suit, pad = M.pad;
-    this.mats = Object.values(M);
+    // the character, taken apart: every body part becomes its own piece placed on the skeleton
+    const av = (this.avatar = new Avatar(color, model, cos));
     this.group = new THREE.Group();
-    this.parts = [];
-    for (const [a, b, r] of BONES) {
-      if (!r) continue;
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1, 12), r > 5 ? suit : pad);
-      m.castShadow = true;
-      this.group.add(m);
-      this.parts.push({ m, a, b, r });
+    const [rArm, lArm] = av.arms, [rLeg, lLeg] = av.legs;
+    this.pieces = {
+      hips: av.hips, torso: av.torso, head: av.head,
+      rsh: rArm.sh, rup: rArm.upper, rfore: rArm.fore, lsh: lArm.sh, lup: lArm.upper, lfore: lArm.fore,
+      rthigh: rLeg.hip, rshin: rLeg.knee, rfoot: rLeg.foot, lthigh: lLeg.hip, lshin: lLeg.knee, lfoot: lLeg.foot,
+    };
+    for (const g of Object.values(this.pieces)) {
+      this.group.add(g); // out of the avatar's hierarchy: each piece is placed in the world directly
+      g.matrixAutoUpdate = false;
     }
-    this.head = headGroup(model, M);
-    this.group.add(this.head);
-    this.joints = NAMES.filter((n) => n !== 'head').map((n) => {
-      const m = new THREE.Mesh(new THREE.SphereGeometry(n.includes('hand') || n.includes('foot') ? 2.8 : 3.4, 8, 6), pad);
-      this.group.add(m);
-      return { n, m };
-    });
+    av.hand.visible = false; // no weapon
     this.sync();
   }
 
@@ -105,26 +101,38 @@ export class Ragdoll {
     this.sync();
   }
 
+  // place every body part from the skeleton. Each part's own frame is X forward, Y left, Z up, like the
+  // standing character; limbs hang along their -Z from the joint they pivot on.
   sync() {
-    const up = new THREE.Vector3(0, 1, 0), d = new THREE.Vector3();
-    for (const { m, a, b } of this.parts) {
-      const pa = this.p[a], pb = this.p[b];
-      d.set(pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]);
-      const len = d.length();
-      m.position.set((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2);
-      m.quaternion.setFromUnitVectors(up, d.normalize());
-      m.scale.set(1, len, 1);
-    }
-    for (const { n, m } of this.joints) m.position.set(...this.p[n]);
-    const hp = this.p.head, np = this.p.neck, ch = this.p.chest;
-    // the face looks where the chest faces: perpendicular to the shoulders, away from the spine
-    const left = new THREE.Vector3(this.p.lsh[0] - this.p.rsh[0], this.p.lsh[1] - this.p.rsh[1], this.p.lsh[2] - this.p.rsh[2]);
-    const spine = new THREE.Vector3(hp[0] - ch[0], hp[1] - ch[1], hp[2] - ch[2]).normalize();
-    const face = new THREE.Vector3().crossVectors(left, spine).normalize();
-    left.crossVectors(spine, face);
-    this.head.matrix.makeBasis(face, left, spine).setPosition(np[0], np[1], np[2] - 1);
-    this.head.matrixAutoUpdate = false;
-    this.head.matrixWorldNeedsUpdate = true;
+    const P = (n) => V(this.p[n]);
+    const pelvis = P('pelvis'), neck = P('neck'), lsh = P('lsh'), rsh = P('rsh');
+    const up = neck.clone().sub(pelvis).normalize();
+    const left = orthogonal(lsh.clone().sub(rsh), up);
+    const fwd = new THREE.Vector3().crossVectors(left, up);
+    const torsoAt = lsh.clone().add(rsh).multiplyScalar(0.5).addScaledVector(up, -19);
+    const hipsLeft = orthogonal(P('lhip').sub(P('rhip')), up);
+    place(this.pieces.torso, fwd, left, up, torsoAt);
+    place(this.pieces.hips, new THREE.Vector3().crossVectors(hipsLeft, up), hipsLeft, up, torsoAt.clone().addScaledVector(up, -4));
+    const headUp = P('head').sub(neck).normalize();
+    const headLeft = orthogonal(left.clone(), headUp);
+    place(this.pieces.head, new THREE.Vector3().crossVectors(headLeft, headUp), headLeft, headUp, neck);
+    place(this.pieces.lsh, fwd, left, up, lsh);
+    place(this.pieces.rsh, fwd, left, up, rsh);
+    // a limb from one joint toward the next; the lower part starts `len` along it (arms are kept straight)
+    const limb = (upper, lower, from, to, len) => {
+      const d = to.clone().sub(from).normalize();
+      const z = d.clone().negate();
+      const x = orthogonal(fwd.clone(), z);
+      const y = new THREE.Vector3().crossVectors(z, x);
+      place(upper, x, y, z, from);
+      if (lower) place(lower, x, y, z, from.clone().addScaledVector(d, len));
+    };
+    limb(this.pieces.lup, this.pieces.lfore, lsh, P('lhand'), 12);
+    limb(this.pieces.rup, this.pieces.rfore, rsh, P('rhand'), 12);
+    limb(this.pieces.lthigh, null, P('lhip'), P('lknee'));
+    limb(this.pieces.rthigh, null, P('rhip'), P('rknee'));
+    limb(this.pieces.lshin, this.pieces.lfoot, P('lknee'), P('lfoot'), 15.5);
+    limb(this.pieces.rshin, this.pieces.rfoot, P('rknee'), P('rfoot'), 15.5);
   }
 
   // where a death camera should look
@@ -133,9 +141,21 @@ export class Ragdoll {
   }
 
   dispose() {
-    this.group.traverse((o) => { if (!o.geometry?.userData.keep) o.geometry?.dispose(); });
-    this.mats.forEach((m) => m.dispose());
+    this.group.traverse((o) => { if (o.geometry && !o.geometry.userData.keep) o.geometry.dispose(); });
+    this.avatar.dispose();
   }
+}
+
+const V = (a) => new THREE.Vector3(a[0], a[1], a[2]);
+// v made perpendicular to the unit vector n, then unit length (any perpendicular if they line up)
+function orthogonal(v, n) {
+  v.addScaledVector(n, -v.dot(n));
+  if (v.lengthSq() < 1e-6) { v.set(n.z, n.x, n.y); v.addScaledVector(n, -v.dot(n)); }
+  return v.normalize();
+}
+function place(obj, x, y, z, at) {
+  obj.matrix.makeBasis(x, y, z).setPosition(at);
+  obj.matrixWorldNeedsUpdate = true;
 }
 
 function dist(a, b) {

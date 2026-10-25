@@ -11,6 +11,11 @@ export function setPotato(on) {
   POTATO = !!on;
 }
 export const isPotato = () => POTATO;
+// noise detail for the surface shaders (octaves): fewer is faster. Set from the graphics quality.
+let OCTAVES = 5;
+export function setDetail(octaves) {
+  OCTAVES = octaves;
+}
 
 const NOISE = /* glsl */ `
 #ifndef FBM_OCT
@@ -226,7 +231,7 @@ export function surfaceMaterial(type, opts = {}) {
         vWPos = (modelMatrix * wp4).xyz;
         vWNrm = normalize(mat3(modelMatrix) * objectNormal);`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n${POTATO ? '#define FBM_OCT 3' : ''}\nvarying vec3 vWPos; varying vec3 vWNrm; uniform float uBump;\n${NOISE}\n${PATTERN}\n${PERTURB}`)
+      .replace('#include <common>', `#include <common>\n#define FBM_OCT ${POTATO ? 3 : OCTAVES}\nvarying vec3 vWPos; varying vec3 vWNrm; uniform float uBump;\n${NOISE}\n${PATTERN}\n${PERTURB}`)
       .replace('#include <map_fragment>', `
         float sRough, sWet;
         vec4 sPat = surfacePattern(vWPos, normalize(vWNrm), sRough, sWet);
@@ -240,7 +245,7 @@ export function surfaceMaterial(type, opts = {}) {
           normal = bumpNormal(-vViewPosition, normal, sPat.a, uBump * sFade * (1. - sWet * .8), faceDirection);`);
     }
   };
-  mat.customProgramCacheKey = () => (POTATO ? 'surface-potato' : 'surface');
+  mat.customProgramCacheKey = () => (POTATO ? 'surface-potato' : 'surface' + OCTAVES);
   mat.userData.uniforms = uniforms;
   cache.set(key, mat);
   return mat;

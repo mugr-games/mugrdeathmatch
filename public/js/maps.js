@@ -7,6 +7,8 @@ import { CODE_MAPS } from './mapdefs.js';
 import { surfaceMaterial, neonMaterial } from './shaders.js';
 import { decorate } from './mapdetail.js';
 
+const CHUNK = 1024; // map chunk size for culling
+
 // Each code-built map gets its own palette so they don't all look alike.
 const PALETTES = {
   foundry: { concrete: '#9a958c', plate: '#7d8188', metal: '#6f757d', panel: ['#8a8478', '#6b6458'], hazard: '#e8b400', neon: '#56d8ff' },
@@ -119,19 +121,31 @@ export async function loadMap(id, progress = () => {}) {
 
 function codeMap(id, def) {
   const pal = PALETTES[id] || PALETTES.foundry;
-  const byMat = new Map();
+  // the map in square chunks, one merged mesh per material in each: the renderer skips chunks off screen,
+  // and occlusion culling skips the ones hidden behind walls (each box goes in the chunk of its centre)
+  const chunks = new Map(); // "cx,cy" -> { byMat: Map(mat -> geometries), box: [min xyz, max xyz] }
   for (const b of def.boxes) {
     const g = new THREE.BoxGeometry(b.maxs[0] - b.mins[0], b.maxs[1] - b.mins[1], b.maxs[2] - b.mins[2]);
     g.translate((b.mins[0] + b.maxs[0]) / 2, (b.mins[1] + b.maxs[1]) / 2, (b.mins[2] + b.maxs[2]) / 2);
-    if (!byMat.has(b.mat)) byMat.set(b.mat, []);
-    byMat.get(b.mat).push(g);
+    const key = Math.floor((b.mins[0] + b.maxs[0]) / 2 / CHUNK) + ',' + Math.floor((b.mins[1] + b.maxs[1]) / 2 / CHUNK);
+    let c = chunks.get(key);
+    if (!c) chunks.set(key, (c = { byMat: new Map(), box: [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity] }));
+    if (!c.byMat.has(b.mat)) c.byMat.set(b.mat, []);
+    c.byMat.get(b.mat).push(g);
+    for (let i = 0; i < 3; i++) { c.box[i] = Math.min(c.box[i], b.mins[i]); c.box[i + 3] = Math.max(c.box[i + 3], b.maxs[i]); }
   }
   const group = new THREE.Group();
-  for (const [mat, geos] of byMat) {
-    const mesh = new THREE.Mesh(mergeGeometries(geos), surf(mat, pal));
-    mesh.castShadow = mat !== 'neon';
-    mesh.receiveShadow = true;
-    group.add(mesh);
+  const cells = [];
+  for (const c of chunks.values()) {
+    const objects = [];
+    for (const [mat, geos] of c.byMat) {
+      const mesh = new THREE.Mesh(mergeGeometries(geos), surf(mat, pal));
+      mesh.castShadow = mat !== 'neon';
+      mesh.receiveShadow = true;
+      group.add(mesh);
+      objects.push(mesh);
+    }
+    cells.push({ objects, box: c.box });
   }
   // jump pads: a glowing disc with a faint beam showing which way it throws you
   for (const p of def.pads || []) {
@@ -151,5 +165,5 @@ function codeMap(id, def) {
   }
   const detail = decorate(id, def.boxes, def.bounds, pal);
   group.add(detail.group);
-  return { id, name: def.name, group, boxes: def.boxes, spawns: def.spawns, bounds: def.bounds, sun: (Array.isArray(def.sun) ? def.sun : def.sun?.dir) || [0.3, 0.3, 0.85], pads: def.pads || [], killZ: def.killZ, tick: detail.tick };
+  return { id, name: def.name, group, cells, boxes: def.boxes, spawns: def.spawns, bounds: def.bounds, sun: (Array.isArray(def.sun) ? def.sun : def.sun?.dir) || [0.3, 0.3, 0.85], pads: def.pads || [], killZ: def.killZ, tick: detail.tick };
 }

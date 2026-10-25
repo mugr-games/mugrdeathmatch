@@ -11,7 +11,8 @@ import { WEAPONS, WEAPON_INDEX, ITEMS } from './weapons.js';
 import { initLoadout, weaponThink, spreadDirs, viewDir, unpackOwn, hitTest } from './sim.js';
 import { loadMap } from './maps.js';
 import { stepProj } from './projectiles.js';
-import { makeSky, haloMaterial, setPotato } from './shaders.js';
+import { makeSky, haloMaterial, setPotato, setDetail } from './shaders.js';
+import { Occlusion, setDrawn, seesAny, HIDDEN_LAYER } from './occlusion.js';
 import { loadSlot, instance, WEAPON_SLOT, ITEM_SLOT } from './assets.js';
 import { Synth } from './synth.js';
 import { Hud } from './hud.js';
@@ -21,6 +22,7 @@ import { ZombiesView } from './zview.js';
 import { socketUrl } from './net.js';
 
 const DEG = Math.PI / 180;
+const MUZZLE = new THREE.Vector3();
 // friends, messages, notices and moderation: handled by the page (social.js) whether or not we're in a match
 const SOCIAL = new Set(['friends', 'friend-error', 'dm', 'dms', 'sys', 'mod', 'mod-accounts', 'mod-account', 'banned', 'announce', 'refresh']);
 const INTERP = 0.1; // seconds behind the server for remote players
@@ -31,10 +33,12 @@ const PROP_SIZE = { crate: { half: 20, h: 40 }, barrel: { half: 14, h: 40 } };
 export const QUALITY = {
   // potato: for old phones and laptops. Draws at a third of the pixels with no shadows, post effects or
   // bump mapping, simpler lighting, and keeps fewer bodies and bullet holes around.
-  potato: { pixel: 0.55, dprCap: 1, ao: false, bloom: false, shadow: 0, msaa: 0, potato: true, ragdolls: 3, decals: 25 },
-  low: { pixel: 0.75, ao: false, bloom: false, shadow: 1024, msaa: 0 },
-  medium: { pixel: 1, ao: false, bloom: true, shadow: 2048, msaa: 4 },
-  high: { pixel: 1.5, ao: true, bloom: true, shadow: 4096, msaa: 4 },
+  // dprCap: most screen pixels per CSS pixel; shadowEvery: redraw the sun's shadows every n frames;
+  // octaves: surface shader detail
+  potato: { pixel: 0.55, dprCap: 1, ao: false, bloom: false, shadow: 0, msaa: 0, potato: true, ragdolls: 3, decals: 25, octaves: 3 },
+  low: { pixel: 0.75, dprCap: 1, ao: false, bloom: false, shadow: 1024, msaa: 0, shadowEvery: 3, octaves: 3 },
+  medium: { pixel: 1, dprCap: 1.5, ao: false, bloom: true, shadow: 2048, msaa: 4, shadowEvery: 2, octaves: 4 },
+  high: { pixel: 1.5, dprCap: 2, ao: true, bloom: true, shadow: 4096, msaa: 4, shadowEvery: 1, octaves: 5 },
 };
 
 function angDiff(a, b) {
@@ -129,6 +133,12 @@ class Character {
     this.wslot = null;
   }
 
+  // one-off motions from game events (the built-in characters only)
+  fire() { this.avatar?.fire(); }
+  reload(dur) { this.avatar?.reload(dur); }
+  flinch() { this.avatar?.flinch(); }
+  melee() { this.avatar?.punch(); }
+
   // powerup glow on the suit (null = none)
   setGlow(hex) {
     if (this.glow === hex || !this.avatar) return;
@@ -155,11 +165,15 @@ class Character {
     if (slot === this.wslot) return;
     this.wslot = slot;
     if (this.weapon) { this.mount.remove(this.weapon); this.weapon = null; }
+    // zombies fight with their fists: nothing in their hands
+    if (this.avatar) this.avatar.unarmed = !slot || slot === 'claws';
+    if (!slot || slot === 'claws') return;
     const proto = await loadSlot(slot);
     if (this.wslot !== slot) return;
     this.weapon = instance(proto);
     this.weapon.position.x = 4;
     this.mount.add(this.weapon);
+    if (this.root.userData.drawn === false) this.weapon.traverse((o) => o.layers.set(HIDDEN_LAYER));
   }
 
   // st: { speed, fwdSpeed, sideSpeed, ground, ducked, pitch, alive }
@@ -192,11 +206,17 @@ export class Game {
     this.canvas = canvas;
     this.q = QUALITY[settings.quality] || QUALITY.medium;
     setPotato(this.q.potato);
+    setDetail(this.q.octaves || 5);
+    this.occl = new Occlusion();
+    this.resScale = 1; // adaptive resolution: drops when frames are slow, recovers when they're fast
+    this.frameNo = 0;
+    this.slowT = 0;
     const r = (this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: this.q.potato ? 'low-power' : 'high-performance', stencil: false }));
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 1.0;
     r.shadowMap.enabled = this.q.shadow > 0;
+    r.shadowMap.autoUpdate = false; // redrawn every few frames instead (see frame)
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     this.sound = new Synth();
     this.sound.setVolume(settings.volume);
@@ -214,6 +234,7 @@ export class Game {
     if (this.q.shadow) this.sun.shadow.mapSize.set(this.q.shadow, this.q.shadow);
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 1.2;
+    this.sun.shadow.camera.layers.enable(HIDDEN_LAYER); // things culled from view still cast shadows
     this.scene.add(this.sun, this.sun.target);
     // potato's simple materials don't pick up the sky reflections that light shaded sides, so fill harder
     this.hemi = new THREE.HemisphereLight(0xbfd6ff, 0x5a4a3a, this.q.potato ? 2.6 : 0.55);
@@ -291,7 +312,7 @@ export class Game {
 
   resize() {
     const w = innerWidth, h = innerHeight;
-    const pr = Math.min(window.devicePixelRatio, this.q.dprCap || 2) * this.q.pixel;
+    const pr = Math.min(window.devicePixelRatio, this.q.dprCap || 2) * this.q.pixel * (this.resScale || 1);
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
     this.canvas.style.width = w + 'px';
@@ -317,6 +338,7 @@ export class Game {
     if (this.mapGroup) { this.scene.remove(this.mapGroup); this.mapGroup.traverse((o) => o.geometry?.dispose()); }
     this.mapGroup = map.group;
     this.mapTick = map.tick || null;
+    this.occl.setCells(map.cells || []);
     this.scene.add(map.group);
     this.world = new BoxWorld(map.boxes, map.pads);
     this.killZ = map.killZ;
@@ -612,19 +634,20 @@ export class Game {
         const muzzle = pl?.muzzle || ev.s;
         this.sound.gun(W.id, ev.s, false);
         for (const h of ev.h) { this.tracer(muzzle, h, W.pierce); this.impact(h, h[3], h[4], h[5]); }
-        if (pl) this.worldFlash(muzzle);
+        if (pl) { this.worldFlash(muzzle); pl.obj?.fire(); }
         break;
       }
       case 'melee': {
         const pos = ev.id === me ? null : this.players.get(ev.id)?.pos;
-        if (ev.id !== me) this.sound.swing(pos);
+        if (ev.id !== me) { this.sound.swing(pos); this.players.get(ev.id)?.obj?.melee(); }
         if (ev.hit) this.sound.clang(pos, ev.hit === 2);
         break;
       }
       case 'snd':
-        if (ev.id !== me && ev.k === 'reload') this.sound.reload(WEAPONS[ev.w].id, this.players.get(ev.id)?.pos, WEAPONS[ev.w].reload);
+        if (ev.id !== me && ev.k === 'reload') { this.sound.reload(WEAPONS[ev.w].id, this.players.get(ev.id)?.pos, WEAPONS[ev.w].reload); this.players.get(ev.id)?.obj?.reload(WEAPONS[ev.w].reload); }
         break;
       case 'hurt': {
+        if (ev.id !== me) this.players.get(ev.id)?.obj?.flinch();
         if (ev.id === me) {
           this.sound.hurt(null, true);
           if (ev.a && ev.dir) this.hud.damage(-angDiff(this.yaw, Math.atan2(-ev.dir[1], -ev.dir[0]) / DEG));
@@ -741,16 +764,22 @@ export class Game {
       const yr = yaw * DEG;
       pl.obj.animate(dt, {
         speed, fwdSpeed: vel[0] * Math.cos(yr) + vel[1] * Math.sin(yr), sideSpeed: vel[0] * Math.sin(yr) - vel[1] * Math.cos(yr),
-        ground: !!(flags & 2), ducked: !!(flags & 1), pitch, alive,
+        ground: !!(flags & 2), ducked: !!(flags & 1), pitch, alive, vz: vel[2],
       });
-      const m = new THREE.Matrix4().makeRotationZ(yr).setPosition(o[0], o[1], o[2]);
-      pl.obj.root.matrix.copy(m);
+      pl.obj.root.matrix.makeRotationZ(yr).setPosition(o[0], o[1], o[2]);
       pl.obj.root.matrixWorldNeedsUpdate = true;
       pl.obj.root.visible = alive; // dead bodies are ragdolls
       pl.obj.setGlow(flags & 64 ? 0xff2a2a : flags & 16 ? 0x9a3cff : flags & 32 ? 0xffc23a : null);
       if (pl.obj.weapon) pl.obj.weapon.visible = alive;
       pl.obj.root.updateMatrixWorld(true);
-      pl.muzzle = new THREE.Vector3(20, 0, 2).applyMatrix4(pl.obj.mount.matrixWorld).toArray();
+      pl.muzzle = MUZZLE.set(20, 0, 2).applyMatrix4(pl.obj.mount.matrixWorld).toArray();
+      // occlusion: can we see their head or chest? (close by always counts)
+      if (alive && this.eyePos) {
+        const e = this.eyePos;
+        const near = Math.hypot(o[0] - e[0], o[1] - e[1]) < 220;
+        if (near || !this.occl.enabled || seesAny(this.world, e, [[o[0], o[1], o[2] + 64], [o[0], o[1], o[2] + 40]], null)) pl.seenAt = now;
+        setDrawn(pl.obj.root, now - (pl.seenAt || 0) < 0.3);
+      }
     }
   }
 
@@ -819,7 +848,8 @@ export class Game {
   // ---------------------------------------------------------------- ragdolls
   spawnRagdoll(id, origin, yaw, vel, ducked, color) {
     const info = this.info.get(id);
-    const doll = new Ragdoll(this.world, origin, yaw || 0, vel, color ?? this.colorFor(info), !!ducked, color === undefined ? this.modelFor(info) : 0);
+    const zombie = color !== undefined || info?.team === 'zombie';
+    const doll = new Ragdoll(this.world, origin, yaw || 0, vel, color ?? this.colorFor(info), !!ducked, zombie ? 0 : this.modelFor(info), zombie ? {} : info?.cos || {});
     this.scene.add(doll.group);
     this.ragdolls.push({ id, doll, born: performance.now() / 1000 });
     while (this.ragdolls.length > (this.q.ragdolls || 10)) this.removeRagdoll(this.ragdolls[0]);
@@ -840,6 +870,11 @@ export class Game {
     const now = performance.now() / 1000;
     for (const r of [...this.ragdolls]) {
       r.doll.step(Math.min(dt, 1 / 30));
+      if (this.eyePos) {
+        const c = r.doll.center();
+        if (!this.occl.enabled || seesAny(this.world, this.eyePos, [[c[0], c[1], c[2] + 4]], null)) r.seenAt = now;
+        setDrawn(r.doll.group, now - (r.seenAt || 0) < 0.3);
+      }
       // bodies stay a while, then sink away
       const age = now - r.born;
       if (age > 12) r.doll.group.position.z -= dt * 20;
@@ -1528,6 +1563,8 @@ export class Game {
     this.sound.listener(eye, viewDir(yaw, pitch), [0, 0, 1]);
     this.sky.position.set(eye[0], eye[1], eye[2]);
     this.sky.userData.uniforms.uTime.value = t;
+    this.eyePos = eye;
+    this.occl.update(this.world, this.camera, eye, now, 10);
     this.mapTick?.(t);
 
     this.updatePlayers(dt);
@@ -1556,6 +1593,8 @@ export class Game {
     this.hud.update(ps);
     if (this.timeLeft !== undefined && this.connected) this.hud.setTimer(this.timeLeft, this.limitLabel());
     if (!this.intermission) this.hud.scoreboard(this.keys.has('Tab') || !!this.touch?.scores || !!this.pad?.scores, this.info.values(), this.myId, this.mapName, this.scoreTeams(), this.scoreExtra());
+    if (this.renderer.shadowMap.enabled && this.frameNo++ % (this.q.shadowEvery || 1) === 0) this.renderer.shadowMap.needsUpdate = true;
+    this.adaptResolution(dt);
     if (this.composer) this.composer.render(dt);
     else {
       // potato: the world, then the weapon in hand over it
@@ -1566,6 +1605,18 @@ export class Game {
       r.clearDepth();
       r.render(this.vmScene, this.vmCamera);
     }
+  }
+
+  // keep the frame rate up: if frames stay slow, draw fewer pixels; when there's headroom again, go back up
+  adaptResolution(dt) {
+    this.dtAvg = this.dtAvg === undefined ? dt : this.dtAvg + (dt - this.dtAvg) * 0.05;
+    this.slowT += dt;
+    if (this.slowT < 1.5 || document.hidden) return;
+    this.slowT = 0;
+    const prev = this.resScale;
+    if (this.dtAvg > 1 / 42 && this.resScale > 0.55) this.resScale = Math.max(0.55, this.resScale * 0.88);
+    else if (this.dtAvg < 1 / 70 && this.resScale < 1) this.resScale = Math.min(1, this.resScale * 1.08);
+    if (this.resScale !== prev) this.resize();
   }
 
   setCamera(eye, yaw, pitch, roll = 0) {

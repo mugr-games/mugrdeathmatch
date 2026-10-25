@@ -50,7 +50,8 @@ function at(g, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz =
 }
 
 // ------------------------------------------------------------------ the characters
-// add(part, material, geometry). Parts: hips, torso, head, sh0/1 (shoulder), up0/1, fore0/1, thigh0/1, shin0/1.
+// add(part, material, geometry). Parts: hips, torso, head, sh0/1 (shoulder), up0/1, fore0/1, thigh0/1, shin0/1,
+// foot0/1 (from the ankle).
 // Index 0 is the right side (-Y), 1 the left (+Y). Materials: suit, pad, armor, dark, metal, visor, lamp.
 const CHEST = [[0, 0], [6.3, 0], [7, 3], [8.4, 9], [9.4, 15], [9.2, 18.5], [7, 21.5], [3.5, 23], [0, 23]];
 
@@ -72,8 +73,8 @@ function limbs(add, o = {}) {
     add('shin' + i, 'pad', sph(3.5, 12, 8));
     add('shin' + i, 'suit', at(cyl(3.3, 2.7, 12), 0, 0, -7.5));
     add('shin' + i, 'dark', at(cyl(3.4, 3.5, 5), 0.3, 0, -13.8)); // boot cuff
-    add('shin' + i, 'dark', at(rbox(10, 6, 4.6, 1.8), 2.6, 0, -16.6)); // boot
-    add('shin' + i, 'armor', at(rbox(10.6, 6.5, 1.5, 0.6), 2.7, 0, -18.9)); // sole
+    add('foot' + i, 'dark', at(rbox(10, 6, 4.6, 1.8), 2.6, 0, -1.1)); // boot, from the ankle (15.5 below the knee)
+    add('foot' + i, 'armor', at(rbox(10.6, 6.5, 1.5, 0.6), 2.7, 0, -3.4)); // sole
   }
 }
 
@@ -490,11 +491,24 @@ export class Avatar {
       this.hips.add(hip);
       const knee = G('shin' + i, 0, 0, -18);
       hip.add(knee);
-      this.legs.push({ hip, knee, s });
+      const foot = G('foot' + i, 0, 0, -15.5);
+      knee.add(foot);
+      this.legs.push({ hip, knee, foot, s });
     }
     this.phase = 0;
     this.hipHeight = 38;
     this.breath = Math.random() * 6;
+    // one-off motions, each a timer counting down: recoil, reload, flinch, landing, zombie punch
+    this.kick = 0;
+    this.reloadT = 0;
+    this.reloadDur = 1;
+    this.flinchT = 0;
+    this.landT = 0;
+    this.punchT = 0;
+    this.punchArm = 1;
+    this.wasGround = true;
+    this.twitchAt = 2 + Math.random() * 3;
+    this.twitch = 0;
     this.zombie = colorIndex === ZOMBIE_SKIN;
     if (this.zombie) buildZombie(this);
     else this.wear(cos);
@@ -511,46 +525,89 @@ export class Avatar {
     else if (glow) this.matSet.visor.emissive.set(glow);
   }
 
-  // state: { speed, fwdSpeed, sideSpeed, ground, ducked, pitch (deg, + = down), alive }
+  // ---------------------------------------------------------------- one-off motions (from game events)
+  fire() { this.kick = 1; }
+  reload(dur = 1.4) { this.reloadT = this.reloadDur = Math.max(0.4, dur); }
+  flinch() { this.flinchT = 0.28; }
+  // zombies (and fists): a punch with the other arm each time
+  punch() { this.punchT = 0.45; this.punchArm = -this.punchArm; }
+
+  // state: { speed, fwdSpeed, sideSpeed, ground, ducked, pitch (deg, + = down), alive, vz }
   animate(dt, st) {
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const run = Math.min(1, st.speed / 280);
     const moving = st.ground && st.speed > 10;
-    if (moving) this.phase += dt * (st.speed / (st.ducked ? 18 : 26));
+    // which way we're going relative to facing: forward/back and right/left, each -1..1
+    const dirF = moving ? clamp(st.fwdSpeed / Math.max(1, st.speed), -1, 1) : 0;
+    const dirS = moving ? clamp(st.sideSpeed / Math.max(1, st.speed), -1, 1) : 0;
+    if (moving) this.phase += dt * (st.speed / (st.ducked ? 17 : 24));
     this.breath += dt * 1.6;
-    const swing = moving ? (0.35 + 0.35 * run) * (st.ducked ? 0.6 : 1) : 0;
-    const back = st.fwdSpeed < -10 ? -1 : 1;
+    for (const k of ['reloadT', 'flinchT', 'landT', 'punchT']) this[k] = Math.max(0, this[k] - dt);
+    this.kick *= Math.exp(-dt * 14);
+    if (st.ground && !this.wasGround) this.landT = 0.25; // just landed: a squash
+    this.wasGround = st.ground;
+
+    // ---- hips: height, the double dip of each step, side to side weight shift, a twist with the stride
     const targetHip = st.ducked ? 22 : 38;
     this.hipHeight += (targetHip - this.hipHeight) * Math.min(1, dt * 12);
-    const bounce = moving ? Math.abs(Math.sin(this.phase)) * (1 + run * 2) : Math.sin(this.breath) * 0.25;
-    this.hips.position.z = this.hipHeight + bounce;
+    const step = Math.sin(this.phase);
+    const dip = moving ? (1 - Math.abs(Math.cos(this.phase))) * (0.8 + run * 2.6) : 0;
+    const squash = Math.sin((this.landT / 0.25) * Math.PI) * 5;
+    this.hips.position.z = this.hipHeight + dip - squash + (moving ? 0 : Math.sin(this.breath) * 0.2);
+    this.hips.position.y = moving ? step * (1.2 - run * 0.6) * Math.abs(dirF) : Math.sin(this.breath * 0.31) * 0.7; // weight shift
+    this.hips.rotation.x = moving ? step * 0.06 : Math.sin(this.breath * 0.31) * 0.03;
+    this.hips.rotation.z = moving ? step * (0.1 + run * 0.08) * dirF : 0;
 
+    // ---- legs: swing the way we're moving (forward, back or sideways), knees lift on the way through,
+    // feet stay flat on the ground and roll off the toes
+    const swing = moving ? (0.32 + 0.38 * run) * (st.ducked ? 0.65 : 1) : 0;
     for (const L of this.legs) {
       const p = this.phase + (L.s > 0 ? Math.PI : 0);
-      let thigh = Math.sin(p) * swing * back;
-      let knee = moving ? Math.max(0, -Math.cos(p)) * (0.5 + run * 0.6) : 0.05;
-      if (st.ducked) { thigh -= 1.0; knee += 1.6; }
-      if (!st.ground) { thigh = -0.7 + L.s * 0.15; knee = 1.1; }
-      // rotation about Y in this Z-up, X-forward frame: negative swings the foot forward
-      L.hip.rotation.y = thigh;
+      const sp = Math.sin(p);
+      let thighY = -sp * swing * dirF;
+      let thighX = -sp * swing * dirS * 0.75 + (moving ? 0 : L.s * 0.05);
+      let knee = moving ? 0.1 + Math.max(0, -Math.cos(p)) * (0.55 + run * 0.9) : 0.06 + (L.s > 0 ? Math.max(0, Math.sin(this.breath * 0.31)) * 0.12 : 0);
+      if (st.ducked) { thighY -= 1.05; knee += 1.65; }
+      if (!st.ground) {
+        // rising: legs tucked; falling: reaching down for the landing
+        const falling = (st.vz ?? 0) < -100;
+        thighY = falling ? -0.35 + L.s * 0.1 : -0.85 + L.s * 0.2;
+        knee = falling ? 0.45 : 1.25;
+        thighX = L.s * 0.06;
+      }
+      knee += squash * 0.12;
+      thighY -= squash * 0.06;
+      L.hip.rotation.y = thighY;
+      L.hip.rotation.x = thighX;
       L.knee.rotation.y = knee;
-      // sidestep: splay legs a little
-      L.hip.rotation.x = moving ? Math.sin(p) * Math.max(-0.25, Math.min(0.25, st.sideSpeed / 600)) : L.s * 0.04;
+      const toeOff = moving ? Math.max(0, sp * Math.sign(dirF || 1)) * 0.35 * (0.4 + run) : 0;
+      L.foot.rotation.y = -(thighY + knee) + (st.ground ? -toeOff : 0.35);
+      L.foot.rotation.x = -thighX;
     }
 
-    const aim = Math.max(-1.2, Math.min(1.2, (st.pitch * Math.PI) / 180));
-    this.torso.rotation.y = aim * 0.55 + (moving ? 0.08 * run : Math.sin(this.breath) * 0.01) + (st.ducked ? 0.25 : 0);
-    this.head.rotation.y = aim * 0.45;
-    // the upper body counter-twists against the stride
-    this.torso.rotation.z = moving ? Math.sin(this.phase) * (0.05 + 0.04 * run) : 0;
-    this.head.rotation.z = -this.torso.rotation.z * 0.7;
+    // ---- upper body: lean into the run, counter-twist against the hips, aim up and down
+    const aim = clamp((st.pitch * Math.PI) / 180, -1.2, 1.2);
+    const r = this.reloadT > 0 ? Math.sin((1 - this.reloadT / this.reloadDur) * Math.PI) : 0;
+    const fl = Math.sin((this.flinchT / 0.28) * Math.PI);
+    this.torso.rotation.y = aim * 0.55 + run * dirF * 0.22 + (st.ducked ? 0.25 : 0) + Math.sin(this.breath) * 0.015 - this.kick * 0.06 + r * 0.12 - fl * 0.25;
+    this.torso.rotation.x = -dirS * run * 0.14 + (moving ? -step * 0.03 : 0);
+    this.torso.rotation.z = -this.hips.rotation.z * 2.1;
+    this.head.rotation.y = aim * 0.45 - this.torso.rotation.y * 0.25 + fl * 0.3;
+    this.head.rotation.z = -this.torso.rotation.z * 0.4;
+    this.head.rotation.x = -this.torso.rotation.x * 0.5;
+
+    // ---- arms: hold the weapon at the chest, bob with the run, kick when firing, dip for a reload
     for (const A of this.arms) {
-      // both arms hold the weapon forward at chest height
-      A.upper.rotation.y = -1.25;
-      A.upper.rotation.x = A.s > 0 ? -0.35 : 0.5;
-      A.fore.rotation.y = -0.55;
+      const lead = A.s > 0; // the left hand supports the barrel and does the reloading
+      A.upper.rotation.y = -1.25 + this.kick * 0.35 + (moving ? Math.sin(this.phase * 2) * 0.05 * run : 0) + (lead ? r * 0.95 : r * 0.15);
+      A.upper.rotation.x = (lead ? -0.35 : 0.5) + (lead ? r * 0.3 : 0);
+      A.fore.rotation.y = -0.55 - this.kick * 0.15 - (lead ? r * 0.7 : 0);
+      if (!st.ground && !this.zombie) A.upper.rotation.y -= 0.12; // arms come up a little in the air
     }
+    // fists (no weapon): a guard, and punches
+    if (this.unarmed && !this.zombie) this.fists(st, moving, run);
 
-    if (this.zombie) this.shamble(dt, st, moving, run);
+    if (this.zombie) this.shamble(dt, st, moving, run, dirF);
 
     const C = this.cos || {};
     if (C.cape) C.cape.rotation.y = 0.12 + run * 0.75 + (moving ? Math.sin(this.phase * 2) * 0.05 : Math.sin(this.breath) * 0.02) + (st.ground ? 0 : 0.5);
@@ -561,32 +618,69 @@ export class Avatar {
     if (C.rainbow) this.matSet.visor.emissive.setHSL((this.breath * 0.08) % 1, 1, 0.55);
   }
 
-  // zombies: hunched over, head lolling, arms reaching out (swiping when attacking), dragging one leg
-  shamble(dt, st, moving, run) {
-    const t = this.breath;
-    const attacking = st.pitch < -20;
-    this.torso.rotation.y += 0.42;
-    this.torso.rotation.x = Math.sin(t * 0.9) * 0.08 + (moving ? Math.sin(this.phase) * 0.12 : 0);
-    this.head.rotation.y = -0.35 + Math.sin(t * 0.7) * 0.12;
-    this.head.rotation.x = 0.28 + Math.sin(t * 0.55) * 0.18;
+  // a punch for one arm: wind back, snap out straight, recover. k is 0..1 through the punch.
+  punchPose(A, k) {
+    const wind = Math.min(1, k / 0.3), strike = k < 0.3 ? 0 : Math.sin(Math.min(1, (k - 0.3) / 0.35) * Math.PI * 0.5) * (k < 0.75 ? 1 : 1 - (k - 0.75) / 0.25);
+    A.upper.rotation.y = -0.95 - strike * 0.75 + wind * 0.1;
+    A.upper.rotation.x = A.s * (0.25 - strike * 0.3);
+    A.fore.rotation.y = -1.7 * (1 - strike) + wind * 0.1;
+    return strike;
+  }
+
+  // bare fists: a raised guard, alternating punches (melee with no weapon)
+  fists(st, moving, run) {
     for (const A of this.arms) {
-      const sway = Math.sin(t * 1.7 + A.s) * 0.1;
-      if (attacking) {
-        const k = Math.sin(t * 9 + A.s * 1.5);
-        A.upper.rotation.y = -1.9 + k * 0.6;
-        A.upper.rotation.x = A.s * (0.2 + k * 0.25);
-        A.fore.rotation.y = -0.6;
-      } else {
-        A.upper.rotation.y = -1.45 + sway;
-        A.upper.rotation.x = A.s * -0.12;
-        A.fore.rotation.y = -0.12 + sway * 0.5;
-      }
+      A.upper.rotation.y = -0.95 + (moving ? Math.sin(this.phase * 2 + A.s) * 0.06 * run : 0);
+      A.upper.rotation.x = A.s * 0.25;
+      A.fore.rotation.y = -1.7;
     }
-    // the right leg drags: shorter swing, toes scraping
+    if (this.punchT > 0) {
+      const A = this.arms[this.punchArm > 0 ? 1 : 0];
+      const strike = this.punchPose(A, 1 - this.punchT / 0.45);
+      this.torso.rotation.z += this.punchArm * strike * 0.3;
+    }
+  }
+
+  // zombies: hunched, head lolling and twitching, a lurching limp dragging the right leg. Walkers reach out
+  // with both arms; runners pump them. They attack with punches.
+  shamble(dt, st, moving, run, dirF) {
+    const t = this.breath;
+    // a sudden twitch of the head every few seconds
+    this.twitchAt -= dt;
+    if (this.twitchAt <= 0) { this.twitch = 1; this.twitchAt = 2 + Math.random() * 4; }
+    this.twitch *= Math.exp(-dt * 9);
+    const lurch = moving ? Math.max(0, Math.sin(this.phase)) : 0;
+    this.torso.rotation.y += 0.4 + run * 0.3;
+    this.torso.rotation.x = Math.sin(t * 0.9) * 0.07 + (moving ? Math.sin(this.phase) * (0.14 - run * 0.06) : 0);
+    this.head.rotation.y = -0.3 + Math.sin(t * 0.7) * 0.12 - run * 0.2;
+    this.head.rotation.x = 0.3 + Math.sin(t * 0.55) * 0.18 + this.twitch * 0.5;
+    this.head.rotation.z = Math.sin(t * 0.4) * 0.15 - this.twitch * 0.3;
+    this.hips.position.z -= lurch * 1.6 * (0.6 + run);
+    // the right leg drags: a short swing, the toes scraping
     const R = this.legs[0];
     R.hip.rotation.y *= 0.45;
     R.knee.rotation.y = R.knee.rotation.y * 0.4 + 0.12;
-    if (moving) this.hips.position.z -= Math.max(0, Math.sin(this.phase)) * 1.5 * (0.5 + run);
+    R.foot.rotation.y += 0.35;
+    for (const A of this.arms) {
+      const sway = Math.sin(t * 1.7 + A.s) * 0.1;
+      if (run > 0.6 && moving) {
+        // running: arms pumping, out of step with the legs
+        const pump = Math.sin(this.phase + (A.s > 0 ? 0 : Math.PI));
+        A.upper.rotation.y = -0.9 + pump * 0.75;
+        A.upper.rotation.x = A.s * 0.2;
+        A.fore.rotation.y = -1.1 - Math.max(0, pump) * 0.4;
+      } else {
+        A.upper.rotation.y = -1.45 + sway - lurch * 0.08;
+        A.upper.rotation.x = A.s * -0.12 + sway * 0.4;
+        A.fore.rotation.y = -0.12 + sway * 0.5;
+      }
+    }
+    if (this.punchT > 0) {
+      const A = this.arms[this.punchArm > 0 ? 1 : 0];
+      const strike = this.punchPose(A, 1 - this.punchT / 0.45);
+      this.torso.rotation.z += this.punchArm * strike * 0.4;
+      this.torso.rotation.y += strike * 0.15;
+    }
   }
 
   dispose() {

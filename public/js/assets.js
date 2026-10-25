@@ -223,14 +223,29 @@ function optic(g, x, z, len, r, steel, glass) {
 }
 
 const BUILD = {
+  // a wrecking bar: a hex-section steel bar painted red, a gooseneck hook with a split nail-pulling claw at one
+  // end, a bent flat chisel at the other, bare steel showing where it's worn
   crowbar(g) {
-    const red = M.paint(0xa8261d), steel = M.steel();
-    const path = new THREE.CurvePath();
-    path.add(new THREE.LineCurve3(new THREE.Vector3(-14, 0, 0), new THREE.Vector3(11, 0, 0)));
-    path.add(new THREE.QuadraticBezierCurve3(new THREE.Vector3(11, 0, 0), new THREE.Vector3(16, 0, 0), new THREE.Vector3(15.5, 0, 4)));
-    path.add(new THREE.QuadraticBezierCurve3(new THREE.Vector3(15.5, 0, 4), new THREE.Vector3(15, 0, 6.5), new THREE.Vector3(12.5, 0, 5.5)));
-    g.add(part(new THREE.TubeGeometry(path, 40, 0.75, 8), red));
-    g.add(part(new THREE.ConeGeometry(0.8, 2.5, 8).rotateZ(Math.PI / 2), steel, -15.2, 0, 0.2, 0, 0, 0.15));
+    const red = M.paint(0xb3261e), steel = M.steel(), dark = M.dark();
+    const hex = (len) => new THREE.CylinderGeometry(0.82, 0.82, len, 6).rotateZ(Math.PI / 2);
+    // a flat wedge pointing along -X from x = 0: `base` tall where it joins, `tip` at the end, `width` across
+    const wedge = (len, base, tip, width) => {
+      const shape = new THREE.Shape([new THREE.Vector2(0, -base / 2), new THREE.Vector2(-len, -tip / 2), new THREE.Vector2(-len, tip / 2), new THREE.Vector2(0, base / 2)]);
+      return new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false }).translate(0, 0, -width / 2).rotateX(Math.PI / 2);
+    };
+    g.add(part(hex(22), red, -1, 0, 0)); // the shaft
+    // the gooseneck: up and curling back over the shaft
+    const neck = new THREE.CurvePath();
+    neck.add(new THREE.QuadraticBezierCurve3(new THREE.Vector3(9.9, 0, 0), new THREE.Vector3(15.6, 0, 0), new THREE.Vector3(15.6, 0, 4.4)));
+    neck.add(new THREE.QuadraticBezierCurve3(new THREE.Vector3(15.6, 0, 4.4), new THREE.Vector3(15.6, 0, 7.9), new THREE.Vector3(12.2, 0, 7.6)));
+    g.add(part(new THREE.TubeGeometry(neck, 36, 0.82, 6), red));
+    g.add(part(new THREE.CylinderGeometry(0.84, 0.84, 1.1, 6).rotateZ(Math.PI / 2), steel, 12.4, 0, 7.62, 0, 0.05, 0)); // worn paint
+    // the claw: two flat prongs split by a notch, angled back down toward the shaft
+    for (const y of [-0.48, 0.48]) g.add(part(wedge(3.6, 1.5, 0.25, 0.78), steel, 12, y, 7.5, 0, -0.5, 0));
+    // the other end: a short bend, then a flat chisel wider than the bar
+    g.add(part(hex(3), red, -13.4, 0, 0.2, 0, 0.16, 0));
+    g.add(part(wedge(3.4, 1.55, 0.22, 1.9), steel, -14.7, 0, 0.42, 0, 0.16, 0));
+    g.add(part(new THREE.CylinderGeometry(0.86, 0.86, 3.2, 6).rotateZ(Math.PI / 2), dark, -4.5, 0, 0)); // grip wear: darker steel where it's held
   },
   pistol(g) {
     const poly = M.polymer(), steel = M.dark();
@@ -405,15 +420,20 @@ const BUILD = {
     triggerGuard(g, -1, -1.3, steel);
     g.add(part(rbox(9, 2.8, 4.4, 0.8), body, -12, 0, 0.4)); // stock
   },
+  // a zombie's fist (they punch; no claws): grey-green rotting skin, a torn sleeve, split knuckles
   claws(g) {
-    const skin = M.paint(0x5c7a44), nail = new THREE.MeshStandardMaterial({ color: 0xd8d2b8, roughness: 0.4 });
-    g.add(part(rbox(12, 5, 4.5, 1.6), skin, -4, 0, 0)); // forearm
-    g.add(part(rbox(6, 6.5, 3.5, 1.4), skin, 4, 0, 0.3)); // hand
-    for (let i = 0; i < 4; i++) {
-      const y = -2.4 + i * 1.6;
-      g.add(part(rbox(4, 1.2, 1.2, 0.4), skin, 8.4, y, 0.6 - Math.abs(y) * 0.2, 0, 0.2, 0)); // fingers
-      g.add(part(new THREE.ConeGeometry(0.5, 4, 6).rotateZ(-Math.PI / 2), nail, 12, y, 0.2 - Math.abs(y) * 0.2, 0, 0.45, 0)); // claws
-    }
+    const skin = new THREE.MeshStandardMaterial({ color: 0x6b7a5a, roughness: 0.85 });
+    const rag = new THREE.MeshStandardMaterial({ color: 0x3a4232, roughness: 0.95 });
+    const blood = new THREE.MeshStandardMaterial({ color: 0x3a0806, roughness: 0.3 });
+    const bone = new THREE.MeshStandardMaterial({ color: 0xcfc6a8, roughness: 0.5 });
+    g.add(part(rbox(12, 4.6, 4.2, 1.6), skin, -5, 0, 0)); // forearm
+    g.add(part(rbox(4, 5.4, 5, 1), rag, -10, 0, 0.1)); // torn sleeve
+    for (const [x, y] of [[-12.3, 1.8], [-12.6, -1.2]]) g.add(part(rbox(2, 1.2, 1.2, 0.3), rag, x, y, -2.2, 0.3, 0, 0)); // rag strips
+    g.add(part(rbox(5.6, 6, 4.8, 1.6), skin, 3.2, 0, 0.2)); // fist
+    for (let i = 0; i < 4; i++) g.add(part(new THREE.SphereGeometry(0.95, 8, 6), i === 1 ? bone : skin, 6, -2.1 + i * 1.4, 1.4)); // knuckles
+    g.add(part(rbox(2.4, 1.6, 1.6, 0.6), skin, 3.6, 2.9, -0.6, 0, 0, -0.4)); // thumb
+    g.add(part(rbox(3, 2.4, 0.4, 0.15), blood, 1, -0.8, 2.25)); // blood on the back of the hand
+    g.add(part(rbox(5, 0.4, 2.6, 0.15), blood, -4, 2.32, 0.3)); // and down the arm
   },
   megahealth(g) {
     const glow = new THREE.MeshStandardMaterial({ color: 0x0a2a14, emissive: new THREE.Color(0.2, 1.4, 0.5), emissiveIntensity: 1.6, roughness: 0.3 });
