@@ -24,7 +24,7 @@
 <meta name="game-server" content="">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap">
 <style>
 :root {
   --hud: rgb(255, 220, 0);
@@ -457,6 +457,114 @@ body.touch #netinfo { display: none; }
 .devlog h3 { margin: 0 0 4px; font: bold 13px var(--ui); color: #fff; }
 .devlog h3 small { color: var(--text-dim); font-weight: normal; margin-left: 8px; }
 .devlog ul { margin: 0; padding-left: 18px; color: var(--text-dim); line-height: 1.5; }
+/* ================================================================== the new look
+   Dark glass panels, an amber accent, Inter for text and Chakra Petch for numbers. These rules come after the
+   older ones above and override them. */
+:root {
+  --ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --glass: rgba(14, 17, 22, 0.72);
+  --glass-hi: rgba(26, 30, 38, 0.82);
+  --line: rgba(255, 255, 255, 0.09);
+  --line-hi: rgba(255, 176, 0, 0.55);
+  --text: #e9edf2;
+  --text-dim: #9aa3ae;
+  --accent: #ffb000;
+  --accent-2: #ff8a00;
+  --panel: rgba(16, 19, 24, 0.9);
+  --panel-dark: rgba(8, 10, 13, 0.85);
+  --hud: #ffffff;
+  --hud-dim: rgba(255, 255, 255, 0.62);
+  --hud-bg: rgba(10, 12, 16, 0.55);
+}
+html, body { font: 14px/1.45 var(--ui); }
+
+/* ---- menu */
+#menu { justify-content: space-between; align-items: stretch; flex-direction: row; padding: 0; background: linear-gradient(90deg, rgba(6,8,11,.9) 0, rgba(6,8,11,.62) 420px, rgba(6,8,11,0) 65%); }
+.menu-side { width: min(420px, 100vw); padding: 5vh 30px 3vh; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+#menu h1 { margin: 0; }
+#menu h1 img { height: clamp(64px, 12vh, 124px); margin-left: -4px; }
+#menu .sub { margin: -8px 0 4px; font: 600 11px var(--ui); letter-spacing: .28em; color: var(--text-dim); }
+.player-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; background: var(--glass); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(12px); }
+#menu .account { margin: 0; font-size: 13px; color: var(--text-dim); text-shadow: none; display: flex; flex-direction: column; }
+#menu .account #acct-name { font: 700 15px var(--ui); color: #fff; }
+#menu .account button { padding: 0; font: 500 12px var(--ui); color: var(--accent); text-decoration: none; text-align: left; }
+#menu .account button:hover { text-decoration: underline; }
+#menu .coins { margin: 0; font: 700 16px var(--num); color: #ffd36a; display: flex; align-items: center; gap: 6px; }
+#menu .coins::before { content: ""; width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff2b0, #ffb000 55%, #b86e00); box-shadow: 0 0 8px rgba(255,176,0,.5); }
+#menu nav { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: stretch; }
+#menu nav button { display: flex; align-items: center; gap: 10px; padding: 11px 13px; background: var(--glass); border: 1px solid var(--line); border-radius: 10px; font: 600 14px var(--ui); color: var(--text); text-transform: none; letter-spacing: .01em; text-shadow: none; text-align: left; backdrop-filter: blur(12px); transition: background .15s, border-color .15s, transform .12s; }
+#menu nav button:hover, #menu nav button:focus-visible { background: var(--glass-hi); border-color: var(--line-hi); color: #fff; transform: translateY(-1px); text-shadow: none; }
+#menu nav button:disabled { opacity: .45; transform: none; }
+#menu nav button svg { width: 18px; height: 18px; flex: none; stroke: var(--accent); }
+#menu nav button small { display: block; font: 500 11px var(--ui); color: var(--text-dim); }
+#menu nav button.big { grid-column: 1 / -1; justify-content: center; padding: 15px; font: 700 20px var(--num); letter-spacing: .14em; text-transform: uppercase; color: #1d1404; background: linear-gradient(135deg, var(--accent), var(--accent-2)); border: 0; box-shadow: 0 10px 30px rgba(255, 140, 0, .25); }
+#menu nav button.big svg { stroke: #1d1404; fill: #1d1404; }
+#menu nav button.big:hover { background: linear-gradient(135deg, #ffc23a, #ff9a1a); color: #1d1404; }
+/* in a match, Resume is the big button and Play becomes "find another game" */
+#menu nav:has(#btn-resume:not([hidden])) #btn-join { grid-column: auto; justify-content: flex-start; padding: 11px 13px; font: 600 14px var(--ui); letter-spacing: .01em; text-transform: none; color: var(--text); background: var(--glass); border: 1px solid var(--line); box-shadow: none; }
+#menu nav:has(#btn-resume:not([hidden])) #btn-join svg { stroke: var(--accent); fill: none; }
+#menu nav button.feature { grid-column: 1 / -1; background: linear-gradient(135deg, rgba(40,30,12,.85), rgba(14,17,22,.75)); border-color: rgba(255,176,0,.3); }
+#menu nav .badge { margin-left: auto; }
+#menu .status { margin-top: 2px; }
+.menu-news { align-self: flex-end; width: 330px; margin: 0 28px 4vh 0; padding: 16px 18px; background: var(--glass); border: 1px solid var(--line); border-radius: 14px; backdrop-filter: blur(12px); }
+.menu-news:empty { display: none; }
+.menu-news .tag { font: 700 10px var(--ui); letter-spacing: .2em; color: var(--accent); }
+.menu-news h3 { margin: 4px 0 8px; font: 700 15px var(--ui); color: #fff; }
+.menu-news ul { margin: 0 0 10px; padding-left: 18px; color: var(--text-dim); font-size: 12.5px; }
+.menu-news li { margin-bottom: 4px; }
+.menu-news button { background: none; border: 0; padding: 0; color: var(--accent); font: 600 12px var(--ui); cursor: pointer; }
+@media (max-width: 900px) { .menu-news { display: none; } #menu { background: linear-gradient(90deg, rgba(6,8,11,.9), rgba(6,8,11,.55)); } }
+
+/* ---- dialogs */
+.dialog { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,.65); backdrop-filter: blur(16px); padding: 20px 22px 18px; }
+.dialog h2 { font: 700 17px var(--ui); letter-spacing: .01em; }
+.dialog input[type=text], .dialog select, .dialog input[type=password], #l-code { background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.btn { background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 8px; padding: 8px 16px; font-weight: 600; transition: background .15s, border-color .15s; }
+.btn:hover { background: rgba(255,255,255,.12); }
+.btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #1d1404; border: 0; }
+.btn.primary:hover { background: linear-gradient(135deg, #ffc23a, #ff9a1a); }
+.rooms th { background: rgba(0,0,0,.4); letter-spacing: .08em; }
+.rooms tr:hover td { background: rgba(255,255,255,.03); }
+.rooms-wrap { border-radius: 10px; }
+.tab.on { color: #fff; border-bottom-color: var(--accent); }
+
+/* ---- HUD */
+.hbox { bottom: 22px; height: auto; display: grid; grid-template-columns: auto 1fr; grid-template-areas: "ico big" "bar bar" "lbl lbl"; align-items: center; column-gap: 10px; row-gap: 5px; min-width: 168px; padding: 9px 14px 8px; background: var(--hud-bg); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; color: #fff; backdrop-filter: blur(8px); }
+.hbox .big { grid-area: big; font: 700 34px/1 var(--num); color: #fff; text-shadow: none; }
+.hbox .lbl { grid-area: lbl; margin: 0; font: 700 9px var(--ui); letter-spacing: .2em; color: var(--hud-dim); }
+.hbox .ico { grid-area: ico; width: 22px; height: 22px; display: block; }
+.hbox .ico.plus { background: #ff5a4a; clip-path: polygon(35% 0, 65% 0, 65% 35%, 100% 35%, 100% 65%, 65% 65%, 65% 100%, 35% 100%, 35% 65%, 0 65%, 0 35%, 35% 35%); }
+.hbox .ico.shield { background: #59b8ff; clip-path: polygon(50% 0, 100% 15%, 92% 60%, 50% 100%, 8% 60%, 0 15%); }
+.hbox .bar { grid-area: bar; height: 5px; border-radius: 3px; background: rgba(255,255,255,.12); overflow: hidden; }
+.hbox .bar span { display: block; height: 100%; width: 100%; border-radius: 3px; background: linear-gradient(90deg, #ff5a4a, #ff8a5a); transition: width .25s; }
+#ar-box .bar span { background: linear-gradient(90deg, #3a9cff, #7ac8ff); }
+#hp-box { left: 22px; }
+#ar-box { left: 204px; }
+#ammo-box { right: 22px; grid-template-columns: auto auto; grid-template-areas: "lbl lbl" "big res"; align-items: end; min-width: 150px; }
+#ammo-box .lbl { color: var(--accent); }
+#ammo-box .big { font-size: 40px; }
+#ammo-box .res { grid-area: res; font: 600 18px/1 var(--num); color: var(--hud-dim); margin-bottom: 4px; }
+.hbox.low { color: #fff; border-color: rgba(255,60,40,.6); box-shadow: 0 0 20px rgba(255,40,20,.3); }
+.hbox.low .big { color: #ff5a4a; text-shadow: none; }
+.hbox.pulse { animation: hpulse .45s ease-out; }
+@keyframes hpulse { 0% { background: rgba(255,255,255,.25); } 100% { background: var(--hud-bg); } }
+#crosshair::before, #crosshair::after { background: rgba(255,255,255,.95); box-shadow: 0 0 0 1px rgba(0,0,0,.55); }
+#crosshair { width: 26px; height: 26px; }
+#crosshair::before { left: 12px; top: 0; width: 2px; height: 26px; clip-path: polygon(0 0,100% 0,100% 30%,0 30%,0 70%,100% 70%,100% 100%,0 100%); }
+#crosshair::after { top: 12px; left: 0; width: 26px; height: 2px; clip-path: polygon(0 0,30% 0,30% 100%,0 100%,0 0,70% 0,100% 0,100% 100%,70% 100%,70% 0); }
+.kf { background: rgba(10,12,16,.6); border: 1px solid rgba(255,255,255,.07); border-radius: 8px; padding: 4px 10px; color: #fff; font: 600 12px var(--ui); backdrop-filter: blur(6px); }
+.kf.mine { outline: none; border-color: var(--line-hi); }
+.kf .kfw { color: var(--accent); border-color: rgba(255,176,0,.35); border-radius: 5px; }
+#timer { top: 16px; left: 22px; padding: 4px 10px; border-radius: 8px; background: var(--hud-bg); color: #fff; font: 700 11px var(--num); letter-spacing: .1em; }
+#room-tag { top: 46px; left: 24px; color: var(--hud-dim); font: 600 11px var(--ui); letter-spacing: .04em; }
+#center-msg { font: 800 22px var(--ui); letter-spacing: .04em; text-shadow: 0 2px 10px rgba(0,0,0,.8); }
+#center-msg small { font: 500 13px var(--ui); color: #d6dbe2; }
+#wsel .wbox { background: var(--hud-bg); border: 1px solid rgba(255,255,255,.07); border-radius: 10px; color: var(--hud-dim); }
+#wsel .wbox.on { color: #fff; outline: none; border-color: var(--line-hi); background: rgba(30,24,10,.7); }
+#wsel .num { color: var(--accent); }
+.cl b { color: var(--accent); }
+#chatbox input { border-radius: 8px; border-color: var(--line-hi); }
+
 </style>
 </head>
 <body>
@@ -472,9 +580,9 @@ body.touch #netinfo { display: none; }
   <div id="chatbox" hidden><input id="chatinput" maxlength="160" autocomplete="off" placeholder="Say:"></div>
   <div id="center-msg"></div>
   <div id="dmg"></div>
-  <div class="hbox" id="hp-box"><span class="lbl">HEALTH</span><span class="big" id="hp-val">100</span></div>
-  <div class="hbox" id="ar-box" hidden><span class="lbl">SUIT</span><span class="big" id="ar-val">0</span></div>
-  <div class="hbox" id="ammo-box" hidden><span class="lbl">AMMO</span><span class="big" id="ammo-clip">0</span><span class="res" id="ammo-res">0</span></div>
+  <div class="hbox" id="hp-box"><i class="ico plus" aria-hidden="true"></i><span class="big" id="hp-val">100</span><span class="lbl">HEALTH</span><span class="bar"><span id="hp-bar"></span></span></div>
+  <div class="hbox" id="ar-box" hidden><i class="ico shield" aria-hidden="true"></i><span class="big" id="ar-val">0</span><span class="lbl">ARMOUR</span><span class="bar"><span id="ar-bar"></span></span></div>
+  <div class="hbox" id="ammo-box" hidden><span class="lbl" id="ammo-name">AMMO</span><span class="big" id="ammo-clip">0</span><span class="res" id="ammo-res">0</span></div>
   <div id="scoreboard" hidden></div>
   <div id="netinfo"></div>
   <div id="voice-hud" hidden></div>
@@ -486,27 +594,32 @@ body.touch #netinfo { display: none; }
 </div>
 
 <div id="menu">
-  <h1><img src="logo.svg" alt="MUGR DEATHMATCH" width="440" height="144"></h1>
-  <p class="sub">Browser arena shooter</p>
-  <div class="account"><span id="acct-name">Guest</span> <button type="button" id="btn-account">Sign in / Register</button></div>
-  <div class="coins" id="menu-coins" title="Coins: 10 per kill, 100 for winning a team deathmatch or capture the flag match">0</div>
-  <nav>
-    <button id="btn-join" disabled>Play</button>
-    <button id="btn-heist">Heist</button>
-    <button id="btn-resume" hidden>Resume game</button>
-    <button id="btn-invite" hidden>Copy invite link</button>
-    <button id="btn-disconnect" hidden>Leave game</button>
-    <button id="btn-shop">Shop</button>
-    <button id="btn-wardrobe">Wardrobe</button>
-    <button id="btn-leaders">Leaderboard</button>
-    <button id="btn-friends">Friends<span class="badge" id="fr-badge" hidden></span></button>
-    <button id="btn-voice">Voice<span class="badge live" id="vc-badge" hidden></span></button>
-    <button id="btn-mod" hidden>Owner menu</button>
-    <button id="btn-options">Options</button>
-    <button id="btn-devlog">Devlog</button>
-    <button id="btn-credits">Credits</button>
-  </nav>
-  <div class="status" id="menu-status"></div>
+  <div class="menu-side">
+    <h1><img src="logo.svg" alt="MUGR DEATHMATCH" width="440" height="144"></h1>
+    <p class="sub">Browser arena shooter</p>
+    <div class="player-card">
+      <div class="account"><span id="acct-name">Guest</span><button type="button" id="btn-account">Sign in / Register</button></div>
+      <div class="coins" id="menu-coins" title="Coins: 10 per kill, 100 for winning a team deathmatch or capture the flag match">0</div>
+    </div>
+    <nav>
+      <button id="btn-resume" class="big" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg><span>Resume</span></button>
+      <button id="btn-join" class="big" disabled><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg><span>Play</span></button>
+      <button id="btn-invite" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>Copy invite</span></button>
+      <button id="btn-disconnect" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg><span>Leave game</span></button>
+      <button id="btn-heist" class="feature"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="13" rx="2"/><path d="M9 7V5h6v2M12 11v5M9.5 13.5h5"/></svg><span>Heist<small>2–4 player bank job</small></span></button>
+      <button id="btn-shop"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h3l2.5 11h10L21 8H7"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg><span>Shop</span></button>
+      <button id="btn-wardrobe"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4l-5 4 3 3 2-1v10h8V10l2 1 3-3-5-4c-1 2-2.5 3-4 3S9 6 8 4z"/></svg><span>Wardrobe</span></button>
+      <button id="btn-leaders"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8"/></svg><span>Leaderboard</span></button>
+      <button id="btn-friends"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="3.5"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17" cy="8" r="2.5"/><path d="M16 13.5c3 0 5 2 5 5"/></svg><span>Friends</span><span class="badge" id="fr-badge" hidden></span></button>
+      <button id="btn-voice"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span>Voice</span><span class="badge live" id="vc-badge" hidden></span></button>
+      <button id="btn-mod" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/></svg><span>Owner menu</span></button>
+      <button id="btn-options"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg><span>Options</span></button>
+      <button id="btn-devlog"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg><span>Devlog</span></button>
+      <button id="btn-credits"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg><span>Credits</span></button>
+    </nav>
+    <div class="status" id="menu-status"></div>
+  </div>
+  <aside class="menu-news" id="menu-news" aria-label="What's new"></aside>
 </div>
 
 <div class="dialog wide" id="dlg-lobby" hidden role="dialog" aria-labelledby="dlg-lobby-title">

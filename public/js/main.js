@@ -126,7 +126,7 @@ async function boot() {
     playing = false;
     openMenu();
     $('room-tag').hidden = true;
-    $('btn-join').textContent = 'Play';
+    $('btn-join').querySelector('span').textContent = 'Play';
     $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = true;
     status('Disconnected from the server.');
   };
@@ -234,6 +234,14 @@ $('lb-close').onclick = () => hide('dlg-leaders');
 $('btn-mod').onclick = () => social?.openMod();
 $('fr-signin').onclick = () => { social?.close(); $('btn-account').click(); };
 
+// the menu's news card: the newest devlog entry
+{
+  const d = DEVLOG[0];
+  if (d) {
+    $('menu-news').innerHTML = `<div class="tag">WHAT'S NEW · ${esc(d.date)}</div><h3>${esc(d.title)}</h3><ul>${d.notes.slice(0, 3).map((n) => `<li>${esc(n)}</li>`).join('')}</ul><button type="button" id="news-more">Read the devlog →</button>`;
+    $('news-more').onclick = () => $('btn-devlog').click();
+  }
+}
 $('btn-devlog').onclick = () => {
   $('devlog-list').innerHTML = DEVLOG.map((d) => `<li><h3>${esc(d.title)}<small>${esc(d.date)}</small></h3><ul>${d.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></li>`).join('');
   show('dlg-devlog');
@@ -406,7 +414,7 @@ async function play(action, errEl, code) {
   closeLobby();
   hide('dlg-create');
   hide('dlg-pass');
-  $('btn-join').textContent = 'Find another game';
+  $('btn-join').querySelector('span').textContent = 'Find another game';
   $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = false;
   resume();
 }
@@ -432,7 +440,7 @@ $('btn-disconnect').onclick = () => {
   game.leave();
   game.watch();
   $('room-tag').hidden = true;
-  $('btn-join').textContent = 'Play';
+  $('btn-join').querySelector('span').textContent = 'Play';
   $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = true;
   game.hud.show(false);
   openLobby();

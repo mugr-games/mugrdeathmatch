@@ -11,6 +11,9 @@ export class Hud {
     this.arBox = $('ar-box');
     this.clip = $('ammo-clip');
     this.res = $('ammo-res');
+    this.ammoName = $('ammo-name');
+    this.hpBar = $('hp-bar');
+    this.arBar = $('ar-bar');
     this.ammoBox = $('ammo-box');
     this.feed = $('killfeed');
     this.chat = $('chatlog');
@@ -37,6 +40,7 @@ export class Hud {
     const hp = Math.max(0, ps.hp | 0);
     if (hp !== this.last.hp) {
       this.hp.textContent = hp;
+      if (this.hpBar) this.hpBar.style.width = `${Math.min(100, hp)}%`;
       this.hp.parentElement.classList.toggle('low', hp <= 20);
       if (this.last.hp !== undefined) this.pulse(this.hp.parentElement);
       this.last.hp = hp;
@@ -44,6 +48,7 @@ export class Hud {
     const ar = ps.armor | 0;
     if (ar !== this.last.ar) {
       this.ar.textContent = ar;
+      if (this.arBar) this.arBar.style.width = `${Math.min(100, ar)}%`;
       this.arBox.hidden = ar <= 0;
       if (this.last.ar !== undefined && ar > 0) this.pulse(this.arBox);
       this.last.ar = ar;
@@ -54,6 +59,7 @@ export class Hud {
       this.ammoBox.hidden = !W.ammo || !ps.alive;
       if (W.ammo) {
         this.clip.textContent = ps.clips[ps.cur];
+        if (this.ammoName) this.ammoName.textContent = W.name;
         this.res.textContent = ps.ammo[W.ammo];
         this.ammoBox.classList.toggle('low', ps.clips[ps.cur] === 0);
       }

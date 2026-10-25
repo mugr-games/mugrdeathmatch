@@ -4,6 +4,7 @@ export const DEVLOG = [
     date: '2026-10-25',
     title: 'Arms, third person, autumn and a darker zombies',
     notes: [
+      'A new look: a redesigned main menu with a news card, cleaner dialogs, and a new HUD with health and armour bars and the weapon name by your ammo.',
       'You can see your arms in first person now, holding the gun with both hands. Reloads, shotgun pumps and sprinting all move them.',
       'Everyone holds their weapons properly in their hands. The crowbar is held upright and chops when you swing it.',
       'Third person: press F to switch between first and third person.',
