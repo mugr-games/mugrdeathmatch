@@ -1149,7 +1149,7 @@ const server = http.createServer((req, res) => {
       map: main.map.id, mapName: main.map.name, players: [...rooms.values()].reduce((n, r) => n + humanCount(r), 0), models: listModels(),
       maps: MAP_IDS.map((id) => ({ id, name: mapName(id) })), loadouts: Object.fromEntries(Object.entries(LOADOUTS).filter(([, v]) => !v.hidden).map(([k, v]) => [k, v.name])),
       modes: MODES, skills: Object.fromEntries(Object.entries(SKILLS).map(([k, v]) => [k, v.name])), maxBots: MAX_BOTS, defaults: DEFAULT_SETTINGS,
-      storage: { kind: profiles.storage.kind, ok: profiles.storage.ok },
+      storage: { kind: profiles.storage.kind, ok: profiles.storage.ok, error: profiles.storage.error },
     });
   }
   if (req.method === 'OPTIONS' && p.startsWith('/api/')) { res.writeHead(204, CORS); return res.end(); }
@@ -1339,7 +1339,7 @@ async function modList(ws) {
     if (!p.bot) players.push({ name: p.name, account: p.ws?.acct || null, room: R.settings.name });
   }
   for (const [key, socks] of online) if (![...socks].some(playerOf)) players.push({ name: [...socks][0].profile?.name || key, account: key, room: null });
-  wsSend(ws, { t: 'mod', players, bans: await profiles.listBans() });
+  wsSend(ws, { t: 'mod', players, bans: await profiles.listBans(), storage: profiles.storage });
 }
 
 async function directMessage(ws, to, text) {

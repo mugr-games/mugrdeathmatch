@@ -58,8 +58,9 @@ function fileStore(file) {
 function redisStore(url, token, prefix) {
   const call = async (cmd) => {
     const r = await fetch(url, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(cmd) });
-    if (!r.ok) throw new Error(`Redis answered ${r.status}`);
-    return (await r.json()).result;
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error(j.error || `Redis answered ${r.status}`);
+    return j.result;
   };
   return {
     name: 'Upstash Redis',
@@ -76,13 +77,17 @@ function redisStore(url, token, prefix) {
       if (sets.length) await call(['MSET', ...sets]);
       if (dels.length) await call(['DEL', ...dels]);
     },
-    ping: () => call(['PING']),
+    async check() {
+      const stamp = String(Date.now());
+      await call(['SET', 'mugr:health', stamp]);
+      if ((await call(['GET', 'mugr:health'])) !== stamp) throw new Error('a test save did not read back');
+    },
   };
 }
 
 // a store with an in-memory cache and batched, retried saves. Reading never guesses: if the store can't be
 // reached, get() fails instead of answering "missing", so nothing is created over real data.
-function cachedStore(store, label) {
+function cachedStore(store, label, status) {
   const cache = new Map();
   const loading = new Map(); // key -> promise, so two requests don't load or create the same entry twice
   const dirty = new Map();
@@ -100,8 +105,13 @@ function cachedStore(store, label) {
     if (!dirty.size) return true;
     const batch = new Map(dirty);
     dirty.clear();
-    try { await store.save(batch); return true; } catch (e) {
+    try {
+      await store.save(batch);
+      if (status) { status.ok = true; status.error = null; }
+      return true;
+    } catch (e) {
       console.error(`[${label}] could not save`, e.message);
+      if (status) { status.ok = false; status.error = e.message; }
       for (const [k, x] of batch) if (!dirty.has(k)) dirty.set(k, x);
       if (!timer) timer = setTimeout(flush, 5000);
       return false;
@@ -124,7 +134,7 @@ function cachedStore(store, label) {
     }
     return loading.get(key);
   };
-  return { get, save, flush, pending: () => dirty.size, count: () => store.count(), name: store.name, kind: store.kind, ping: store.ping };
+  return { get, save, flush, pending: () => dirty.size, count: () => store.count(), name: store.name, kind: store.kind, check: store.check };
 }
 
 const scrypt = (password, salt) => new Promise((res, rej) => crypto.scrypt(password, salt, 64, (e, k) => (e ? rej(e) : res(k))));
@@ -141,11 +151,13 @@ async function checkPassword(acc, password) {
 export function createProfiles(file) {
   const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN;
   const mk = (f, prefix) => (redis ? redisStore(process.env.UPSTASH_REDIS_REST_URL, process.env.UPSTASH_REDIS_REST_TOKEN, prefix) : fileStore(f));
-  const profiles = cachedStore(mk(file, 'mugr:p:'), 'profiles');
-  const accounts = cachedStore(mk(path.join(path.dirname(file), 'accounts.json'), 'mugr:u:'), 'accounts');
-  const dms = cachedStore(mk(path.join(path.dirname(file), 'messages.json'), 'mugr:d:'), 'messages');
-  const bans = cachedStore(mk(path.join(path.dirname(file), 'bans.json'), 'mugr:b:'), 'bans');
-  const boards = cachedStore(mk(path.join(path.dirname(file), 'leaderboard.json'), 'mugr:l:'), 'leaderboard');
+  // where things are saved and whether saving works (shown in /api/info and the owner's Moderation panel)
+  const storage = { kind: redis ? 'redis' : 'file', ok: !redis, error: null };
+  const profiles = cachedStore(mk(file, 'mugr:p:'), 'profiles', storage);
+  const accounts = cachedStore(mk(path.join(path.dirname(file), 'accounts.json'), 'mugr:u:'), 'accounts', storage);
+  const dms = cachedStore(mk(path.join(path.dirname(file), 'messages.json'), 'mugr:d:'), 'messages', storage);
+  const bans = cachedStore(mk(path.join(path.dirname(file), 'bans.json'), 'mugr:b:'), 'bans', storage);
+  const boards = cachedStore(mk(path.join(path.dirname(file), 'leaderboard.json'), 'mugr:l:'), 'leaderboard', storage);
   console.log(`[profiles] saving coins, cosmetics and accounts to ${profiles.name}`);
   if (profiles.kind === 'file' && process.env.RENDER) console.warn('[profiles] WARNING: Render forgets files when it restarts. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to keep accounts.');
   const stores = [profiles, accounts, dms, bans, boards];
@@ -172,11 +184,13 @@ export function createProfiles(file) {
     }
     if (changed) boards.save('top', board);
   }
-  // where things are saved and whether that works (shown in /api/info)
-  const storage = { kind: profiles.kind, ok: profiles.kind === 'file', lastError: null };
-  if (profiles.ping) {
-    profiles.ping().then(() => { storage.ok = true; console.log('[profiles] Upstash Redis answered: saving works'); })
-      .catch((e) => { storage.lastError = e.message; console.error('[profiles] Upstash Redis did not answer:', e.message); });
+  if (profiles.check) {
+    profiles.check().then(() => { storage.ok = true; console.log('[profiles] Upstash Redis test save worked: saving works'); })
+      .catch((e) => {
+        storage.ok = false;
+        storage.error = /NOPERM|read.?only/i.test(e.message) ? `${e.message} (this looks like the read-only token: use the normal UPSTASH_REDIS_REST_TOKEN)` : e.message;
+        console.error('[profiles] SAVING DOES NOT WORK. Upstash Redis refused a test save:', storage.error);
+      });
   }
   const tokenOf = (pr) => pr._token;
   const touch = (pr) => profiles.save(tokenOf(pr), pr);

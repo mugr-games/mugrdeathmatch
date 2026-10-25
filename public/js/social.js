@@ -165,6 +165,10 @@ export class Social {
 
   renderMod(m) {
     const reason = () => $('mod-reason').value.trim();
+    const st = m.storage || {};
+    $('mod-storage').textContent = st.kind === 'file' ? 'Saving: files on this server (lost if the host wipes them).'
+      : st.ok ? 'Saving: online database, working.' : `Saving is NOT working: ${st.error || 'checking…'}`;
+    $('mod-storage').classList.toggle('err', st.kind === 'redis' && !st.ok);
     $('mod-players').innerHTML = m.players.length ? m.players.map((p) => `<li><span class="fr-who"><b>${esc(p.name)}</b><small>${p.account ? 'account' : 'guest'} · ${p.room ? esc(p.room) : 'in the menus'}</small></span>`
       + (p.account === 'watermelon' ? '<small>you</small>' : `<button type="button" class="btn" data-act="kick" data-name="${esc(p.name)}">Kick</button><button type="button" class="btn danger" data-act="ban" data-name="${esc(p.name)}">Ban</button>`) + '</li>').join('')
       : '<li class="empty">Nobody else is online.</li>';
