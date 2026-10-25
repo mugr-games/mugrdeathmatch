@@ -28,6 +28,7 @@ function fileStore(file) {
   try { all = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
   return {
     name: `file ${file}`,
+    kind: 'file',
     async load(key) { return all[key] || null; },
     count() { return Object.keys(all).length; },
     async save(dirty) {
@@ -48,15 +49,25 @@ function redisStore(url, token, prefix) {
   };
   return {
     name: 'Upstash Redis',
+    kind: 'redis',
     async load(key) { const v = await call(['GET', prefix + key]); return v ? JSON.parse(v) : null; },
     count() { return 0; }, // no cap: Redis holds them, not this server's memory
+    // a whole batch in at most two requests: one MSET for the changes, one DEL for removals
     async save(dirty) {
-      for (const [key, v] of dirty) await call(v === null ? ['DEL', prefix + key] : ['SET', prefix + key, JSON.stringify(v)]);
+      const sets = [], dels = [];
+      for (const [key, v] of dirty) {
+        if (v === null) dels.push(prefix + key);
+        else sets.push(prefix + key, JSON.stringify(v));
+      }
+      if (sets.length) await call(['MSET', ...sets]);
+      if (dels.length) await call(['DEL', ...dels]);
     },
+    ping: () => call(['PING']),
   };
 }
 
-// a store with an in-memory cache and batched, retried saves
+// a store with an in-memory cache and batched, retried saves. Reading never guesses: if the store can't be
+// reached, get() fails instead of answering "missing", so nothing is created over real data.
 function cachedStore(store, label) {
   const cache = new Map();
   const loading = new Map(); // key -> promise, so two requests don't load or create the same entry twice
@@ -66,23 +77,32 @@ function cachedStore(store, label) {
     cache.set(key, v);
     dirty.set(key, v);
     if (timer) return;
-    timer = setTimeout(async () => {
-      timer = null;
-      const batch = new Map(dirty);
-      dirty.clear();
-      try { await store.save(batch); } catch (e) {
-        console.error(`[${label}] could not save`, e.message);
-        for (const [k, x] of batch) if (!dirty.has(k)) dirty.set(k, x); // try again with the next change
-      }
-    }, 2000);
+    timer = setTimeout(flush, 2000);
   };
+  // write everything waiting; failed writes go back in the queue and are tried again shortly
+  async function flush() {
+    clearTimeout(timer);
+    timer = null;
+    if (!dirty.size) return true;
+    const batch = new Map(dirty);
+    dirty.clear();
+    try { await store.save(batch); return true; } catch (e) {
+      console.error(`[${label}] could not save`, e.message);
+      for (const [k, x] of batch) if (!dirty.has(k)) dirty.set(k, x);
+      if (!timer) timer = setTimeout(flush, 5000);
+      return false;
+    }
+  }
   // the entry for a key; create() makes one when there is none (or returns null to leave it missing)
   const get = (key, create) => {
     if (cache.has(key)) return Promise.resolve(cache.get(key));
     if (!loading.has(key)) {
       loading.set(key, (async () => {
-        let v = null;
-        try { v = await store.load(key); } catch (e) { console.error(`[${label}] could not load`, e.message); }
+        let v;
+        try { v = await store.load(key); } catch (e) {
+          console.error(`[${label}] could not load`, e.message);
+          throw new Error('The server can\'t reach its database right now. Try again in a moment.');
+        }
         if (!v && create) { v = create(); if (v) save(key, v); }
         if (v) cache.set(key, v);
         return v;
@@ -90,7 +110,7 @@ function cachedStore(store, label) {
     }
     return loading.get(key);
   };
-  return { get, save, count: () => store.count(), name: store.name };
+  return { get, save, flush, pending: () => dirty.size, count: () => store.count(), name: store.name, kind: store.kind, ping: store.ping };
 }
 
 const scrypt = (password, salt) => new Promise((res, rej) => crypto.scrypt(password, salt, 64, (e, k) => (e ? rej(e) : res(k))));
@@ -112,13 +132,22 @@ export function createProfiles(file) {
   const dms = cachedStore(mk(path.join(path.dirname(file), 'messages.json'), 'mugr:d:'), 'messages');
   const bans = cachedStore(mk(path.join(path.dirname(file), 'bans.json'), 'mugr:b:'), 'bans');
   console.log(`[profiles] saving coins, cosmetics and accounts to ${profiles.name}`);
+  if (profiles.kind === 'file' && process.env.RENDER) console.warn('[profiles] WARNING: Render forgets files when it restarts. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to keep accounts.');
+  const stores = [profiles, accounts, dms, bans];
+  // where things are saved and whether that works (shown in /api/info)
+  const storage = { kind: profiles.kind, ok: profiles.kind === 'file', lastError: null };
+  if (profiles.ping) {
+    profiles.ping().then(() => { storage.ok = true; console.log('[profiles] Upstash Redis answered: saving works'); })
+      .catch((e) => { storage.lastError = e.message; console.error('[profiles] Upstash Redis did not answer:', e.message); });
+  }
   const tokenOf = (pr) => pr._token;
   const touch = (pr) => profiles.save(tokenOf(pr), pr);
 
   // the profile for a token, created on first use; null for a malformed token
   async function load(token) {
     if (typeof token !== 'string' || !TOKEN.test(token)) return null;
-    const pr = await profiles.get(token, () => (profiles.count() >= MAX_PROFILES ? null : { coins: 0, owned: [], eq: {} }));
+    let pr;
+    try { pr = await profiles.get(token, () => (profiles.count() >= MAX_PROFILES ? null : { coins: 0, owned: [], eq: {} })); } catch { return null; }
     if (pr && !pr._token) Object.defineProperty(pr, '_token', { value: token, enumerable: false });
     return pr;
   }
@@ -156,6 +185,9 @@ export function createProfiles(file) {
     load,
     view,
     ready,
+    storage,
+    // save everything now (before the server stops)
+    flush: () => Promise.all(stores.map((s) => s.flush())),
     // is this name (any capitalisation) a registered account or the reserved owner name?
     async nameTaken(name) {
       const key = String(name || '').toLowerCase();
@@ -180,11 +212,23 @@ export function createProfiles(file) {
       touch(pr);
       return { token, ...view(pr) };
     },
-    async login(name, password) {
+    async login(name, password, guestToken) {
       const key = String(name || '').trim().toLowerCase();
       const acc = NAME.test(key) ? await accounts.get(key) : null;
       if (!acc || !(await checkPassword(acc, String(password || '')))) return { error: 'Wrong username or password.' };
       const pr = await load(acc.token);
+      if (!pr) return { error: 'The server can\'t reach its database right now. Try again in a moment.' };
+      // coins and items this browser earned as a guest join the account (once: the guest is emptied)
+      const guest = guestToken !== acc.token ? await load(guestToken) : null;
+      if (guest && !guest.name && (guest.coins > 0 || guest.owned.length)) {
+        pr.coins += guest.coins;
+        for (const id of guest.owned) if (!pr.owned.includes(id)) pr.owned.push(id);
+        guest.coins = 0;
+        guest.owned = [];
+        guest.eq = {};
+        touch(guest);
+        touch(pr);
+      }
       return { token: acc.token, ...view(pr) };
     },
     award(pr, n) {

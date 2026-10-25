@@ -78,7 +78,9 @@ function tunnel(port) {
 }
 const stop = () => { stopping = true; if (cf) cf.kill(); };
 process.on('exit', stop);
-for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { stop(); process.exit(0); });
+// the server saves players' data on SIGINT/SIGTERM and then exits; this only stops the tunnel (and exits for
+// SIGHUP, which the server doesn't handle), with a deadline in case saving hangs
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { stop(); setTimeout(() => process.exit(0), sig === 'SIGHUP' ? 0 : 9000); });
 // a bug in one game shouldn't take the whole server (and everyone's link) down with it
 process.on('uncaughtException', (e) => console.error(`[error] ${new Date().toISOString()} ${e && e.stack || e}`));
 process.on('unhandledRejection', (e) => console.error(`[error] ${new Date().toISOString()} ${e && e.stack || e}`));

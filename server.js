@@ -1055,8 +1055,10 @@ function profileApi(req, res, route) {
       if (tries.length >= 8) return json(res, { error: 'Too many tries. Wait a minute and try again.' });
       tries.push(now);
       loginTries.set(ip, tries);
-      const r = route === 'register' ? await profiles.register(m.name, m.password, m.token) : await profiles.login(m.name, m.password);
-      return json(res, r);
+      try {
+        const r = route === 'register' ? await profiles.register(m.name, m.password, m.token) : await profiles.login(m.name, m.password, m.token);
+        return json(res, r);
+      } catch (e) { return json(res, { error: e.message }); }
     }
     const pr = await profiles.load(m.token);
     if (!pr) return json(res, { error: 'Your save code is not valid.' });
@@ -1132,6 +1134,7 @@ const server = http.createServer((req, res) => {
       map: main.map.id, mapName: main.map.name, players: [...rooms.values()].reduce((n, r) => n + humanCount(r), 0), models: listModels(),
       maps: MAP_IDS.map((id) => ({ id, name: mapName(id) })), loadouts: Object.fromEntries(Object.entries(LOADOUTS).filter(([, v]) => !v.hidden).map(([k, v]) => [k, v.name])),
       modes: MODES, skills: Object.fromEntries(Object.entries(SKILLS).map(([k, v]) => [k, v.name])), maxBots: MAX_BOTS, defaults: DEFAULT_SETTINGS,
+      storage: { kind: profiles.storage.kind, ok: profiles.storage.ok },
     });
   }
   if (req.method === 'OPTIONS' && p.startsWith('/api/')) { res.writeHead(204, CORS); return res.end(); }
@@ -1384,8 +1387,8 @@ wss.on('connection', (ws, req) => {
   ws.on('message', (data) => {
     let m;
     try { m = JSON.parse(data); } catch { return; }
-    if (m.t === 'hello') return void hello(ws, m.token);
-    if (SOCIAL.has(m.t)) return void social(ws, m);
+    if (m.t === 'hello') return void hello(ws, m.token).catch((e) => console.error('[hello]', e.message));
+    if (SOCIAL.has(m.t)) return void social(ws, m).catch((e) => sys(ws, e.message || 'Something went wrong. Try again.'));
     if (m.t === 'watch') {
       if (p && p.room) return;
       unwatch(ws);
@@ -1484,6 +1487,17 @@ setInterval(() => {
     acc -= TICK;
   }
 }, 5);
+// Render (and Ctrl+C) stop the server with a signal: save everything waiting first
+let stopping = false;
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, async () => {
+    if (stopping) return;
+    stopping = true;
+    console.log(`[server] ${sig}: saving before stopping`);
+    await Promise.race([profiles.flush(), new Promise((r) => setTimeout(r, 8000))]);
+    process.exit(0);
+  });
+}
 // Resolves with the port once listening. The packed .exe tries the next few ports when PORT is busy.
 export const ready = new Promise((resolve) => {
   let port = PORT;
