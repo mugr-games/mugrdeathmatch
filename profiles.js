@@ -23,8 +23,9 @@ const OWNER_COINS = 1000000;
 const OWNER_ITEMS = ['owner_cape'];
 
 // lifetime stats kept on every profile. Counters add up; "best" ones keep the highest value seen.
-const COUNTERS = ['kills', 'deaths', 'headshots', 'wins', 'matches', 'zkills', 'coins'];
+const COUNTERS = ['kills', 'deaths', 'headshots', 'wins', 'matches', 'zkills', 'coins', 'goals', 'finishes'];
 const BESTS = ['streak', 'round'];
+const LOWS = ['pkbest']; // lower is better (fastest parkour run, seconds)
 // leaderboard categories: how each ranks a profile (null = not on that board yet)
 export const BOARDS = {
   kills: (s) => s.kills || null,
@@ -33,7 +34,10 @@ export const BOARDS = {
   streak: (s) => s.streak || null,
   zkills: (s) => s.zkills || null,
   coins: (s) => s.coins || null,
+  goals: (s) => s.goals || null,
+  parkour: (s) => s.pkbest || null,
 };
+const ASCENDING = new Set(['parkour']); // boards where the smallest value is best
 const BOARD_SIZE = 100;
 
 // a JSON file of key -> value
@@ -207,10 +211,11 @@ export function createProfiles(file) {
       const list = board[k];
       const i = list.findIndex((e) => e.n === pr.name);
       if (v === null) { if (i >= 0) { list.splice(i, 1); changed = true; } continue; }
+      const asc = ASCENDING.has(k);
       if (i >= 0) { if (list[i].v === v) continue; list[i].v = v; }
-      else if (list.length >= BOARD_SIZE && v <= list[list.length - 1].v) continue;
+      else if (list.length >= BOARD_SIZE && (asc ? v >= list[list.length - 1].v : v <= list[list.length - 1].v)) continue;
       else list.push({ n: pr.name, v });
-      list.sort((a, b) => b.v - a.v);
+      list.sort((a, b) => (asc ? a.v - b.v : b.v - a.v));
       if (list.length > BOARD_SIZE) list.length = BOARD_SIZE;
       changed = true;
     }
@@ -311,6 +316,7 @@ export function createProfiles(file) {
         const gs = guest.stats || {}, s = (pr.stats ||= {});
         for (const k of COUNTERS) if (gs[k]) s[k] = (s[k] || 0) + gs[k];
         for (const k of BESTS) if ((gs[k] || 0) > (s[k] || 0)) s[k] = gs[k];
+        for (const k of LOWS) if (gs[k] && (!s[k] || gs[k] < s[k])) s[k] = gs[k];
         guest.stats = {};
         guest.coins = 0;
         guest.owned = [];
@@ -384,6 +390,7 @@ export function createProfiles(file) {
         if (!v) continue;
         if (COUNTERS.includes(k)) s[k] = (s[k] || 0) + v;
         else if (BESTS.includes(k)) { if (v <= (s[k] || 0)) continue; s[k] = v; }
+        else if (LOWS.includes(k)) { if (s[k] && v >= s[k]) continue; s[k] = v; }
       }
       touch(pr);
       rank(pr);

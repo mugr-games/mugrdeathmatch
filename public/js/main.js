@@ -283,7 +283,8 @@ async function refreshRooms() {
   const list = await fetch(api('/api/rooms')).then((r) => r.json()).catch(() => null);
   if (!list) { $('l-rooms').innerHTML = '<tr><td colspan="5" class="empty">Can’t reach the server.</td></tr>'; return; }
   $('l-rooms').innerHTML = list.length ? list.map((r) => {
-    const goal = r.mode === 'ctf' ? `capture the flag, ${r.caplimit} caps` : r.mode === 'infection' ? 'infection' : r.mode === 'zombies' ? 'zombies: survive the rounds' : r.mode === 'tdm' ? `team deathmatch, ${r.fraglimit ? r.fraglimit + ' team frags' : 'no frag limit'}` : r.fraglimit ? `${r.fraglimit} frags` : 'no frag limit';
+    const goal = r.mode === 'ctf' ? `capture the flag, ${r.caplimit} caps` : r.mode === 'soccer' ? `soccer, first to ${r.caplimit} goals`
+      : r.mode === 'mugrball' ? `mugrball, first to ${r.caplimit} points` : r.mode === 'parkour' ? 'parkour: race the course' : r.mode === 'infection' ? 'infection' : r.mode === 'zombies' ? 'zombies: survive the rounds' : r.mode === 'tdm' ? `team deathmatch, ${r.fraglimit ? r.fraglimit + ' team frags' : 'no frag limit'}` : r.fraglimit ? `${r.fraglimit} frags` : 'no frag limit';
     const rules = [goal, r.mode === 'zombies' ? 'co-op' : r.timelimit ? `${r.timelimit} min${r.mode === 'infection' ? ' rounds' : ''}` : 'no time limit'];
     if (r.bots) rules.push(`${r.bots} bot${r.bots === 1 ? '' : 's'} (${r.botSkill.toLowerCase()})`);
     if (r.gravity !== 1) rules.push(`gravity ${r.gravity}×`);
@@ -338,11 +339,19 @@ $('l-create').onclick = () => {
     $('c-caps-row').hidden = m !== 'ctf';
     for (const id of ['c-frags', 'c-time', 'c-loadout', 'c-items']) $(id).closest('.row').hidden = m === 'zombies';
     if (m === 'zombies' && $('c-map').value === 'rotation') $('c-map').value = 'city';
+    // soccer, mugrball and parkour have their own map
+    $('c-map').disabled = m === 'soccer' || m === 'parkour' || m === 'mugrball';
+    $('c-caps-row').hidden = m !== 'ctf' && m !== 'soccer' && m !== 'mugrball';
+    $('c-caps').value = { ctf: 3, soccer: 5, mugrball: 10 }[m] || $('c-caps').value;
+    $('c-caps').oninput();
   };
   $('c-caps-row').hidden = true;
   $('c-caps').value = 3;
   $('c-caps-v').textContent = '3 captures';
-  $('c-caps').oninput = () => ($('c-caps-v').textContent = `${$('c-caps').value} capture${+$('c-caps').value === 1 ? '' : 's'}`);
+  $('c-caps').oninput = () => {
+    const n = +$('c-caps').value, unit = { soccer: 'goal', mugrball: 'point' }[$('c-mode').value] || 'capture';
+    $('c-caps-v').textContent = `${n} ${unit}${n === 1 ? '' : 's'}`;
+  };
   $('c-map').innerHTML = '<option value="rotation">Map rotation (vote at the end)</option>' + serverInfo.maps.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
   $('c-map').value = 'rotation';
   $('c-loadout').innerHTML = Object.entries(serverInfo.loadouts).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');

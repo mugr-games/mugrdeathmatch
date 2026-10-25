@@ -149,7 +149,7 @@ export class Hud {
         if (f[1] === st.myId) return 'you have it!';
         return f[1] ? 'taken' : f[2] ? 'dropped' : 'home';
       };
-      const goal = st.kind === 'ctf' ? `first to ${st.limit}` : st.limit ? `first to ${st.limit} frags` : 'most frags wins';
+      const goal = st.kind === 'ctf' ? `first to ${st.limit}` : st.kind === 'soccer' ? (st.limit ? `first to ${st.limit} goals` : 'most goals wins') : st.kind === 'mugrball' ? (st.limit ? `first to ${st.limit} points` : 'most points wins') : st.limit ? `first to ${st.limit} frags` : 'most frags wins';
       html = `<span class="red">RED ${st.score[0]}</span><span class="mid">${goal}${st.myTeam ? ` · you are ${st.myTeam}` : ''}</span><span class="blue">${st.score[1]} BLUE</span>`;
       if (st.kind === 'ctf') html += `<div class="flags"><span class="red">red flag: ${where(0)}</span><span class="blue">blue flag: ${where(1)}</span></div>`;
     }

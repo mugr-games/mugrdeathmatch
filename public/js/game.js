@@ -20,6 +20,7 @@ import { Avatar, ZOMBIE_SKIN, MODELS } from './avatar.js';
 import { Ragdoll } from './ragdoll.js';
 import { ZombiesView } from './zview.js';
 import { socketUrl } from './net.js';
+import { ModesView } from './modesview.js';
 
 const DEG = Math.PI / 180;
 const MUZZLE = new THREE.Vector3();
@@ -248,6 +249,7 @@ export class Game {
 
     this.players = new Map();
     this.zv = new ZombiesView(this); // zombies mode: the horde, shops and round HUD
+    this.mv = new ModesView(this); // soccer and parkour
     this.projectiles = new Map();
     this.ragdolls = [];
     this.props = [];
@@ -516,6 +518,8 @@ export class Game {
     await this.loadMap(m.map, this.onProgress || (() => {}));
     this.setupItems(m.items);
     this.mode = m.mode;
+    this.noWeapons = m.mode === 'soccer' || m.mode === 'parkour';
+    this.mv.setup(m.mode, !!m.watch);
     this.caplimit = m.caplimit;
     this.teamScore = m.teamScore ? [m.teamScore.red, m.teamScore.blue] : [0, 0];
     this.pickLeft = m.pick || 0;
@@ -562,6 +566,7 @@ export class Game {
     this.zmState = m.zm || null;
     this.pickLeft = m.pk || 0;
     this.zv.snapshot(m);
+    this.mv.snapshot(m);
     // own state: take the server's, then replay commands it hasn't processed yet (watchers have none)
     if (m.me) {
       const before = this.eye();
@@ -570,7 +575,8 @@ export class Game {
       this.cmds = this.cmds.filter((c) => c.seq > m.ack);
       for (const c of this.cmds) {
         if (ps.alive) pmove(this.world, ps, c.cmd, c.dt, this.rules);
-        weaponThink(ps, c.cmd, c.dt, () => {}, null);
+        if (this.unarmed()) ps.time += c.dt;
+        else weaponThink(ps, c.cmd, c.dt, () => {}, null);
       }
       this.ps = ps;
       const after = this.eye();
@@ -596,6 +602,7 @@ export class Game {
   onEvent(ev) {
     const me = this.myId;
     if (this.mode === 'zombies' && this.zv.event(ev)) return;
+    if (this.mv.event(ev)) return;
     switch (ev.e) {
       case 'proj': {
         const W = WEAPONS[ev.w];
@@ -755,12 +762,13 @@ export class Game {
       const flags = b.flags, alive = !!(flags & 4), vel = b.v;
       const speed = Math.hypot(vel[0], vel[1]);
       pl.pos = [o[0], o[1], o[2] + 36];
+      pl.yaw = yaw;
       if (alive && flags & 2 && speed > 140) {
         pl.stepDist += speed * dt;
         if (pl.stepDist > 80) { pl.stepDist = 0; this.sound.step(o, 0.5, this.surfaceAt(o)); }
       }
       if (!pl.obj) continue;
-      if (b.w !== pl.wi) { pl.wi = b.w; pl.obj.setWeapon(WEAPON_SLOT[WEAPONS[b.w].id]); }
+      if (b.w !== pl.wi) { pl.wi = b.w; pl.obj.setWeapon(this.noWeapons ? null : WEAPON_SLOT[WEAPONS[b.w].id]); }
       const yr = yaw * DEG;
       pl.obj.animate(dt, {
         speed, fwdSpeed: vel[0] * Math.cos(yr) + vel[1] * Math.sin(yr), sideSpeed: vel[0] * Math.sin(yr) - vel[1] * Math.cos(yr),
@@ -831,6 +839,9 @@ export class Game {
   limitLabel() {
     const fl = this.fraglimit;
     if (this.mode === 'ctf') return `${this.caplimit} CAPTURES`;
+    if (this.mode === 'soccer') return `${this.caplimit} GOALS`;
+    if (this.mode === 'mugrball') return `${this.caplimit} POINTS`;
+    if (this.mode === 'parkour') return 'PARKOUR';
     if (this.mode === 'infection') return 'SURVIVE THE CLOCK';
     if (this.mode === 'zombies') return 'SURVIVE';
     if (this.mode === 'tdm') return this.pickLeft ? 'WARM-UP' : fl ? `${fl} TEAM FRAGS` : 'NO FRAG LIMIT';
@@ -1075,7 +1086,7 @@ export class Game {
   updateViewmodel(dt) {
     const vm = this.vm;
     if (vm.wi !== this.ps.cur) this.setupViewmodel();
-    vm.holder.visible = this.ps.alive && this.connected && !this.zoomed;
+    vm.holder.visible = this.ps.alive && this.connected && !this.zoomed && !this.unarmed();
     if (!vm.model) return;
     vm.draw = Math.min(1, vm.draw + dt / 0.4);
     vm.kick *= Math.exp(-dt * 14);
@@ -1459,8 +1470,14 @@ export class Game {
           if (this.stepDist > (sp > 300 ? 100 : 76)) { this.stepDist = 0; this.sound.step(null, 0.28, this.surfaceAt(ps.origin)); }
         }
       }
-      weaponThink(ps, cmd, d, (wi) => this.localFire(wi, cmd, seq), (n) => this.localEvent(n));
+      if (this.unarmed()) ps.time += d;
+      else weaponThink(ps, cmd, d, (wi) => this.localFire(wi, cmd, seq), (n) => this.localEvent(n));
     }
+  }
+
+  // no guns: soccer, parkour, or carrying the mugrball
+  unarmed() {
+    return this.noWeapons || this.mv.holding();
   }
 
   selectSlot(slot) {
@@ -1576,8 +1593,9 @@ export class Game {
     this.updateFlags(dt, t);
     this.updateEffects(dt);
     const myTeam = this.info.get(this.myId)?.team;
-    if (this.connected && this.mode && this.mode !== 'dm' && this.mode !== 'zombies') {
-      const limit = this.mode === 'ctf' ? this.caplimit : this.fraglimit;
+    this.mv.update(dt);
+    if (this.connected && this.mode && this.mode !== 'dm' && this.mode !== 'zombies' && this.mode !== 'parkour') {
+      const limit = this.mode === 'ctf' || this.mode === 'soccer' || this.mode === 'mugrball' ? this.caplimit : this.fraglimit;
       this.hud.teamBar({ kind: this.mode, score: this.teamScore, limit, state: this.flagState, myTeam, myId: this.myId, zm: this.zmState });
     }
     if (this.connected && this.mode === 'tdm' && this.pickLeft && !this.intermission) {

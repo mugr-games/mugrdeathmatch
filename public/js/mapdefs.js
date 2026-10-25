@@ -669,4 +669,160 @@ const city = (() => {
   return autoLayout({ name: 'City', boxes: B, sun: [0.4, 0.3, 0.86], bounds: [[-E, -E, -40], [E, E, 700]], killZ: -1000, pads: [], doors, buys, zstart: [0, 0, 1] }, { spawns: 24, items: 30, props: 12 });
 })();
 
-export const CODE_MAPS = { foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city };
+// ------------------------------------------------------------------ Pitch (soccer): a walled pitch with two goals
+// Red defends the goal at -X and scores in the one at +X. 'clip' boxes are invisible walls that keep the
+// ball (and players) in; `decor` is drawn but never collides (pitch lines, nets, stands, floodlights).
+// The Ballcourt (mugrball) is the same stadium with cover to fight behind and a hoop above each goal.
+const stadium = (court) => {
+  const { B, box } = builder();
+  const D = [];
+  const deco = (x0, y0, z0, x1, y1, z1, mat) => D.push({ mins: [Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)], maxs: [Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)], mat });
+  const X = 1600, Y = 1000, GW = 220, GH = 170, GD = 150, BH = 110, TOP = 720;
+  box(-X - 500, -Y - 500, -64, X + 500, Y + 500, 0, 'grass');
+  // advertising boards down the sides, and clip above them up to the roof
+  for (const s of [-1, 1]) {
+    box(-X - 24, s > 0 ? Y : -Y - 24, 0, X + 24, s > 0 ? Y + 24 : -Y, BH, 'panel');
+    box(-X - 24, s > 0 ? Y : -Y - 24, BH, X + 24, s > 0 ? Y + 24 : -Y, TOP, 'clip');
+  }
+  // the ends, with the goal mouths left open
+  for (const s of [-1, 1]) {
+    const x0 = s > 0 ? X : -X - 24, x1 = x0 + 24;
+    box(x0, -Y, 0, x1, -GW - 8, BH, 'panel');
+    box(x0, GW + 8, 0, x1, Y, BH, 'panel');
+    box(x0, -Y, BH, x1, -GW - 8, TOP, 'clip');
+    box(x0, GW + 8, BH, x1, Y, TOP, 'clip');
+    box(x0, -GW - 8, GH + 8, x1, GW + 8, TOP, 'clip');
+    // posts and crossbar
+    const px0 = s > 0 ? X - 4 : -X - 4, px1 = px0 + 8;
+    box(px0, -GW - 8, 0, px1, -GW, GH + 8, 'line');
+    box(px0, GW, 0, px1, GW + 8, GH + 8, 'line');
+    box(px0, -GW - 8, GH, px1, GW + 8, GH + 8, 'line');
+    // the goal: back, sides and roof (invisible walls, with nets drawn on them)
+    const bx = s * (X + GD), inner = s * X;
+    box(bx, -GW - 8, 0, bx + s * 10, GW + 8, GH + 8, 'clip');
+    box(inner, -GW - 8, 0, bx, -GW, GH + 8, 'clip');
+    box(inner, GW, 0, bx, GW + 8, GH + 8, 'clip');
+    box(inner, -GW - 8, GH, bx, GW + 8, GH + 8, 'clip');
+    deco(bx, -GW, 0, bx + s * 2, GW, GH, 'net');
+    deco(inner, -GW - 2, 0, bx, -GW, GH, 'net');
+    deco(inner, GW, 0, bx, GW + 2, GH, 'net');
+    deco(inner, -GW, GH - 2, bx, GW, GH, 'net');
+  }
+  box(-X - 24, -Y - 24, TOP, X + 24, Y + 24, TOP + 20, 'clip'); // a lid, so a huge chip can't leave
+  // lines: halfway, centre circle, touchlines, penalty and goal areas
+  const line = (x0, y0, x1, y1) => deco(x0, y0, 0, x1, y1, 0.6, 'line');
+  line(-3, -Y, 3, Y);
+  for (let i = 0; i < 40; i++) {
+    const a = (i / 40) * Math.PI * 2, r = 230;
+    line(Math.cos(a) * r - 9, Math.sin(a) * r - 9, Math.cos(a) * r + 9, Math.sin(a) * r + 9);
+  }
+  line(-X, -Y, X, -Y + 6); line(-X, Y - 6, X, Y); line(-X, -Y, -X + 6, Y); line(X - 6, -Y, X, Y);
+  for (const s of [-1, 1]) {
+    const e = s * X;
+    for (const [d, w] of [[420, 520], [160, 300]]) {
+      line(Math.min(e, e - s * d), -w, Math.max(e, e - s * d), -w + 6);
+      line(Math.min(e, e - s * d), w - 6, Math.max(e, e - s * d), w);
+      line(e - s * d - 3, -w, e - s * d + 3, w);
+    }
+  }
+  // stands and floodlights beyond the boards (out of reach)
+  for (const s of [-1, 1]) {
+    for (let k = 0; k < 5; k++) deco(-X, s * (Y + 80 + k * 70), 0, X, s * (Y + 150 + k * 70), 40 + k * 45, 'concrete');
+    for (const x of [-X, X]) {
+      deco(x - 14, s * (Y + 450) - 14, 0, x + 14, s * (Y + 450) + 14, 900, 'metal');
+      deco(x - 70, s * (Y + 450) - 20, 900, x + 70, s * (Y + 450) + 20, 960, 'neon');
+    }
+  }
+  const hoops = [], items = [];
+  if (court) {
+    // a hoop above each goal: backboard, arm and a ring of 38 (the ball goes through it going down)
+    const HZ = 330, HR = 38;
+    for (const s of [-1, 1]) {
+      const hx = s * (X - 80);
+      box(s * (X - 24), -110, HZ - 50, s * (X - 10), 110, HZ + 110, 'metal');
+      deco(s * (X - 26), -60, HZ - 30, s * (X - 24), 60, HZ + 50, 'line'); // the square on the board
+      deco(s * (X - 24), -4, HZ - 3, hx + s * HR, 4, HZ + 1, 'metal');
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2, cx = hx + Math.cos(a) * HR, cy = Math.sin(a) * HR;
+        deco(cx - 5.5, cy - 5.5, HZ - 2, cx + 5.5, cy + 5.5, HZ + 2, 'hazard');
+      }
+      hoops.push({ o: [hx, 0, HZ], r: HR });
+    }
+    // cover: crates and low walls, the centre circle left clear
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        box(sx * 650 - 55, sy * 420 - 55, 0, sx * 650 + 55, sy * 420 + 55, 96, 'plate');
+        box(sx * 1150 - 45, sy * 360 - 45, 0, sx * 1150 + 45, sy * 360 + 45, 72, 'plate');
+        box(sx * 380 - 30, sy * 720 - 110, 0, sx * 380 + 30, sy * 720 + 110, 110, 'panel');
+      }
+      box(-100, sx * 520 - 24, 0, 100, sx * 520 + 24, 64, 'concrete');
+      // health and ammo behind the cover, armour by the goals, a rocket launcher by the halfway walls
+      items.push({ kind: 'health', o: [sx * 520, 420, 0] }, { kind: 'ammo', o: [sx * 520, -420, 0] });
+      items.push({ kind: 'battery', o: [sx * 1150, 230, 0] }, { kind: 'vial', o: [sx * 1150, -230, 0] });
+      items.push({ kind: sx > 0 ? 'rpg' : 'shotgun', o: [0, sx * 620, 0] });
+    }
+  }
+  const spawns = [];
+  for (const [team, sx] of [['red', -1], ['blue', 1]]) {
+    for (let i = 0; i < 8; i++) spawns.push({ origin: [sx * (300 + (i % 4) * 280), (i < 4 ? -1 : 1) * (250 + (i % 2) * 300), 1], yaw: sx > 0 ? 180 : 0, team });
+  }
+  return {
+    name: court ? 'Ballcourt' : 'Pitch', boxes: B, decor: D, sun: [0.35, 0.45, 0.82], bounds: [[-X - 200, -Y - 200, -40], [X + 200, Y + 200, TOP]], killZ: -500, pads: [],
+    spawns, items, props: [], flags: { red: [-X + 200, 0, 0], blue: [X - 200, 0, 0] },
+    soccer: { goalX: X, goalW: GW, goalH: GH, center: [0, 0, 60] }, ...(court ? { hoops } : {}),
+  };
+};
+const pitch = stadium(false);
+const court = stadium(true);
+
+// ------------------------------------------------------------------ Course (parkour): a run through the sky
+// Stepping stones, a staircase climb, narrow beams, jump pads and sprint gaps, with checkpoints. Fall and you
+// go back to your last checkpoint.
+const course = (() => {
+  const { B, box } = builder();
+  const D = [];
+  const deco = (x0, y0, z0, x1, y1, z1, mat) => D.push({ mins: [Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)], maxs: [Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)], mat });
+  const pads = [];
+  box(-200, -250, -40, 200, 250, 0, 'plate'); // start
+  for (let i = 0; i < 6; i++) { const x = 330 + i * 180, y = i % 2 ? 40 : -40; box(x - 40, y - 40, -40, x + 40, y + 40, 0, 'hazard'); }
+  box(1380, -150, -40, 1580, 150, 0, 'plate'); // checkpoint 1
+  for (let i = 0; i < 8; i++) { const x0 = 1680 + i * 140; box(x0, -70, -40, x0 + 110, 70, 28 * (i + 1), 'concrete'); }
+  box(2860, -150, -40, 3060, 150, 224, 'plate'); // checkpoint 2
+  box(3060, -12, 200, 3560, 12, 224, 'metal'); // beams
+  box(3560, -40, 200, 3640, 40, 224, 'plate');
+  box(3588, 40, 200, 3612, 400, 224, 'metal');
+  box(3560, 400, 200, 3640, 480, 224, 'plate');
+  box(3640, 428, 200, 4140, 452, 224, 'metal');
+  box(4140, 340, -40, 4340, 540, 224, 'plate'); // checkpoint 3
+  pads.push(pad(4300, 440, 224, [4600, 440, 520], 820));
+  box(4500, 360, 480, 4700, 520, 520, 'plate');
+  for (let i = 0; i < 4; i++) { const x = 4850 + i * 250; box(x - 50, 390, 480, x + 50, 490, 520, 'hazard'); }
+  box(5800, 340, 480, 6000, 540, 520, 'plate'); // checkpoint 4
+  pads.push(pad(5965, 440, 520, [6310, 440, 800], 820));
+  box(6200, 320, 760, 6420, 560, 800, 'plate'); // the finish
+  // the finish arch and checkpoint markers
+  deco(6380, 330, 800, 6400, 350, 960, 'neon'); deco(6380, 530, 800, 6400, 550, 960, 'neon'); deco(6380, 330, 950, 6400, 550, 970, 'neon');
+  const checkpoints = [
+    { o: [0, 0, 0], yaw: 0 },
+    { o: [1480, 0, 0], yaw: 0, box: [1380, -150, -10, 1580, 150, 140] },
+    { o: [2960, 0, 224], yaw: 0, box: [2860, -150, 214, 3060, 150, 364] },
+    { o: [4220, 440, 224], yaw: 0, box: [4140, 340, 214, 4340, 540, 364] },
+    { o: [5880, 440, 520], yaw: 0, box: [5800, 340, 510, 6000, 540, 660] },
+    { o: [6290, 440, 800], yaw: 0, box: [6200, 320, 790, 6420, 560, 940], finish: true },
+  ];
+  for (const c of checkpoints.slice(1, -1)) {
+    const [x0, y0, z0, x1, y1] = c.box, z = z0 + 10;
+    for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) deco(x - 4, y - 4, z, x + 4, y + 4, z + 70, 'neon');
+  }
+  const spawns = [];
+  for (let i = 0; i < 16; i++) spawns.push({ origin: [-120 + (i % 4) * 80, -150 + Math.floor(i / 4) * 100, 1], yaw: 0 });
+  return {
+    name: 'Sky Course', boxes: B, decor: D, sun: [-0.3, 0.4, 0.86], bounds: [[-250, -300, -300], [6500, 650, 1000]], killZ: -300, pads,
+    spawns, items: [], props: [], flags: { red: [0, 0, 0], blue: [6290, 440, 800] }, checkpoints,
+  };
+})();
+
+// maps only played in their own mode (not in the normal rotation)
+export const MODE_MAPS = { soccer: 'pitch', parkour: 'course', mugrball: 'court' };
+
+export const CODE_MAPS = { foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court };

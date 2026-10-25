@@ -23,9 +23,31 @@ const PALETTES = {
   office: { concrete: '#a8a8a2', plate: '#6a6e74', metal: '#8a9098', panel: ['#d8d4cc', '#b8b2a6'], hazard: '#4a8a5a', neon: '#e8f4ff' },
   station: { concrete: '#9a9c98', plate: '#5c5e60', metal: '#5a6670', panel: ['#d0d4d0', '#2f6aa8'], hazard: '#e8c020', neon: '#ffd060' },
   city: { concrete: '#a19d96', plate: '#3c3f44', metal: '#5e6670', panel: ['#a8705a', '#7c4e3e'], hazard: '#d8a820', neon: '#ffd890', grass: ['#4e7a36', '#3a5a28'] },
+  pitch: { concrete: '#8f9298', plate: '#5c6066', metal: '#b8bec6', panel: ['#1f56b8', '#173f88'], hazard: '#e8c020', neon: '#fff4d8', grass: ['#3f8f3a', '#347a30'] },
+  court: { concrete: '#8f9298', plate: '#5a5248', metal: '#c4cad2', panel: ['#b8401f', '#8a2f16'], hazard: '#ff6a1a', neon: '#fff4d8', grass: ['#3f8f3a', '#347a30'] },
+  course: { concrete: '#c8c2b8', plate: '#4f5a6e', metal: '#9aa4b0', panel: ['#8a92a8', '#6a7288'], hazard: '#ffcf1a', neon: '#ff4fd8' },
 };
+// goal nets: a white grid you can see through
+let netMat = null;
+function net() {
+  if (!netMat) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    g.strokeStyle = 'rgba(255,255,255,0.85)';
+    g.lineWidth = 3;
+    g.strokeRect(0, 0, 64, 64);
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(1, 1);
+    netMat = new THREE.MeshBasicMaterial({ map: t, transparent: true, side: THREE.DoubleSide, depthWrite: false });
+  }
+  return netMat;
+}
+
 function surf(mat, pal) {
   if (mat === 'neon') return neonMaterial(pal.neon);
+  if (mat === 'line') return surfaceMaterial('concrete', { color: '#f4f4ee', bump: 0.2 });
   if (mat === 'grass') return surfaceMaterial('grass', { color: (pal.grass || ['#4e7a36'])[0], color2: (pal.grass || [0, '#3a5a28'])[1] });
   if (mat === 'panel') return surfaceMaterial('panel', { color: pal.panel[0], color2: pal.panel[1] });
   if (mat === 'hazard') return surfaceMaterial('hazard', { color: pal.hazard });
@@ -125,6 +147,7 @@ function codeMap(id, def) {
   // and occlusion culling skips the ones hidden behind walls (each box goes in the chunk of its centre)
   const chunks = new Map(); // "cx,cy" -> { byMat: Map(mat -> geometries), box: [min xyz, max xyz] }
   for (const b of def.boxes) {
+    if (b.mat === 'clip') continue; // invisible walls
     const g = new THREE.BoxGeometry(b.maxs[0] - b.mins[0], b.maxs[1] - b.mins[1], b.maxs[2] - b.mins[2]);
     g.translate((b.mins[0] + b.maxs[0]) / 2, (b.mins[1] + b.maxs[1]) / 2, (b.mins[2] + b.maxs[2]) / 2);
     const key = Math.floor((b.mins[0] + b.maxs[0]) / 2 / CHUNK) + ',' + Math.floor((b.mins[1] + b.maxs[1]) / 2 / CHUNK);
@@ -163,7 +186,31 @@ function codeMap(id, def) {
     beam.position.set(c[0] + dir.x * 60, c[1] + dir.y * 60, c[2] + dir.z * 60);
     group.add(beam);
   }
-  const detail = decorate(id, def.boxes, def.bounds, pal);
+  // drawn but never collides: pitch lines, nets, stands, markers
+  const decoMats = new Map();
+  for (const b of def.decor || []) {
+    const sx = b.maxs[0] - b.mins[0], sy = b.maxs[1] - b.mins[1], sz = b.maxs[2] - b.mins[2];
+    const g = new THREE.BoxGeometry(sx, sy, sz);
+    if (b.mat === 'net') {
+      // one grid square every 16 units on every face
+      const uv = g.attributes.uv, n = g.attributes.normal;
+      for (let i = 0; i < uv.count; i++) {
+        const ax = Math.abs(n.getX(i)) > 0.5 ? [sy, sz] : Math.abs(n.getY(i)) > 0.5 ? [sx, sz] : [sx, sy];
+        uv.setXY(i, uv.getX(i) * ax[0] / 16, uv.getY(i) * ax[1] / 16);
+      }
+    }
+    g.translate((b.mins[0] + b.maxs[0]) / 2, (b.mins[1] + b.maxs[1]) / 2, (b.mins[2] + b.maxs[2]) / 2);
+    if (!decoMats.has(b.mat)) decoMats.set(b.mat, []);
+    decoMats.get(b.mat).push(g);
+  }
+  for (const [mat, geos] of decoMats) {
+    const mesh = new THREE.Mesh(mergeGeometries(geos), mat === 'net' ? net() : surf(mat, pal));
+    mesh.castShadow = mat !== 'net' && mat !== 'line' && mat !== 'neon';
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  // the pitch stays clean: no litter, tufts or wall clutter on a football ground
+  const detail = def.soccer ? { group: new THREE.Group(), tick: () => {} } : decorate(id, def.boxes.filter((b) => b.mat !== 'clip'), def.bounds, pal);
   group.add(detail.group);
   return { id, name: def.name, group, cells, boxes: def.boxes, spawns: def.spawns, bounds: def.bounds, sun: (Array.isArray(def.sun) ? def.sun : def.sun?.dir) || [0.3, 0.3, 0.85], pads: def.pads || [], killZ: def.killZ, tick: detail.tick };
 }

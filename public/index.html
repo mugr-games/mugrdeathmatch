@@ -17,6 +17,9 @@
 <meta property="og:url" content="">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#ffb000">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <!-- empty: the server is wherever this page came from. GitHub Pages builds fill in the server's address. -->
 <meta name="game-server" content="">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }</script>
@@ -48,6 +51,7 @@ button, input, select { font: inherit; color: inherit; }
 /* ---------- main menu (left column list over the live map) ---------- */
 #menu { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 0 12vh 7vw; background: linear-gradient(90deg, rgba(0,0,0,.65), rgba(0,0,0,0) 55%); z-index: 20; }
 #menu h1 { font: bold clamp(28px, 4.4vw, 54px)/1 var(--ui); letter-spacing: .02em; margin: 0 0 4px; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.6); }
+#menu h1 img { display: block; height: clamp(72px, 13vh, 132px); width: auto; margin-left: -6px; filter: drop-shadow(0 4px 14px rgba(0,0,0,.55)); }
 #menu .sub { color: var(--text-dim); margin: 0 0 6vh; font-size: 12px; letter-spacing: .25em; text-transform: uppercase; }
 #menu nav { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 #menu nav button { background: none; border: 0; padding: 2px 0; font: bold 17px var(--ui); color: var(--menu); cursor: pointer; text-transform: uppercase; letter-spacing: .04em; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
@@ -121,6 +125,14 @@ label.check { display: flex; gap: 8px; align-items: center; color: var(--text-di
 #room-tag { position: fixed; top: 34px; left: 24px; color: var(--hud-dim); font: bold 11px var(--ui); letter-spacing: .06em; z-index: 10; pointer-events: none; }
 #ctf { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); text-align: center; font: 700 15px var(--num); letter-spacing: .08em; background: rgba(0,0,0,.4); border-radius: 8px; padding: 6px 14px 5px; color: #fff; }
 #ctf > span { padding: 0 8px; }
+#mb { position: absolute; top: 74px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; font: 700 13px var(--ui); color: #fff; text-shadow: 0 1px 3px #000; white-space: nowrap; }
+#mb .red { color: #ff5a4a; } #mb .blue { color: #58a6ff; } #mb .you { color: var(--hud); font-size: 15px; } #mb small { display: block; font: 11px var(--ui); color: #ccc; margin-top: 2px; }
+#pk { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); min-width: 180px; text-align: center; background: rgba(0,0,0,.45); border-radius: 8px; padding: 8px 16px; color: #fff; pointer-events: none; }
+#pk .t { font: 700 clamp(18px, 4.2vh, 34px) var(--num); letter-spacing: .04em; color: var(--hud); }
+#pk .cp, #pk .best { font: 600 13px var(--ui); color: #ddd; }
+#pk ol { list-style: none; margin: 8px 0 0; padding: 6px 0 0; border-top: 1px solid rgba(255,255,255,.15); text-align: left; font: 600 12px var(--ui); }
+#pk li { display: flex; justify-content: space-between; gap: 14px; } #pk li.me { color: var(--hud); }
+#pk .keys { margin-top: 6px; font: 11px var(--ui); color: #aaa; }
 #ctf .red { color: #ff7a6a; }
 #ctf .blue { color: #7ab4ff; }
 #ctf .mid { font: 11px var(--ui); color: var(--text-dim); letter-spacing: .02em; }
@@ -394,7 +406,7 @@ body.touch #netinfo { display: none; }
 </div>
 
 <div id="menu">
-  <h1>MUGR DEATHMATCH</h1>
+  <h1><img src="logo.svg" alt="MUGR DEATHMATCH" width="440" height="144"></h1>
   <p class="sub">Browser arena shooter</p>
   <div class="account"><span id="acct-name">Guest</span> <button type="button" id="btn-account">Sign in / Register</button></div>
   <div class="coins" id="menu-coins" title="Coins: 10 per kill, 100 for winning a team deathmatch or capture the flag match">0</div>
@@ -432,7 +444,7 @@ body.touch #netinfo { display: none; }
   </div>
   <div id="pane-bots" role="tabpanel" hidden>
     <p>Play against computer players. Your game is private, but friends can join it with its code.</p>
-    <div class="row"><label for="b-mode">Game mode</label><select id="b-mode"><option value="dm">Deathmatch</option><option value="tdm">Team deathmatch</option><option value="ctf">Capture the flag</option><option value="infection">Infection</option></select></div>
+    <div class="row"><label for="b-mode">Game mode</label><select id="b-mode"><option value="dm">Deathmatch</option><option value="tdm">Team deathmatch</option><option value="ctf">Capture the flag</option><option value="infection">Infection</option><option value="soccer">Soccer</option><option value="mugrball">Mugrball</option></select></div>
     <div class="row"><label for="b-map">Map</label><select id="b-map"></select></div>
     <div class="row"><label for="b-count">Bots</label><div><input type="range" id="b-count" min="1" max="15" step="1" value="5"><span class="val" id="b-count-v"></span></div></div>
     <div class="row"><label for="b-skill">Difficulty</label><select id="b-skill"></select></div>
@@ -449,7 +461,7 @@ body.touch #netinfo { display: none; }
   <div class="row"><label for="c-name">Game name</label><input type="text" id="c-name" maxlength="32"></div>
   <div class="row"><label for="c-mode">Game mode</label><select id="c-mode"></select></div>
   <div class="row"><label for="c-map">Map</label><select id="c-map"></select></div>
-  <div class="row" id="c-caps-row" hidden><label for="c-caps">Capture limit</label><div><input type="range" id="c-caps" min="1" max="10" step="1"><span class="val" id="c-caps-v"></span></div></div>
+  <div class="row" id="c-caps-row" hidden><label for="c-caps">Capture limit</label><div><input type="range" id="c-caps" min="1" max="20" step="1"><span class="val" id="c-caps-v"></span></div></div>
   <div class="row"><label for="c-loadout">Starting weapons</label><select id="c-loadout"></select></div>
   <div class="row"><label for="c-max">Max players</label><div><input type="range" id="c-max" min="2" max="16" step="1"><span class="val" id="c-max-v"></span></div></div>
   <div class="row"><label for="c-frags">Frag limit</label><div><input type="range" id="c-frags" min="0" max="100" step="5"><span class="val" id="c-frags-v"></span></div></div>
