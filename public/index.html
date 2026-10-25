@@ -308,6 +308,50 @@ body.touch #netinfo { display: none; }
 /* ---------- friends, messages, moderation ---------- */
 #menu nav .badge { display: inline-block; min-width: 18px; padding: 1px 5px; margin-left: 6px; border-radius: 9px; background: #e0473a; color: #fff; font-size: 11px; text-align: center; vertical-align: middle; text-shadow: none; }
 #dlg-friends, #dlg-mod, #dlg-voice { width: min(820px, calc(100vw - 32px)); }
+/* ---------- the heist ---------- */
+#dlg-heist { width: min(560px, calc(100vw - 32px)); }
+.hz-choices { display: grid; gap: 8px; margin: 14px 0 6px; }
+#hz-code-form { display: flex; gap: 6px; } #hz-code { width: 90px; text-transform: uppercase; letter-spacing: .15em; }
+#hz-err, #pl-msg { min-height: 1.3em; color: #ff7a6e; font-size: 13px; margin-top: 6px; }
+#dlg-plan { width: min(1060px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; }
+#dlg-plan h2 small { font-size: 13px; color: var(--accent); font-weight: normal; margin-left: 8px; }
+.pl-body { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
+#pl-board { width: 100%; height: auto; display: block; border-radius: 6px; background: #0e2a4a; }
+.pl-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; margin-top: 6px; color: #b8c8dc; }
+.pl-legend .g { color: #ff6a5a; } .pl-legend .c { color: #ffd23a; } .pl-legend .k { color: #6ac8ff; } .pl-legend .v { color: #e0e0e0; } .pl-legend .a { color: #ff4040; } .pl-legend .van { color: #5aff8a; }
+.pl-side h3 { margin: 10px 0 6px; font-size: 13px; } .pl-side h3:first-child { margin-top: 0; } .pl-side h3 small { color: var(--text-dim); font-weight: normal; }
+#pl-crew { list-style: none; margin: 0; padding: 0; }
+#pl-crew li { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-bottom: 1px solid rgba(255,255,255,.06); font-size: 13px; }
+#pl-crew li .role { color: var(--text-dim); font-size: 12px; } #pl-crew li .rd { margin-left: auto; font-size: 12px; color: #888; } #pl-crew li .rd.on { color: #3ddc6a; font-weight: bold; }
+#pl-crew li.empty { color: var(--text-dim); font-style: italic; }
+.pl-roles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.pl-roles button { text-align: left; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); color: inherit; cursor: pointer; font: inherit; font-size: 12px; }
+.pl-roles button b { display: block; font-size: 13px; } .pl-roles button small { color: var(--text-dim); }
+.pl-roles button.on { border-color: var(--accent); background: rgba(255,176,0,.12); } .pl-roles button:disabled { opacity: .4; cursor: default; }
+.seg { display: flex; gap: 0; } .seg button { flex: 1; padding: 6px 8px; border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.04); color: inherit; cursor: pointer; font: inherit; font-size: 12px; }
+.seg button:first-child { border-radius: 6px 0 0 6px; } .seg button:last-child { border-radius: 0 6px 6px 0; }
+.seg button.on { background: var(--accent); color: #111; border-color: var(--accent); font-weight: bold; } .seg button:disabled:not(.on) { opacity: .5; cursor: default; }
+.seg-note { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+#pl-result { margin-top: 12px; padding: 10px; border-radius: 6px; background: rgba(255,255,255,.05); font-size: 13px; } #pl-result:empty { display: none; }
+#pl-result.win { border-left: 3px solid #3ddc6a; } #pl-result.lose { border-left: 3px solid #e0473a; }
+@media (max-width: 760px) { .pl-body { grid-template-columns: 1fr; } }
+#heist-hud { position: absolute; inset: 0; pointer-events: none; }
+#hz-obj { position: absolute; left: 16px; top: 96px; max-width: 330px; font: 12px var(--ui); color: #fff; text-shadow: 0 1px 3px #000; }
+#hz-obj .st { display: inline-block; font: 700 12px var(--ui); letter-spacing: .1em; padding: 3px 8px; border-radius: 4px; margin-bottom: 6px; }
+#hz-obj .st.calm { background: rgba(40,160,80,.75); } #hz-obj .st.alarm { background: rgba(210,30,30,.85); animation: hzflash 1s infinite; } #hz-obj .st.break { background: rgba(200,140,20,.8); }
+@keyframes hzflash { 50% { background: rgba(120,10,10,.85); } }
+#hz-obj ul { list-style: none; margin: 0; padding: 6px 10px; background: linear-gradient(90deg, rgba(0,0,0,.55), rgba(0,0,0,0)); border-left: 3px solid var(--accent); }
+#hz-obj li { margin: 3px 0; } #hz-obj li.opt { color: #ccc; } #hz-obj li i { font-style: normal; display: inline-block; width: 16px; color: #aaa; } #hz-obj li i.ok { color: #3ddc6a; }
+#hz-obj li small { color: #aaa; } #hz-obj b.bad { color: #ff5a4a; }
+#hz-obj .take { margin-top: 6px; font: 700 16px var(--num); color: #7dff9a; }
+#hz-prompt { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); padding: 8px 16px; border-radius: 6px; background: rgba(0,0,0,.6); color: #fff; font: 14px var(--ui); text-align: center; white-space: nowrap; }
+#hz-prompt b { display: inline-block; min-width: 20px; padding: 1px 6px; margin-right: 6px; border-radius: 4px; background: #fff; color: #111; }
+#hz-prompt .bar { display: block; width: 240px; height: 6px; margin: 6px auto 0; border-radius: 3px; background: rgba(255,255,255,.2); overflow: hidden; } #hz-prompt .bar span { display: block; height: 100%; background: var(--accent); }
+#hz-prompt .no { color: #ff8a7a; font-weight: bold; } #hz-prompt small { color: #bbb; }
+#hz-detect { position: absolute; left: 50%; top: 50%; width: 150px; height: 150px; border-radius: 50%; --fill: 0%;
+  background: conic-gradient(from -25deg, rgba(255,255,255,.9) 0 calc(var(--fill) * .5), rgba(255,255,255,.15) 0 50deg, transparent 50deg);
+  -webkit-mask: radial-gradient(circle, transparent 66px, #000 67px, #000 74px, transparent 75px); mask: radial-gradient(circle, transparent 66px, #000 67px, #000 74px, transparent 75px); }
+#hz-detect.hot { background: conic-gradient(from -25deg, #ff3b30 0 calc(var(--fill) * .5), rgba(255,80,60,.25) 0 50deg, transparent 50deg); }
 /* ---------- voice chat ---------- */
 .vc-body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .vc-body h3 { margin: 0 0 8px; font-size: 14px; }
@@ -434,6 +478,11 @@ body.touch #netinfo { display: none; }
   <div id="scoreboard" hidden></div>
   <div id="netinfo"></div>
   <div id="voice-hud" hidden></div>
+  <div id="heist-hud" hidden>
+    <div id="hz-obj"></div>
+    <div id="hz-prompt" hidden></div>
+    <div id="hz-detect" hidden></div>
+  </div>
 </div>
 
 <div id="menu">
@@ -443,6 +492,7 @@ body.touch #netinfo { display: none; }
   <div class="coins" id="menu-coins" title="Coins: 10 per kill, 100 for winning a team deathmatch or capture the flag match">0</div>
   <nav>
     <button id="btn-join" disabled>Play</button>
+    <button id="btn-heist">Heist</button>
     <button id="btn-resume" hidden>Resume game</button>
     <button id="btn-invite" hidden>Copy invite link</button>
     <button id="btn-disconnect" hidden>Leave game</button>
@@ -572,6 +622,47 @@ body.touch #netinfo { display: none; }
     <div class="lb-mine" id="lb-mine"></div>
   </div>
   <div class="actions"><button type="button" class="btn primary" id="lb-close">Close</button></div>
+</div>
+
+<div class="dialog" id="dlg-heist" hidden role="dialog" aria-labelledby="dlg-heist-title">
+  <h2 id="dlg-heist-title">The Bank Job</h2>
+  <p>Rob a small branch bank with a crew of 2 to 4. Plan it, pick your roles, then go in quietly or loud: get a keycard, open the staff door, crack the vault, bag the cash and get it to the van. The guards notice things, the staff call the police, and the police come in waves.</p>
+  <div class="hz-choices">
+    <button type="button" class="btn primary" id="hz-find">Find a crew</button>
+    <button type="button" class="btn" id="hz-host">Host a private crew</button>
+    <form id="hz-code-form"><input type="text" id="hz-code" maxlength="4" placeholder="CODE" autocomplete="off"><button type="submit" class="btn">Join with code</button></form>
+  </div>
+  <div id="hz-err" role="alert"></div>
+  <div class="actions"><button type="button" class="btn" id="hz-close">Close</button></div>
+</div>
+
+<div class="dialog" id="dlg-plan" hidden role="dialog" aria-labelledby="dlg-plan-title">
+  <h2 id="dlg-plan-title">Planning: The Bank Job <small id="pl-code"></small></h2>
+  <div class="pl-body">
+    <div class="pl-board-wrap">
+      <canvas id="pl-board" width="640" height="440" aria-label="Blueprint of the bank"></canvas>
+      <div class="pl-legend"><span class="g">● guard</span><span class="c">◣ camera</span><span class="k">■ keycard</span><span class="v">◆ vault</span><span class="a">▲ alarm</span><span class="van">▬ van</span></div>
+    </div>
+    <div class="pl-side">
+      <h3>Crew <small>(2 to 4)</small></h3>
+      <ul id="pl-crew"></ul>
+      <h3>Your role</h3>
+      <div id="pl-roles" class="pl-roles"></div>
+      <h3>Approach <small id="pl-host-note"></small></h3>
+      <div id="pl-approach" class="seg"></div>
+      <h3>Difficulty</h3>
+      <div id="pl-diff" class="seg"></div>
+      <div id="pl-result"></div>
+    </div>
+  </div>
+  <div id="pl-msg" role="status"></div>
+  <div class="actions">
+    <button type="button" class="btn" id="pl-leave">Leave crew</button>
+    <button type="button" class="btn" id="pl-invite">Copy invite</button>
+    <button type="button" class="btn primary" id="pl-ready">Ready</button>
+    <button type="button" class="btn primary" id="pl-start">Start the job</button>
+    <button type="button" class="btn primary" id="pl-go" hidden>The job's on: go!</button>
+  </div>
 </div>
 
 <div class="dialog" id="dlg-voice" hidden role="dialog" aria-labelledby="dlg-voice-title">

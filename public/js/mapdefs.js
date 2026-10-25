@@ -775,6 +775,134 @@ const stadium = (court) => {
 const pitch = stadium(false);
 const court = stadium(true);
 
+// ------------------------------------------------------------------ Bank (heist): a small branch bank on a street
+// The crew starts by the getaway van. Lobby (public) → teller counter → staff door (keycard) → corridor →
+// security office (camera monitors, alarm wiring, alarm panel), manager's office (a keycard on the desk) and
+// the vault room (hack panel, vault door, cash carts and deposit boxes). A back door opens onto the alley.
+// `heist` holds everything the heist needs: guards and their routes, cameras, staff, interactive spots.
+// Guards, cameras and staff have a minimum difficulty (0 easy, 1 normal, 2 hard).
+const bank = (() => {
+  const { B, box } = builder();
+  const D = [];
+  const deco = (x0, y0, z0, x1, y1, z1, mat) => D.push({ mins: [Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)], maxs: [Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)], mat });
+  const H = 220; // ceiling
+  // ground: the street in front, the alley on the east side, a back lot behind
+  box(-1500, -1400, -64, 1500, 1100, 0, 'concrete');
+  deco(-1500, -1300, 0, 1500, -760, 0.4, 'plate'); // road
+  for (let x = -1450; x < 1500; x += 220) deco(x, -1034, 0.4, x + 110, -1026, 0.8, 'line');
+  deco(-1500, -760, 0, 1500, -748, 6, 'concrete'); // kerb
+  // the block around it: buildings either side, a wall behind, the far side of the street
+  box(-1500, -520, 0, -660, 1000, 380, 'brick');
+  box(920, -520, 0, 1500, 1000, 420, 'brick');
+  box(-1500, 1000, 0, 1500, 1100, 260, 'brick');
+  box(-1500, -1400, 0, 1500, -1310, 460, 'panel');
+  for (const [x0, x1] of [[-1500, 1500]]) { box(x0 - 20, -1400, 0, x0, 1100, 600, 'clip'); box(x1, -1400, 0, x1 + 20, 1100, 600, 'clip'); }
+  box(-1520, -1420, 600, 1520, 1120, 620, 'clip');
+  // parked cars to hide behind, and the getaway van
+  for (const [x, y] of [[-480, -900], [300, -960], [820, -880], [-200, -1180], [1150, -1160]]) box(x - 85, y - 40, 0, x + 85, y + 40, 58, 'metal');
+  box(-1160, -850, 0, -940, -750, 112, 'metal');
+  deco(-1150, -852, 70, -1060, -848, 104, 'glass');
+  // ---- the bank: stone walls, a glass front, a flat roof
+  box(-640, -520, 0, -70, -500, H, 'stone');
+  box(70, -520, 0, 640, -500, H, 'stone');
+  box(-70, -520, 150, 70, -500, H, 'stone');
+  for (const x of [-480, 330]) deco(x, -522, 60, x + 150, -520, 150, 'glass');
+  box(-640, 500, 0, 640, 520, H, 'stone');
+  box(-640, -500, 0, -620, 500, H, 'stone');
+  box(620, -500, 0, 640, 40, H, 'stone');
+  box(620, 120, 0, 640, 500, H, 'stone');
+  box(620, 40, 140, 640, 120, H, 'stone');
+  box(-640, -520, H, 640, 520, H + 20, 'plate');
+  deco(-120, -560, 160, 120, -522, 200, 'neon'); // the sign over the door
+  deco(-620, -500, 0, 620, 500, 0.5, 'marble');
+  // lobby: pillars, benches, the teller counter (you can jump over it) and the gate at its end
+  for (const x of [-300, 300]) box(x - 22, -282, 0, x + 22, -238, H, 'stone');
+  for (const x of [-420, 420]) box(x - 70, -420, 0, x + 70, -396, 22, 'wood');
+  box(-620, -150, 0, 480, -125, 46, 'wood');
+  deco(-620, -152, 46, 480, -123, 50, 'marble');
+  deco(482, -140, 0, 618, -134, 40, 'wood');
+  // teller desks and the wall behind them, with the staff door (keycard)
+  for (const x of [-250, 250]) box(x - 70, -60, 0, x + 70, -40, 40, 'wood');
+  box(-620, 0, 0, -40, 20, H, 'panel');
+  box(40, 0, 0, 620, 20, H, 'panel');
+  box(-40, 0, 140, 40, 20, H, 'panel');
+  // the corridor's north wall, with doorways into the three back rooms
+  for (const [x0, x1] of [[-620, -470], [-400, -140], [-70, 150], [220, 620]]) box(x0, 140, 0, x1, 160, H, 'panel');
+  for (const [x0, x1] of [[-470, -400], [-140, -70], [150, 220]]) box(x0, 140, 140, x1, 160, H, 'panel');
+  box(-260, 160, 0, -240, 500, H, 'panel');
+  box(80, 160, 0, 100, 500, H, 'panel');
+  // security office: the monitor desk and the alarm wiring box
+  box(-600, 300, 0, -540, 420, 40, 'metal');
+  deco(-610, 300, 40, -600, 420, 100, 'neon');
+  box(-620, 200, 70, -604, 240, 120, 'hazard');
+  // manager's office
+  box(-160, 330, 0, 0, 390, 38, 'wood');
+  // the vault: thick walls, the round door (a door box) and the hack panel beside it
+  box(100, 290, 0, 300, 310, H, 'metal');
+  box(420, 290, 0, 620, 310, H, 'metal');
+  box(300, 290, 160, 420, 310, H, 'metal');
+  box(256, 284, 40, 284, 290, 90, 'hazard');
+  for (const x of [100, 600]) box(x, 310, 0, x + 20, 500, 180, 'metal'); // deposit boxes along both sides
+  for (const [x, y] of [[170, 430], [270, 470], [450, 470], [550, 430]]) box(x - 26, y - 18, 0, x + 26, y + 18, 34, 'metal'); // cash carts
+  // health and ammo: at the van, and a little inside
+  const items = [
+    { kind: 'ammo', o: [-1180, -660, 0] }, { kind: 'health', o: [-1100, -620, 0] }, { kind: 'battery', o: [-1020, -620, 0] },
+    { kind: 'ammo', o: [-560, 230, 0] }, { kind: 'health', o: [560, 60, 0] },
+  ];
+  const spawns = [[-1180, -690], [-1100, -680], [-1020, -680], [-940, -690]].map(([x, y]) => ({ origin: [x, y, 1], yaw: 30 }));
+  return {
+    name: 'Bank', boxes: B, decor: D, sun: [0.45, 0.35, 0.8], bounds: [[-1500, -1400, -40], [1500, 1100, 400]], killZ: -500, pads: [],
+    spawns, items, props: [],
+    doors: [
+      { mins: [-40, 2, 0], maxs: [40, 18, 140], name: 'staff' },
+      { mins: [300, 292, 0], maxs: [420, 308, 160], name: 'vault' },
+      { mins: [622, 40, 0], maxs: [638, 120, 140], name: 'back' },
+    ],
+    heist: {
+      inside: [[-620, -500, 0], [620, 500, H]],
+      restricted: [[-620, -125, 0], [620, 500, H]], // behind the counter and everything past it
+      van: { o: [-1050, -690, 0], r: 170 },
+      alarms: [[-580, -300, 0], [-450, 460, 0]],
+      phones: [[-250, -82, 0], [250, -82, 0], [-80, 410, 0]],
+      exits: [[0, -700, 0], [780, -300, 0]],
+      keycard: [-80, 360, 40],
+      terminal: [-520, 360, 0],
+      wiring: [-575, 220, 0],
+      panel: [270, 262, 0],
+      doorUse: { staff: [[0, -18, 0], [0, 38, 0]], back: [[598, 80, 0]], vault: [[360, 270, 0]] },
+      carts: [[170, 378, 0], [270, 418, 0], [450, 418, 0], [550, 378, 0]],
+      boxes: [[140, 330], [140, 356], [140, 382], [140, 472], [580, 330], [580, 356], [580, 382], [580, 472]].map(([x, y]) => [x, y, 0]),
+      guards: [
+        { o: [-110, -460], yaw: 90, post: true, look: [60, 130] },
+        { route: [[-500, -320], [450, -320], [450, -440], [-500, -440]] },
+        { route: [[-520, -90], [420, -90]] },
+        { o: [180, 230], yaw: 20, post: true, look: [-30, 70] },
+        { route: [[-560, 80], [560, 80], [-430, 80], [-430, 250], [-430, 80]], min: 1 },
+        { o: [-470, 330], yaw: 180, post: true, look: [150, 210], cams: true, min: 1 },
+        { route: [[-600, -600], [760, -600], [760, 700], [-560, 700], [760, 700], [760, -600]], min: 2 },
+        { route: [[-200, -300], [540, -300], [550, -100], [0, -90], [0, 80], [-430, 80], [-430, 250], [-430, 80], [0, 80], [0, -90], [550, -100]], captain: true, min: 1 },
+      ],
+      cameras: [
+        { o: [-600, -480, 190], yaw: 45, sweep: 35 },
+        { o: [600, -480, 190], yaw: 135, sweep: 35 },
+        { o: [0, -12, 190], yaw: -90, sweep: 55 },
+        { o: [600, 180, 190], yaw: 172, sweep: 22 },
+        { o: [-600, 40, 190], yaw: 0, sweep: 18, min: 1 },
+        { o: [655, -535, 200], yaw: 70, sweep: 28, min: 1 },
+      ],
+      staff: [
+        { o: [-250, -82], yaw: -90, kind: 'teller' },
+        { o: [250, -82], yaw: -90, kind: 'teller' },
+        { o: [-80, 430], yaw: -90, kind: 'manager' },
+        { o: [-300, -380], kind: 'customer', route: [[-300, -380], [-100, -250], [200, -330], [350, -440], [0, -460]] },
+        { o: [200, -330], kind: 'customer', route: [[200, -330], [-200, -440], [-450, -300], [0, -250]] },
+        { o: [100, -450], kind: 'customer', route: [[100, -450], [-350, -250], [350, -250]], min: 1 },
+      ],
+      police: [[1450, -1100], [1450, -880], [780, 960], [-300, 960], [-1440, -1240]],
+    },
+  };
+})();
+
 // ------------------------------------------------------------------ Course (parkour): a run through the sky
 // Stepping stones, a staircase climb, narrow beams, jump pads and sprint gaps, with checkpoints. Fall and you
 // go back to your last checkpoint.
@@ -823,6 +951,6 @@ const course = (() => {
 })();
 
 // maps only played in their own mode (not in the normal rotation)
-export const MODE_MAPS = { soccer: 'pitch', parkour: 'course', mugrball: 'court' };
+export const MODE_MAPS = { soccer: 'pitch', parkour: 'course', mugrball: 'court', heist: 'bank' };
 
-export const CODE_MAPS = { foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court };
+export const CODE_MAPS = { foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court, bank };

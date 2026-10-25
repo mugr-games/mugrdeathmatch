@@ -75,7 +75,7 @@ export class Hud {
     const W = WEAPONS.find((w) => w.id === weapon);
     const row = document.createElement('div');
     row.className = 'kf' + (mine ? ' mine' : '');
-    const icon = `<span class="kfw">${W ? esc(W.name) : weapon === 'fall' ? 'FELL' : '☠'}</span>`;
+    const icon = `<span class="kfw">${W ? esc(W.name) : weapon === 'fall' ? 'FELL' : ['guard', 'police', 'swat'].includes(weapon) ? weapon.toUpperCase() : weapon === 'bleedout' ? 'BLED OUT' : '☠'}</span>`;
     row.innerHTML = `${killer ? `<b>${esc(killer)}</b>` : ''} ${icon}${head ? '<span class="hs">HS</span>' : ''} <b class="v">${esc(victim)}</b>`;
     this.feed.prepend(row);
     while (this.feed.children.length > 5) this.feed.lastChild.remove();

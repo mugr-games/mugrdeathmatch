@@ -8,6 +8,7 @@ import { Locker, setSaveToken } from './locker.js';
 import { GamepadInput } from './gamepad.js';
 import { Social } from './social.js';
 import { Voice } from './voice.js';
+import { HeistMenu } from './planning.js';
 import { COSMETICS } from './cosmetics.js';
 import { DEVLOG } from './devlog.js';
 import { api, pageUrl, SERVER } from './net.js';
@@ -28,6 +29,7 @@ let account = null; // the signed-in username, or null for a guest
 let pad = null;
 let social = null;
 let voice = null; // voice chat channels
+let heistMenu = null; // the heist dialog and planning screen
 let serverInfo = null;
 let playing = false;
 const touchMode = isTouch();
@@ -49,6 +51,12 @@ async function boot() {
   locker = new Locker({ settings, save, sound: game.sound, onLook: (color, model) => game.send({ t: 'color', color, model }) });
   game.token = locker.token;
   voice = new Voice({ game, account: () => account, signIn: () => $('btn-account').click() });
+  heistMenu = new HeistMenu({
+    game: () => game, play, resume, status, name: () => settings.name, leave: () => { $('btn-disconnect').click(); closeLobby(); show('menu'); },
+    // the planning screen: the menu and mouse capture step aside
+    pause: () => { playing = false; if (document.pointerLockElement) document.exitPointerLock(); hide('menu'); closeDialogs(); game.hud.show(false); touch?.show(false); document.body.classList.remove('playing'); },
+  });
+  game.hv.onPlan = (plan, was) => heistMenu.update(plan, was);
   social = new Social({
     game, account: () => account, join: (code) => play({ t: 'join', room: code }, $('l-err'), code),
     refresh: () => locker?.load(), maps: () => serverInfo?.maps || [], cosmetics: COSMETICS,
@@ -337,7 +345,7 @@ const CREATE_SLIDERS = [
 $('l-create').onclick = () => {
   const d = serverInfo.defaults;
   $('c-name').value = `${settings.name}'s game`;
-  $('c-mode').innerHTML = Object.entries(serverInfo.modes || { dm: 'Deathmatch' }).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+  $('c-mode').innerHTML = Object.entries(serverInfo.modes || { dm: 'Deathmatch' }).filter(([k]) => k !== 'heist').map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
   $('c-mode').value = 'dm';
   $('c-mode').onchange = () => {
     const m = $('c-mode').value;
@@ -443,6 +451,8 @@ function lockPointer() {
 }
 
 function resume() {
+  // a heist crew that's still planning goes back to the planning screen
+  if (game?.connected && game.hv?.planning()) { heistMenu.showPlan(); return; }
   hide('menu');
   closeDialogs();
   game.hud.show(true);
@@ -610,7 +620,7 @@ requestAnimationFrame(loop);
 // ------------------------------------------------------------------ helpers
 function show(id) { $(id).hidden = false; }
 function hide(id) { $(id).hidden = true; }
-function closeDialogs() { hide('dlg-leaders'); hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
+function closeDialogs() { hide('dlg-heist'); hide('dlg-leaders'); hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
 function status(t) { $('menu-status').textContent = t; }
 function loading(t) { $('loading').hidden = !t; $('loading-text').textContent = t; }
 

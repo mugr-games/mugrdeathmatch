@@ -16,6 +16,7 @@ import { SKILLS, newBrain, botName, botCommand } from './bots.js';
 import { createZombies } from './cod.js';
 import { createSoccer, createParkour, createMugrball } from './modes.js';
 import { createVoice } from './voice.js';
+import { createHeist } from './heist.js';
 import { createProfiles, OWNER_NAME } from './profiles.js';
 import { checkText, badName } from './filter.js';
 import { createReporter } from './moderation.js';
@@ -47,7 +48,7 @@ const MAX_ROOMS = 30;
 const NUM_COLORS = 8; // suit colours; the client owns the palette
 const NUM_MODELS = 4; // player characters, also drawn by the client
 const MAP_IDS = ['csdm', 'foundry', 'courtyard', 'skyline', 'warehouse', 'rooftops', 'bunker', 'ziggurat', 'docks', 'canyon', 'office', 'station', 'city'];
-const MODES = { dm: 'Deathmatch', tdm: 'Team deathmatch', ctf: 'Capture the flag', zombies: 'Zombies (rounds, co-op)', infection: 'Infection', soccer: 'Soccer', parkour: 'Parkour', mugrball: 'Mugrball' };
+const MODES = { dm: 'Deathmatch', tdm: 'Team deathmatch', ctf: 'Capture the flag', zombies: 'Zombies (rounds, co-op)', infection: 'Infection', soccer: 'Soccer', parkour: 'Parkour', mugrball: 'Mugrball', heist: 'Heist' };
 // modes without weapons or damage
 const PEACEFUL = new Set(['soccer', 'parkour']);
 const MAX_BOTS = 15;
@@ -64,7 +65,7 @@ function mapDef(id) {
     const m = CODE_MAPS[id];
     if (m) {
       def = {
-        name: m.name, boxes: m.boxes, pads: m.pads || [], killZ: m.killZ, bounds: m.bounds, doors: m.doors || [], buys: m.buys, zstart: m.zstart, soccer: m.soccer, checkpoints: m.checkpoints, hoops: m.hoops,
+        name: m.name, boxes: m.boxes, pads: m.pads || [], killZ: m.killZ, bounds: m.bounds, doors: m.doors || [], buys: m.buys, zstart: m.zstart, soccer: m.soccer, checkpoints: m.checkpoints, hoops: m.hoops, heist: m.heist,
         get spawns() { return m.spawns; }, get items() { return m.items; }, get props() { return m.props || []; }, get flags() { return m.flags; },
       };
     }
@@ -105,13 +106,13 @@ function sanitize(s = {}) {
     mode,
     caplimit: Math.round(num(s.caplimit, 1, 30, mode === 'soccer' ? 5 : mode === 'mugrball' ? 10 : 3)),
     map: MODE_MAPS[mode] || (s.map === 'rotation' || MAP_IDS.includes(s.map) ? s.map : 'rotation'),
-    maxPlayers: Math.round(num(s.maxPlayers, 2, 16, 12)),
-    fraglimit: Math.round(num(s.fraglimit, 0, 200, 30)),
+    maxPlayers: mode === 'heist' ? 4 : Math.round(num(s.maxPlayers, 2, 16, 12)),
+    fraglimit: mode === 'heist' ? 0 : Math.round(num(s.fraglimit, 0, 200, 30)),
     // infection always has a round timer (the survivors win when it runs out); zombies goes on until everyone's down
-    timelimit: mode === 'infection' ? Math.round(num(s.timelimit, 2, 30, 5)) || 5 : mode === 'zombies' || mode === 'parkour' ? 0 : Math.round(num(s.timelimit, 0, 120, mode === 'soccer' || mode === 'mugrball' ? 10 : 15)),
+    timelimit: mode === 'infection' ? Math.round(num(s.timelimit, 2, 30, 5)) || 5 : mode === 'zombies' || mode === 'parkour' || mode === 'heist' ? 0 : Math.round(num(s.timelimit, 0, 120, mode === 'soccer' || mode === 'mugrball' ? 10 : 15)),
     loadout: LOADOUTS[s.loadout] && !LOADOUTS[s.loadout].hidden ? s.loadout : 'default',
     // computer players (not in zombies, where everyone is on the same side)
-    bots: mode === 'zombies' || mode === 'parkour' ? 0 : Math.round(num(s.bots, 0, MAX_BOTS, 0)),
+    bots: mode === 'zombies' || mode === 'parkour' || mode === 'heist' ? 0 : Math.round(num(s.bots, 0, MAX_BOTS, 0)),
     botSkill: SKILLS[s.botSkill] ? s.botSkill : 'normal',
     gravity: num(s.gravity, 0.25, 2, 1),
     speed: num(s.speed, 0.5, 2, 1),
@@ -155,10 +156,11 @@ function startMatch(R, mapId) {
   let kinds = ITEM_ROTATION;
   if (LOADOUTS[R.settings.loadout].noPickups) kinds = kinds.filter((k) => ITEMS[k]);
   // zombies has no pickups or props: weapons and perks are bought, and its item spots become the shops
-  const items = R.settings.items && !cod ? def.items.map((it, i) => ({ i, kind: kinds[i % kinds.length], o: it.o.slice(), up: true, at: 0 })) : [];
+  const heist = R.settings.mode === 'heist' && !!def.heist;
+  const items = R.settings.items && !cod ? def.items.map((it, i) => ({ i, kind: it.kind || kinds[i % kinds.length], o: it.o.slice(), up: true, at: 0 })) : [];
   const world = new BoxWorld(def.boxes, def.pads);
   // barricades only stand in zombies (other modes play the map wide open)
-  const doorBoxes = cod ? def.doors.map((d) => world.addBox({ mins: d.mins, maxs: d.maxs, mat: 'door' })) : [];
+  const doorBoxes = cod || heist ? def.doors.map((d) => world.addBox({ mins: d.mins, maxs: d.maxs, mat: 'door' })) : [];
   const propByBox = new Map();
   const props = (cod ? [] : def.props).map((pd, i) => {
     const P = PROP[pd.kind] || PROP.crate;
@@ -174,6 +176,7 @@ function startMatch(R, mapId) {
   R.soccer = R.settings.mode === 'soccer' && def.soccer ? createSoccer(R, def, modeApi(R)) : null;
   R.pk = R.settings.mode === 'parkour' && def.checkpoints ? createParkour(R, def, modeApi(R)) : null;
   R.mb = R.settings.mode === 'mugrball' && def.soccer ? createMugrball(R, def, modeApi(R)) : null;
+  R.heist = heist ? createHeist(R, def, R.map.nav, doorBoxes, heistApi(R)) : null;
   if (R.soccer) R.soccer.reset();
   if (R.mb) R.mb.reset();
   R.pick = R.settings.mode === 'tdm' ? { until: TEAM_PICK } : null;
@@ -193,6 +196,7 @@ function startMatch(R, mapId) {
     if (R.zm || R.cz) p.team = 'human';
     else if (teamMode(R) && !p.team) p.team = pickTeam(R);
     if (R.cz) R.cz.join(p);
+    if (R.heist) R.heist.join(p);
     respawn(R, p);
     send(p, welcome(R, p));
   }
@@ -215,6 +219,20 @@ function nextMap(R) {
 // red/blue team games (zombies has its own two sides)
 function teamMode(R) {
   return R.settings.mode === 'tdm' || R.settings.mode === 'ctf' || R.settings.mode === 'soccer' || R.settings.mode === 'mugrball';
+}
+
+// what the heist needs from the server
+function heistApi(R) {
+  return {
+    pushEvent: (ev, only) => pushEvent(R, ev, only),
+    award: (p, n, why) => award(p, n, why),
+    stat: (p, change) => profiles.stat(p.profile, change),
+    damage: (p, dmg, dir, kind, head) => damage(R, p, null, dmg, kind, head, dir),
+    kill: (p, why) => kill(R, p, null, why, false),
+    respawn: (p) => respawn(R, p),
+    plan: (msg) => broadcast(R, msg),
+    players: () => R.players.values(),
+  };
 }
 
 // what soccer and parkour need from the server
@@ -256,6 +274,7 @@ function welcome(R, p) {
     flags: R.flags ? Object.fromEntries(TEAMS.map((t) => [t, { home: R.flags[t].home, pos: R.flags[t].pos, carrier: R.flags[t].carrier, dropped: R.flags[t].dropped }])) : null,
     players: [...R.players.values()].map(info),
     cz: R.cz ? R.cz.welcome() : null,
+    heist: R.heist ? R.heist.welcome() : null,
   };
 }
 
@@ -268,7 +287,7 @@ function watchWelcome(R) {
 function pickWatchRoom() {
   let best = null, score = 0;
   for (const R of rooms.values()) {
-    if (R.settings.private || R.ending) continue;
+    if (R.settings.private || R.ending || R.heist) continue;
     const n = humanCount(R) * 100 + R.players.size;
     if (n > score) { best = R; score = n; }
   }
@@ -327,7 +346,7 @@ function respawn(R, p) {
     const s = spawns[(Math.random() * spawns.length) | 0];
     let d = 1e12;
     for (const o of others) d = Math.min(d, (o.ps.origin[0] - s.origin[0]) ** 2 + (o.ps.origin[1] - s.origin[1]) ** 2);
-    const blocked = others.some((o) => Math.abs(o.ps.origin[0] - s.origin[0]) < 40 && Math.abs(o.ps.origin[1] - s.origin[1]) < 40 && Math.abs(o.ps.origin[2] - s.origin[2]) < 80);
+    const blocked = [...R.players.values()].some((o) => o !== p && o.ps.alive && Math.abs(o.ps.origin[0] - s.origin[0]) < 40 && Math.abs(o.ps.origin[1] - s.origin[1]) < 40 && Math.abs(o.ps.origin[2] - s.origin[2]) < 80);
     if (!blocked && d > bd) { bd = d; best = s; }
   }
   const t = p.ps.time || 0;
@@ -336,6 +355,7 @@ function respawn(R, p) {
   initLoadout(p.ps, R.cz ? 'zombies' : R.settings.loadout);
   if (p.team === 'zombie') zombieLoadout(p.ps);
   if (R.cz) R.cz.loadout(p);
+  if (R.heist) R.heist.loadout(p);
   p.yaw = best.yaw;
   p.pitch = 0;
   p.respawnAt = 0;
@@ -357,6 +377,7 @@ function joinRoom(R, p) {
   // late arrivals in an infection round that already started join the horde
   p.team = R.cz ? 'human' : R.zm ? (R.zm.started ? 'zombie' : 'human') : teamMode(R) ? pickTeam(R) : null;
   if (R.cz) R.cz.join(p);
+  if (R.heist) R.heist.join(p);
   // a person arriving in a full game with bots takes a bot's place
   if (!p.bot && R.players.size >= 16) { const b = [...R.players.values()].find((o) => o.bot); if (b) leaveRoom(b); }
   R.players.set(p.id, p);
@@ -394,6 +415,7 @@ function leaveRoom(p) {
   dropFlag(R, p);
   R.pk?.forget(p);
   R.mb?.drop(p);
+  R.heist?.leave(p);
   voice.leftMatch(p.ws);
   if (R.vote) R.vote.votes.delete(p.id);
   R.players.delete(p.id);
@@ -455,7 +477,7 @@ function runCmd(R, p, cmd, dt, seq) {
   if (R.pk) R.pk.cmd(p, cmd, pressed);
   // no weapons in soccer and parkour, or for the mugrball carrier (but the player's clock still runs: it times
   // rocket jumps and powerups)
-  if (PEACEFUL.has(R.settings.mode) || (R.mb && R.mb.cmd(p, cmd, pressed))) { ps.time += dt; return; }
+  if (PEACEFUL.has(R.settings.mode) || (R.mb && R.mb.cmd(p, cmd, pressed)) || (R.heist && R.heist.cmd(p, cmd, pressed))) { ps.time += dt; return; }
   weaponThink(ps, cmd, dt, (wi) => fire(R, p, wi, cmd, seq), (name) => {
     if (name === 'reload' || name === 'reloadstart' || name === 'reloadshell') pushEvent(R, { e: 'snd', id: p.id, w: ps.cur, k: 'reload' });
   });
@@ -511,6 +533,7 @@ function fire(R, p, wi, cmd, seq) {
   const start = eyePos(ps);
   const world = R.map.world;
   const zoomed = !!(cmd.buttons & BTN.ATTACK2) && !!W.zoom;
+  if (R.heist) R.heist.shot(p, wi, start);
 
   if (W.proj) {
     const dir = spreadDirs(W, cmd.yaw, cmd.pitch, seq, zoomed)[0];
@@ -528,6 +551,7 @@ function fire(R, p, wi, cmd, seq) {
     return { o, origin: h ? [h[0], h[1], h[2]] : o.ps.origin, ducked: h ? h[3] : o.ps.ducked };
   });
   if (R.cz) for (const z of R.cz.alive()) targets.push({ o: z, origin: z.ps.origin, ducked: false });
+  if (R.heist) for (const n of R.heist.alive()) targets.push({ o: n, origin: n.ps.origin, ducked: n.ps.ducked });
 
   if (W.melee) {
     const f = viewDir(cmd.yaw, cmd.pitch);
@@ -566,6 +590,7 @@ function fire(R, p, wi, cmd, seq) {
     const e = [start[0] + d[0] * 8192 * frac, start[1] + d[1] * 8192 * frac, start[2] + d[2] * 8192 * frac];
     shots.push([...e.map(Math.round), hit ? hit.t.o.id : 0, hit ? 0 : tr.fraction < 1 ? 1 : 0, tr.normal.map((v) => +v.toFixed(2))]);
     if (R.mb) R.mb.shot(start, d, 8192 * frac, W.damage);
+    if (R.heist) R.heist.whiz(start, e);
     if (!hit && tr.fraction < 1 && R.map.propByBox.has(tr.box)) {
       const prop = R.map.propByBox.get(tr.box);
       propHits.set(prop, (propHits.get(prop) || 0) + W.damage);
@@ -629,6 +654,7 @@ function explode(R, pr, at, owner) {
 // Radius damage and knockback from a point. P: { radius, splash, knock }.
 function blast(R, at, P, owner, weapon, skipProp) {
   if (R.mb) R.mb.blast(at, P);
+  if (R.heist) R.heist.blast(at);
   for (const o of hittable(R)) {
     if (!o.ps.alive) continue;
     const c = [o.ps.origin[0], o.ps.origin[1], o.ps.origin[2] + 36];
@@ -746,11 +772,12 @@ function flagThink(R) {
 
 // players and zombies alike
 function hittable(R) {
-  return R.cz ? [...R.players.values(), ...R.cz.alive()] : R.players.values();
+  return R.cz ? [...R.players.values(), ...R.cz.alive()] : R.heist ? [...R.players.values(), ...R.heist.alive()] : R.players.values();
 }
 
 function hurtAny(R, o, attacker, dmg, weapon, head, dir) {
   if (o.isZombie) R.cz.hurt(o, attacker, attacker && attacker.ps.dmgBoost > attacker.ps.time ? dmg * 2 : dmg, weapon, head, dir);
+  else if (o.isNpc) R.heist.hurt(o, attacker, dmg, weapon, head, dir);
   else damage(R, o, attacker, dmg, weapon, head, dir);
 }
 
@@ -774,6 +801,7 @@ function norm(v) {
 function damage(R, victim, attacker, dmg, weapon, head, dir) {
   const ps = victim.ps;
   if (!ps.alive || victim.god || PEACEFUL.has(R.settings.mode)) return; // the owner's god mode; no damage in soccer or parkour
+  if (R.heist && (ps.downed || R.heist.phase !== 'heist')) return; // the downed are left alone; no hurting each other while planning
   if (R.cz) {
     if (ps.downed) return; // zombies leave downed players alone
     victim.lastHurt = R.time;
@@ -789,7 +817,9 @@ function damage(R, victim, attacker, dmg, weapon, head, dir) {
     ps.velocity[0] += dir[0] * k; ps.velocity[1] += dir[1] * k; ps.velocity[2] += Math.max(0, dir[2]) * k * 0.5;
   }
   pushEvent(R, { e: 'hurt', id: victim.id, a: attacker ? attacker.id : 0, d: Math.round(dmg), hp: Math.max(0, ps.hp), hs: head ? 1 : 0, dir: dir ? dir.map((v) => +v.toFixed(2)) : null });
+  victim.lastHurt = R.time;
   if (dead && R.cz && R.cz.down(victim)) return;
+  if (dead && R.heist && R.heist.down(victim)) return;
   if (dead) kill(R, victim, attacker, weapon, head);
 }
 
@@ -798,13 +828,14 @@ function kill(R, victim, attacker, weapon, head) {
   victim.ps.hp = 0;
   victim.deaths++;
   // zombies: back next round
-  victim.respawnAt = R.cz ? Infinity : R.time + 2;
+  victim.respawnAt = R.cz ? Infinity : R.heist ? R.time + R.heist.respawnDelay() : R.time + 2;
+  R.heist?.died(victim);
   if (attacker && attacker !== victim) {
     attacker.frags++;
     award(attacker, COIN_KILL, 'kill');
     attacker.streak = (attacker.streak || 0) + 1;
     profiles.stat(attacker.profile, { kills: 1, headshots: head ? 1 : 0, streak: attacker.streak });
-  } else if (!R.cz) victim.frags--;
+  } else if (!R.cz && !R.heist) victim.frags--;
   victim.streak = 0;
   profiles.stat(victim.profile, { deaths: 1 });
   if (R.settings.mode === 'tdm' && attacker && attacker !== victim && attacker.team) R.teamScore[attacker.team]++;
@@ -1022,6 +1053,7 @@ function tick(R) {
   zombieThink(R);
   if (R.soccer) R.soccer.think(TICK);
   if (R.mb) R.mb.think(TICK);
+  if (R.heist) R.heist.think(TICK);
   if (R.pk && !R.ending) R.pk.think();
   if (R.cz && !R.ending) R.cz.think(TICK);
   pickThink(R);
@@ -1072,11 +1104,12 @@ function snapshot(R) {
   if (R.cz) { flagState.zb = R.cz.rows(); flagState.zr = R.cz.state(); }
   if (R.soccer) flagState.ball = R.soccer.state();
   if (R.mb) flagState.ball = R.mb.state();
+  if (R.heist) { flagState.hz = R.heist.rows(); flagState.hs = R.heist.state(); }
   if (R.pk) flagState.pkb = R.pk.board();
   for (const p of R.players.values()) {
     if (p.bot) continue;
     const ev = events.filter((e) => !e.only || e.only === p.id);
-    send(p, { t: 's', st: +R.time.toFixed(3), ack: p.ack, me: packOwn(p.ps), pl: list, ev, tl, ...flagState, ...(R.cz ? { zp: R.cz.personal(p) } : {}), ...(R.pk ? { pp: R.pk.personal(p) } : {}) });
+    send(p, { t: 's', st: +R.time.toFixed(3), ack: p.ack, me: packOwn(p.ps), pl: list, ev, tl, ...flagState, ...(R.cz ? { zp: R.cz.personal(p) } : {}), ...(R.pk ? { pp: R.pk.personal(p) } : {}), ...(R.heist ? { hkp: R.heist.personal(p) } : {}) });
   }
   if (R.watchers.size) {
     const msg = JSON.stringify({ t: 's', st: +R.time.toFixed(3), ack: 0, me: null, pl: list, ev: events.filter((e) => !e.only), tl, ...flagState });
@@ -1210,7 +1243,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS' && p.startsWith('/api/')) { res.writeHead(204, CORS); return res.end(); }
   if (req.method === 'POST' && /^\/api\/(profile|buy|equip|register|login)$/.test(p)) return profileApi(req, res, p.slice(5));
   if (p === '/api/leaderboard') return void profiles.leaderboard().then((b) => json(res, b)).catch((e) => json(res, { error: e.message }));
-  if (p === '/api/rooms') return json(res, [...rooms.values()].filter((r) => !r.settings.private).map(roomInfo));
+  if (p === '/api/rooms') return json(res, [...rooms.values()].filter((r) => !r.settings.private && !r.heist).map(roomInfo));
   if (p === '/') p = '/index.html';
   if (p === '/index.html') return servePage(req, res);
   if (PACKED && p.startsWith('/models/')) {
@@ -1598,7 +1631,13 @@ wss.on('connection', (ws, req) => {
           R = createRoom({ ...m.settings });
         } else {
           const key = String(m.room || '').trim().toUpperCase();
-          R = /^\d+$/.test(key) ? rooms.get(+key) : [...rooms.values()].find((r) => r.code === key);
+          if (key === 'HEIST') {
+            R = [...rooms.values()].find((r) => r.heist && !r.settings.private && r.heist.phase === 'planning' && humanCount(r) < 4);
+            if (!R) {
+              if (rooms.size >= MAX_ROOMS) return fail('The server has too many games running. Try again in a minute.');
+              R = createRoom({ mode: 'heist', name: 'Heist crew' });
+            }
+          } else R = /^\d+$/.test(key) ? rooms.get(+key) : [...rooms.values()].find((r) => r.code === key);
           if (!R) return fail(/^\d+$/.test(key) ? 'That game has ended.' : `No game with the code ${key}.`);
           if (R.settings.private && !/^[A-Z0-9]{4}$/.test(key)) return fail('That game is private. Ask for its code.');
           if (R.settings.password && m.password !== R.settings.password) return fail('Wrong password.');
@@ -1636,6 +1675,7 @@ wss.on('connection', (ws, req) => {
       broadcast(R, { t: 'info', p: info(p) });
     }
     else if (m.t === 'team' && R.pick && typeof m.team === 'string') setTeam(R, p, m.team);
+    else if (m.t === 'heist' && R.heist) R.heist.message(p, m);
     else if (m.t === 'vote' && R.vote && R.vote.options.includes(m.map)) { R.vote.votes.set(p.id, m.map); broadcast(R, { t: 'votes', c: voteCounts(R) }); }
   });
   ws.on('close', () => {

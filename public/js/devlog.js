@@ -2,6 +2,18 @@
 export const DEVLOG = [
   {
     date: '2026-10-25',
+    title: 'The Bank Job (heist)',
+    notes: [
+      'New: Heist on the main menu. Find a crew of 2 to 4, or host a private one and share the code.',
+      'Planning screen: a blueprint of the bank with every guard, patrol route, camera and alarm; pick your role (Hacker, Enforcer, Infiltrator, Lookout); the host picks Stealth or Loud and Easy, Normal or Hard.',
+      'The job: get a keycard, open the staff door, crack the vault (hack it quietly, or drill it while the police come), bag the cash, get it to the van.',
+      'Stealth: walk in unmasked and press G to mask up. Guards notice you with a ? that fills up, hear gunshots and running, find bodies, and run for the alarm or radio it in (stop them in time). Cameras feed the guard on the monitors; loop them, or cut the alarm wiring. Staff run for a phone unless you aim at them and tie them up.',
+      'Loud: police come in waves, take cover, peek and shoot, flank you, fall back when hurt and push when they outnumber you. SWAT on Hard.',
+      'Downed? A teammate can hold E to revive you. Pay goes up with difficulty, with a bonus if the alarm never went off.',
+    ],
+  },
+  {
+    date: '2026-10-25',
     title: 'Voice chat',
     notes: [
       'Game chat, like CoD: in a match you\'re in voice with your team automatically (everyone in free-for-all). Open mic, push to talk (hold V), or mic off.',

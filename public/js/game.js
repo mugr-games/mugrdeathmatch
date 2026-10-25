@@ -21,6 +21,7 @@ import { Ragdoll } from './ragdoll.js';
 import { ZombiesView } from './zview.js';
 import { socketUrl } from './net.js';
 import { ModesView } from './modesview.js';
+import { HeistView } from './heistview.js';
 
 const DEG = Math.PI / 180;
 const MUZZLE = new THREE.Vector3();
@@ -250,6 +251,7 @@ export class Game {
     this.players = new Map();
     this.zv = new ZombiesView(this); // zombies mode: the horde, shops and round HUD
     this.mv = new ModesView(this); // soccer and parkour
+    this.hv = new HeistView(this); // the bank heist
     this.projectiles = new Map();
     this.ragdolls = [];
     this.props = [];
@@ -528,6 +530,7 @@ export class Game {
     this.setupProps(m.props || []);
     this.setupFlags(m.flags);
     this.zv.setup(m.cz);
+    this.hv.setup(m.watch ? null : m.heist);
     this.clearRagdolls();
     this.voting = null;
     this.hud.vote(null);
@@ -549,6 +552,7 @@ export class Game {
       case 'join': this.info.set(m.p.id, m.p); if (m.p.id !== this.myId) this.hud.say('', `${m.p.name} joined the game`, true); break;
       case 'leave': { const i = this.info.get(m.id); if (i) this.hud.say('', `${i.name} left the game`, true); this.info.delete(m.id); this.removePlayer(m.id); break; }
       case 'coins': this.onCoins?.(m); break;
+      case 'heist': this.hv.message(m); break;
       case 'info': this.info.set(m.p.id, { ...this.info.get(m.p.id), ...m.p }); this.removePlayer(m.p.id); break;
       case 'chat': { const i = this.info.get(m.id); this.hud.say(i ? i.name : '?', m.text); this.sound.chat(); break; }
       case 'votes': if (this.voting) { this.voting.counts = m.c; this.hud.vote(this.voting); } break;
@@ -567,6 +571,7 @@ export class Game {
     this.zmState = m.zm || null;
     this.pickLeft = m.pk || 0;
     this.zv.snapshot(m);
+    this.hv.snapshot(m);
     this.mv.snapshot(m);
     // own state: take the server's, then replay commands it hasn't processed yet (watchers have none)
     if (m.me) {
@@ -603,6 +608,7 @@ export class Game {
   onEvent(ev) {
     const me = this.myId;
     if (this.mode === 'zombies' && this.zv.event(ev)) return;
+    if (this.hv.active && this.hv.event(ev)) return;
     if (this.mv.event(ev)) return;
     switch (ev.e) {
       case 'proj': {
@@ -843,6 +849,7 @@ export class Game {
     if (this.mode === 'soccer') return `${this.caplimit} GOALS`;
     if (this.mode === 'mugrball') return `${this.caplimit} POINTS`;
     if (this.mode === 'parkour') return 'PARKOUR';
+    if (this.mode === 'heist') return 'THE BANK JOB';
     if (this.mode === 'infection') return 'SURVIVE THE CLOCK';
     if (this.mode === 'zombies') return 'SURVIVE';
     if (this.mode === 'tdm') return this.pickLeft ? 'WARM-UP' : fl ? `${fl} TEAM FRAGS` : 'NO FRAG LIMIT';
@@ -1431,6 +1438,7 @@ export class Game {
       if (k.has('KeyR')) buttons |= BTN.RELOAD;
       if (k.has('KeyE')) buttons |= BTN.USE;
       if (k.has('KeyQ')) buttons |= BTN.ROCKETJUMP;
+      if (k.has('KeyG')) buttons |= BTN.MASK;
       if (this.mouseButtons & 1) buttons |= BTN.ATTACK;
       if (this.mouseButtons & 2) buttons |= BTN.ATTACK2;
       for (const extra of [this.touch, this.pad]) {
@@ -1478,7 +1486,7 @@ export class Game {
 
   // no guns: soccer, parkour, or carrying the mugrball
   unarmed() {
-    return this.noWeapons || this.mv.holding();
+    return this.noWeapons || this.mv.holding() || this.hv.unarmed();
   }
 
   selectSlot(slot) {
@@ -1587,6 +1595,7 @@ export class Game {
 
     this.updatePlayers(dt);
     if (this.mode === 'zombies') this.zv.update(dt, t);
+    if (this.hv.active) this.hv.update(dt, t);
     this.updateItems(t);
     this.updateViewmodel(dt);
     this.updateProjectiles(dt);
@@ -1596,7 +1605,7 @@ export class Game {
     const myTeam = this.info.get(this.myId)?.team;
     this.mv.update(dt);
     this.onVoiceFrame?.();
-    if (this.connected && this.mode && this.mode !== 'dm' && this.mode !== 'zombies' && this.mode !== 'parkour') {
+    if (this.connected && this.mode && this.mode !== 'dm' && this.mode !== 'zombies' && this.mode !== 'parkour' && this.mode !== 'heist') {
       const limit = this.mode === 'ctf' || this.mode === 'soccer' || this.mode === 'mugrball' ? this.caplimit : this.fraglimit;
       this.hud.teamBar({ kind: this.mode, score: this.teamScore, limit, state: this.flagState, myTeam, myId: this.myId, zm: this.zmState });
     }

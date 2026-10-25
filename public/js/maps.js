@@ -25,6 +25,7 @@ const PALETTES = {
   city: { concrete: '#a19d96', plate: '#3c3f44', metal: '#5e6670', panel: ['#a8705a', '#7c4e3e'], hazard: '#d8a820', neon: '#ffd890', grass: ['#4e7a36', '#3a5a28'] },
   pitch: { concrete: '#8f9298', plate: '#5c6066', metal: '#b8bec6', panel: ['#1f56b8', '#173f88'], hazard: '#e8c020', neon: '#fff4d8', grass: ['#3f8f3a', '#347a30'] },
   court: { concrete: '#8f9298', plate: '#5a5248', metal: '#c4cad2', panel: ['#b8401f', '#8a2f16'], hazard: '#ff6a1a', neon: '#fff4d8', grass: ['#3f8f3a', '#347a30'] },
+  bank: { concrete: '#9a968f', plate: '#2f3236', metal: '#7c8590', panel: ['#cfc8b8', '#b4ab98'], hazard: '#c8a040', neon: '#ffd890', stone: ['#d8d0c2', '#b9ae9c'], brick: ['#8e4a38', '#b0a596'], wood: ['#6e4a2c', '#4e331e'], marble: ['#ece8e0', '#cfc8bc'] },
   course: { concrete: '#c8c2b8', plate: '#4f5a6e', metal: '#9aa4b0', panel: ['#8a92a8', '#6a7288'], hazard: '#ffcf1a', neon: '#ff4fd8' },
 };
 // goal nets: a white grid you can see through
@@ -45,9 +46,19 @@ function net() {
   return netMat;
 }
 
+// windows: dark, shiny and a little see-through
+let glass = null;
+function glassMat() {
+  return (glass ||= new THREE.MeshStandardMaterial({ color: 0x9fc4d8, metalness: 0.9, roughness: 0.08, transparent: true, opacity: 0.45 }));
+}
+
 function surf(mat, pal) {
   if (mat === 'neon') return neonMaterial(pal.neon);
   if (mat === 'line') return surfaceMaterial('concrete', { color: '#f4f4ee', bump: 0.2 });
+  if (mat === 'stone' || mat === 'marble') { const c = pal[mat] || ['#c8c2b8', '#a8a294']; return surfaceMaterial('stone', { color: c[0], color2: c[1] }); }
+  if (mat === 'brick') { const c = pal.brick || ['#9b5640', '#b5aa9c']; return surfaceMaterial('brick', { color: c[0], color2: c[1] }); }
+  if (mat === 'wood') { const c = pal.wood || ['#8a6438', '#5e4126']; return surfaceMaterial('wood', { color: c[0], color2: c[1] }); }
+  if (mat === 'glass') return glassMat();
   if (mat === 'grass') return surfaceMaterial('grass', { color: (pal.grass || ['#4e7a36'])[0], color2: (pal.grass || [0, '#3a5a28'])[1] });
   if (mat === 'panel') return surfaceMaterial('panel', { color: pal.panel[0], color2: pal.panel[1] });
   if (mat === 'hazard') return surfaceMaterial('hazard', { color: pal.hazard });
@@ -210,7 +221,7 @@ function codeMap(id, def) {
     group.add(mesh);
   }
   // the pitch stays clean: no litter, tufts or wall clutter on a football ground
-  const detail = def.soccer ? { group: new THREE.Group(), tick: () => {} } : decorate(id, def.boxes.filter((b) => b.mat !== 'clip'), def.bounds, pal);
+  const detail = def.soccer || def.heist ? { group: new THREE.Group(), tick: () => {} } : decorate(id, def.boxes.filter((b) => b.mat !== 'clip'), def.bounds, pal);
   group.add(detail.group);
   return { id, name: def.name, group, cells, boxes: def.boxes, spawns: def.spawns, bounds: def.bounds, sun: (Array.isArray(def.sun) ? def.sun : def.sun?.dir) || [0.3, 0.3, 0.85], pads: def.pads || [], killZ: def.killZ, tick: detail.tick };
 }

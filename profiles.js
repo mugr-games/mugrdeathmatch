@@ -23,7 +23,7 @@ const OWNER_COINS = 1000000;
 const OWNER_ITEMS = ['owner_cape'];
 
 // lifetime stats kept on every profile. Counters add up; "best" ones keep the highest value seen.
-const COUNTERS = ['kills', 'deaths', 'headshots', 'wins', 'matches', 'zkills', 'coins', 'goals', 'finishes'];
+const COUNTERS = ['kills', 'deaths', 'headshots', 'wins', 'matches', 'zkills', 'coins', 'goals', 'finishes', 'heists'];
 const BESTS = ['streak', 'round'];
 const LOWS = ['pkbest']; // lower is better (fastest parkour run, seconds)
 // leaderboard categories: how each ranks a profile (null = not on that board yet)
@@ -35,6 +35,7 @@ export const BOARDS = {
   zkills: (s) => s.zkills || null,
   coins: (s) => s.coins || null,
   goals: (s) => s.goals || null,
+  heists: (s) => s.heists || null,
   parkour: (s) => s.pkbest || null,
 };
 const ASCENDING = new Set(['parkour']); // boards where the smallest value is best
