@@ -3,7 +3,7 @@
 // layer (grime, streaks, puddles) so large walls don't look tiled. Units: 40 = one block.
 import * as THREE from 'three';
 
-const TYPES = { stone: 0, brick: 1, clay: 2, wood: 3, metal: 4, plate: 5, panel: 6, hazard: 7, concrete: 8, grass: 9, dirt: 10, grassside: 11, crate: 12, barrel: 13, asphalt: 14, marble: 15, tile: 16, cobble: 17, leaves: 18 };
+const TYPES = { stone: 0, brick: 1, clay: 2, wood: 3, metal: 4, plate: 5, panel: 6, hazard: 7, concrete: 8, grass: 9, dirt: 10, grassside: 11, crate: 12, barrel: 13, asphalt: 14, marble: 15, tile: 16, cobble: 17, leaves: 18, facade: 19, curtain: 20, brickwin: 21, siding: 22, stuccowin: 23 };
 
 // Potato mode: cheap Lambert lighting, fewer noise octaves, no bump mapping. Set before any map loads.
 let POTATO = false;
@@ -236,6 +236,59 @@ vec4 surfacePattern(vec3 P, vec3 N, out float rough, out float wet) {
     leaf *= .55 + cover * .45;
     col = mix(ground, lcol, leaf);
     h = n * .4 + leaf * .35; rough = .9; weather = .4;
+  }
+  else if (t >= 19 && t <= 23 && t != 22) { // building fronts: floors of windows, shop windows at street level
+    if (up) {
+      // flat roofs: tar and gravel
+      float n = fbm(uv * .05);
+      col = vec3(.34, .33, .31) * (.8 + .4 * n) * (.9 + .2 * h21(floor(uv * 2.)));
+      h = n; rough = .95; weather = .5;
+    } else {
+      float fh = t == 20 ? 140. : 150., bw = t == 20 ? 90. : t == 21 ? 100. : 120.;
+      float z = P.z - 8.;
+      vec2 g = vec2(uv.x / bw, z / fh), c = floor(g), fr = fract(g);
+      bool shop = z < 175.;
+      float fy = shop ? z / 175. : fr.y;
+      vec2 lo = shop ? vec2(.05, .16) : t == 20 ? vec2(.03, .16) : vec2(.2, .28);
+      vec2 hi = shop ? vec2(.95, .92) : t == 20 ? vec2(.97, .96) : vec2(.8, .84);
+      float win = step(lo.x, fr.x) * step(fr.x, hi.x) * step(lo.y, fy) * step(fy, hi.y);
+      // frames and sills around each window
+      float fw = .03;
+      float frame = win * (1. - step(lo.x + fw, fr.x) * step(fr.x, hi.x - fw) * step(lo.y + fw * 1.5, fy) * step(fy, hi.y - fw * 1.5));
+      float sill = (1. - win) * step(lo.x - .02, fr.x) * step(fr.x, hi.x + .02) * step(lo.y - .05, fy) * step(fy, lo.y);
+      vec3 wall;
+      if (t == 21) {
+        vec2 b2 = vec2(uv.x / 20., P.z / 10.);
+        b2.x += step(1., mod(floor(b2.y), 2.)) * .5;
+        vec2 bf = fract(b2), bc = floor(b2);
+        float mortar = 1. - smoothstep(.04, .09, min(min(bf.x, 1. - bf.x) * 2., min(bf.y, 1. - bf.y)));
+        wall = mix(uTintA * (.8 + .35 * h21(bc)), vec3(.62, .6, .56), mortar);
+        h = .6 - mortar * .3;
+      } else if (t == 20) {
+        wall = uTintB * (.85 + .2 * gnoise(uv * .02));
+      } else {
+        float seam = gridSeam(vec2(uv.x, z), vec2(bw, fh), .01);
+        wall = uTintA * (.85 + .25 * fbm(uv * .01)) * (1. - seam * .25) * (t == 23 ? .95 + .1 * gnoise(uv * .3) : 1.);
+        h = .6 - seam * .3;
+      }
+      // glass: dark, each pane a little different, some with blinds drawn
+      float pane = h21(c + 3.);
+      vec3 glass = mix(vec3(.04, .06, .09), vec3(.16, .2, .26), pane);
+      if (pane > .82 && !shop) glass = mix(glass, vec3(.62, .58, .5), .55);
+      if (shop) glass = mix(vec3(.08, .09, .1), vec3(.32, .28, .22), h21(c + 11.) * .6);
+      col = mix(wall, glass, win);
+      col = mix(col, vec3(.82, .82, .8) * (t == 20 ? .35 : 1.), frame * (t == 20 ? 1. : .9));
+      col = mix(col, vec3(.7, .69, .66), sill);
+      if (win > .5) h = frame > .5 ? .55 : .15; else if (sill > .5) h = .8;
+      rough = win > .5 && frame < .5 ? .05 : .85;
+      weather = win > .5 ? .12 : .7;
+    }
+  } else if (t == 22) { // clapboard siding: overlapping horizontal boards
+    float bz = fract(P.z / 9.);
+    float lip = smoothstep(0., .12, bz) * (1. - smoothstep(.86, 1., bz));
+    float n = gnoise(vec2(uv.x * .02, floor(P.z / 9.) * 3.1));
+    col = up ? uTintA * .8 : uTintA * (.86 + .18 * n) * (.72 + .28 * lip);
+    h = up ? .5 : bz; rough = .7; weather = .6;
   }
   // weathering shared by every surface: big blotchy grime, rain streaks down walls, puddles on hard floors
   float macro = fbm(P.xy * .0016 + P.z * .001);

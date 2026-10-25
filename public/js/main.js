@@ -58,6 +58,8 @@ async function boot() {
     pause: () => { playing = false; if (document.pointerLockElement) document.exitPointerLock(); hide('menu'); closeDialogs(); game.hud.show(false); touch?.show(false); document.body.classList.remove('playing'); },
   });
   game.hv.onPlan = (plan, was) => heistMenu.update(plan, was);
+  // free roam: straight into the busiest public county
+  $('btn-freeroam').onclick = () => { game.sound.start(); play({ t: 'join', room: 'FREEROAM' }, $('menu-status')); };
   social = new Social({
     game, account: () => account, join: (code) => play({ t: 'join', room: code }, $('l-err'), code),
     refresh: () => locker?.load(), maps: () => serverInfo?.maps || [], cosmetics: COSMETICS,
@@ -551,10 +553,14 @@ document.addEventListener('mousemove', (e) => {
   game.yaw = (game.yaw - e.movementX * k) % 360;
   game.pitch = Math.max(-89, Math.min(89, game.pitch + e.movementY * k));
 });
-document.addEventListener('mousedown', (e) => { if (playing && game) game.mouseButtons |= e.button === 0 ? 1 : e.button === 2 ? 2 : 0; });
+document.addEventListener('mousedown', (e) => {
+  if (!playing || !game) return;
+  if (game.fv.click(e.button)) return; // the phone and the gun shop take clicks
+  game.mouseButtons |= e.button === 0 ? 1 : e.button === 2 ? 2 : 0;
+});
 document.addEventListener('mouseup', (e) => { if (game) game.mouseButtons &= ~(e.button === 0 ? 1 : e.button === 2 ? 2 : 0); });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
-document.addEventListener('wheel', (e) => { if (playing && game) game.cycleWeapon(e.deltaY > 0 ? 1 : -1); }, { passive: true });
+document.addEventListener('wheel', (e) => { if (playing && game && !game.fv.wheel(e.deltaY)) game.cycleWeapon(e.deltaY > 0 ? 1 : -1); }, { passive: true });
 
 let chatOpen = false;
 function openChat() {
@@ -582,6 +588,12 @@ document.addEventListener('keydown', (e) => {
   if (!game || !playing || chatOpen) return;
   if (e.code === 'Tab' || e.code === 'Space' || e.code === 'AltLeft') e.preventDefault();
   game.keys.add(e.code);
+  // free roam: P (or the up arrow) for the phone, which then takes the arrows, Enter and Backspace
+  if (game.fv.active) {
+    if (!e.repeat && (e.code === 'KeyP' || (e.code === 'ArrowUp' && !game.fv.phoneOpen() && !game.fv.shop))) { game.fv.togglePhone(); return; }
+    if (game.fv.key(e.code)) { e.preventDefault(); return; }
+    if (!e.repeat && e.code === 'KeyF' && (game.ps.car || game.ps.seat)) { const first = game.fv.toggleView(); save(); status(first ? 'First person driving (F for the chase camera)' : 'Chase camera (F for first person)'); return; }
+  }
   if (e.repeat) return;
   // during the end-of-match vote the number keys pick a map instead of a weapon
   if (/^Digit[1-5]$/.test(e.code)) numberKey(+e.code.slice(5));

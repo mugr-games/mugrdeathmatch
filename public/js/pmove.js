@@ -3,7 +3,7 @@
 import { CONTENTS } from './collide.js';
 import { POWERS } from './weapons.js';
 
-export const BTN = { JUMP: 1, DUCK: 2, SPRINT: 4, ATTACK: 8, ATTACK2: 16, RELOAD: 32, USE: 64, WALK: 128, ROCKETJUMP: 256, MASK: 512 };
+export const BTN = { JUMP: 1, DUCK: 2, SPRINT: 4, ATTACK: 8, ATTACK2: 16, RELOAD: 32, USE: 64, WALK: 128, ROCKETJUMP: 256, MASK: 512, HORN: 1024 };
 
 // Tuned to Garry's Mod sandbox defaults: walk 200, sprint 400, slow-walk 100, crouch 0.3x, jump power 200,
 // friction 8, stop speed 10, ground/air acceleration 10 (air-strafing works, jumps need a re-press).

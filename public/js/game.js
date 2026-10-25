@@ -23,6 +23,8 @@ import { ZombiesView } from './zview.js';
 import { socketUrl } from './net.js';
 import { ModesView } from './modesview.js';
 import { HeistView } from './heistview.js';
+import { CityView } from './cityview.js';
+import { moveAny, VEHICLES, seatPos } from './vehicle.js';
 
 const DEG = Math.PI / 180;
 const MUZZLE = new THREE.Vector3();
@@ -56,6 +58,8 @@ const FROM_VIEW = TO_VIEW.clone().invert();
 const MOODS = {
   day: { sun: 0xfff1dc, sunI: 3.2, sky: 0xbfd6ff, ground: 0x5a4a3a, hemi: 0.55, hemiP: 2.6, top: '#2a64c8', horizon: '#c9d9ee', groundSky: '#4a4a4f', glow: 1, cloud: '#ffffff', fog: null, exposure: 1 },
   fall: { sun: 0xffc48a, sunI: 2.9, sky: 0xffd9b0, ground: 0x6a4428, hemi: 0.6, hemiP: 2.6, top: '#4f78b4', horizon: '#f0c896', groundSky: '#5a4632', glow: 1.2, cloud: '#ffe6cc', fog: 0xe8c8a0, fogD: 0.00011, exposure: 1.05, leaves: true },
+  // free roam: a clear day with haze on the horizon (the county goes on further than you can see)
+  city: { sun: 0xfff1dc, sunI: 3.2, sky: 0xbfd6ff, ground: 0x5a4a3a, hemi: 0.6, hemiP: 2.6, top: '#2a64c8', horizon: '#c9d9ee', groundSky: '#8a98a8', glow: 1, cloud: '#ffffff', fog: 0xc4d4e6, fogD: 0.00004, exposure: 1 },
   night: { sun: 0x8fa8ff, sunI: 0.45, sky: 0x3a4a7a, ground: 0x140f0c, hemi: 0.16, hemiP: 0.9, top: '#020308', horizon: '#121826', groundSky: '#050506', glow: 0.08, cloud: '#1c2230', fog: 0x0b0f17, fogD: 0.00055, exposure: 1.1, flashlight: true },
 };
 
@@ -277,6 +281,7 @@ export class Game {
     this.zv = new ZombiesView(this); // zombies mode: the horde, shops and round HUD
     this.mv = new ModesView(this); // soccer and parkour
     this.hv = new HeistView(this); // the bank heist
+    this.fv = new CityView(this); // free roam
     this.projectiles = new Map();
     this.ragdolls = [];
     this.props = [];
@@ -369,7 +374,9 @@ export class Game {
     this.mapTick = map.tick || null;
     this.occl.setCells(map.cells || []);
     this.scene.add(map.group);
-    this.world = new BoxWorld(map.boxes, map.pads);
+    this.world = new BoxWorld(map.boxes, map.pads, map.stream ? 512 : 256);
+    this.stream = !!map.stream;
+    this.sun.userData.dir = null;
     this.killZ = map.killZ;
     this.spawns = map.spawns;
     this.mapName = map.name;
@@ -609,6 +616,7 @@ export class Game {
     this.hud.teamPick(null);
     this.hud.powers([]);
     this.hud.vote(null);
+    this.fv.clear();
     this.ps.alive = true;
   }
 
@@ -638,6 +646,7 @@ export class Game {
     this.setupFlags(m.flags);
     this.zv.setup(m.cz);
     this.hv.setup(m.watch ? null : m.heist);
+    this.fv.setup(m.watch ? null : m.fp);
     this.setMood(m.mode === 'zombies' ? 'night' : this.mapMood || 'day');
     this.clearRagdolls();
     this.voting = null;
@@ -661,6 +670,7 @@ export class Game {
       case 'leave': { const i = this.info.get(m.id); if (i) this.hud.say('', `${i.name} left the game`, true); this.info.delete(m.id); this.removePlayer(m.id); break; }
       case 'coins': this.onCoins?.(m); break;
       case 'heist': this.hv.message(m); break;
+      case 'fp': this.fv.message(m); break;
       case 'info': this.info.set(m.p.id, { ...this.info.get(m.p.id), ...m.p }); this.removePlayer(m.p.id); break;
       case 'chat': { const i = this.info.get(m.id); this.hud.say(i ? i.name : '?', m.text); this.sound.chat(); break; }
       case 'votes': if (this.voting) { this.voting.counts = m.c; this.hud.vote(this.voting); } break;
@@ -681,6 +691,7 @@ export class Game {
     this.zv.snapshot(m);
     this.hv.snapshot(m);
     this.mv.snapshot(m);
+    this.fv.snapshot(m);
     // own state: take the server's, then replay commands it hasn't processed yet (watchers have none)
     if (m.me) {
       const before = this.eye();
@@ -688,7 +699,7 @@ export class Game {
       const ps = unpackOwn(m.me, newPlayerState());
       this.cmds = this.cmds.filter((c) => c.seq > m.ack);
       for (const c of this.cmds) {
-        if (ps.alive) pmove(this.world, ps, c.cmd, c.dt, this.rules);
+        if (ps.alive) moveAny(this.world, ps, c.cmd, c.dt, this.rules);
         if (this.unarmed()) ps.time += c.dt;
         else weaponThink(ps, c.cmd, c.dt, () => {}, null);
       }
@@ -717,6 +728,7 @@ export class Game {
     const me = this.myId;
     if (this.mode === 'zombies' && this.zv.event(ev)) return;
     if (this.hv.active && this.hv.event(ev)) return;
+    if (this.fv.active && this.fv.event(ev)) return;
     if (this.mv.event(ev)) return;
     switch (ev.e) {
       case 'proj': {
@@ -891,7 +903,7 @@ export class Game {
       });
       pl.obj.root.matrix.makeRotationZ(yr).setPosition(o[0], o[1], o[2]);
       pl.obj.root.matrixWorldNeedsUpdate = true;
-      pl.obj.root.visible = alive; // dead bodies are ragdolls
+      pl.obj.root.visible = alive && !(flags & 128); // dead bodies are ragdolls; people in cars are drawn by the car
       pl.obj.setGlow(flags & 64 ? 0xff2a2a : flags & 16 ? 0x9a3cff : flags & 32 ? 0xffc23a : null);
       if (pl.obj.weapon) pl.obj.weapon.visible = alive;
       pl.obj.root.updateMatrixWorld(true);
@@ -973,10 +985,10 @@ export class Game {
   }
 
   // ---------------------------------------------------------------- ragdolls
-  spawnRagdoll(id, origin, yaw, vel, ducked, color) {
+  spawnRagdoll(id, origin, yaw, vel, ducked, color, model) {
     const info = this.info.get(id);
-    const zombie = color !== undefined || info?.team === 'zombie';
-    const doll = new Ragdoll(this.world, origin, yaw || 0, vel, color ?? this.colorFor(info), !!ducked, zombie ? 0 : this.modelFor(info), zombie ? {} : info?.cos || {});
+    const zombie = (color !== undefined && model === undefined) || info?.team === 'zombie';
+    const doll = new Ragdoll(this.world, origin, yaw || 0, vel, color ?? this.colorFor(info), !!ducked, model ?? (zombie ? 0 : this.modelFor(info)), zombie || model !== undefined ? {} : info?.cos || {});
     this.scene.add(doll.group);
     this.ragdolls.push({ id, doll, born: performance.now() / 1000 });
     while (this.ragdolls.length > (this.q.ragdolls || 10)) this.removeRagdoll(this.ragdolls[0]);
@@ -1258,7 +1270,7 @@ export class Game {
   updateViewmodel(dt) {
     const vm = this.vm;
     if (vm.wi !== this.ps.cur) this.setupViewmodel();
-    const show = this.ps.alive && this.connected && !this.zoomed && !this.unarmed() && !this.thirdPerson;
+    const show = this.ps.alive && this.connected && !this.zoomed && !this.unarmed() && !this.thirdPerson && !this.fv.phoneOpen() && !this.ps.seat;
     vm.holder.visible = show;
     if (vm.arms) vm.arms.root.visible = show && !!vm.model;
     if (!vm.model) return;
@@ -1372,8 +1384,8 @@ export class Game {
   }
 
   updateSelf(dt) {
-    const show = this.thirdPerson && this.connected && this.ps.alive;
-    if (!show) { if (this.self) this.self.obj.root.visible = false; return; }
+    const show = this.thirdPerson && this.connected && this.ps.alive && !this.ps.car && !this.ps.seat;
+    if (!show) { if (this.self?.obj) this.self.obj.root.visible = false; return; }
     const info = this.info.get(this.myId);
     const key = `${this.colorFor(info)}|${this.modelFor(info)}|${JSON.stringify(info?.cos || {})}`;
     if (!this.self || this.self.key !== key) {
@@ -1701,8 +1713,10 @@ export class Game {
       if (k.has('KeyE')) buttons |= BTN.USE;
       if (k.has('KeyQ')) buttons |= BTN.ROCKETJUMP;
       if (k.has('KeyG')) buttons |= BTN.MASK;
-      if (this.mouseButtons & 1) buttons |= BTN.ATTACK;
-      if (this.mouseButtons & 2) buttons |= BTN.ATTACK2;
+      if (k.has('KeyH')) buttons |= BTN.HORN;
+      // the phone and the shop counter take the mouse buttons
+      if (this.mouseButtons & 1 && !this.fv.phoneOpen() && !this.fv.shop) buttons |= BTN.ATTACK;
+      if (this.mouseButtons & 2 && !this.fv.phoneOpen() && !this.fv.shop) buttons |= BTN.ATTACK2;
       for (const extra of [this.touch, this.pad]) {
         if (!extra) continue;
         fwd += extra.fwd;
@@ -1730,7 +1744,8 @@ export class Game {
       if (this.cmds.length > 200) this.cmds.shift();
       this.send({ t: 'c', c: [{ s: seq, f: cmd.fwd, sd: cmd.side, b: cmd.buttons, y: cmd.yaw, p: cmd.pitch, w: cmd.w, ms, rt: +this.renderTime.toFixed(3) }] });
       const ps = this.ps;
-      if (ps.alive) {
+      if (ps.alive && (ps.car || ps.seat)) moveAny(this.world, ps, cmd, d, this.rules);
+      else if (ps.alive) {
         const wasGround = ps.onGround;
         pmove(this.world, ps, cmd, d, this.rules);
         if (ps.onGround && !wasGround && ps.landSpeed > 250) this.sound.land(null, Math.min(0.8, ps.landSpeed / 900));
@@ -1748,7 +1763,7 @@ export class Game {
 
   // no guns: soccer, parkour, or carrying the mugrball
   unarmed() {
-    return this.noWeapons || this.mv.holding() || this.hv.unarmed();
+    return this.noWeapons || this.mv.holding() || this.hv.unarmed() || this.fv.unarmed();
   }
 
   selectSlot(slot) {
@@ -1786,6 +1801,7 @@ export class Game {
 
     if (this.connected) {
       if (this.ps.cur !== this.wantW && !((this.ps.owned >> this.wantW) & 1)) this.wantW = this.ps.cur;
+      this.fv.beforePredict();
       this.stepInput(dt);
     }
     for (let i = 0; i < 3; i++) this.smoothErr[i] *= Math.max(0, 1 - dt * 12);
@@ -1838,7 +1854,10 @@ export class Game {
     this.zoomScale = this.zoomed ? Wc.zoom / this.baseFov : 1;
     const scope = document.getElementById('scope');
     if (scope && scope.hidden === this.zoomed) scope.hidden = !this.zoomed;
-    if (this.thirdPerson && ps.alive && this.connected && !this.zoomed && !lookAt) {
+    // in a car: the seat or the chase camera
+    const carCam = this.connected && this.fv.active ? this.fv.camera(dt) : null;
+    if (carCam) { eye = carCam.eye; yaw = carCam.yaw; pitch = carCam.pitch; }
+    if (this.thirdPerson && ps.alive && this.connected && !this.zoomed && !lookAt && !carCam) {
       const f = viewDir(yaw, pitch), y = yaw * DEG;
       const right = [Math.sin(y), -Math.cos(y), 0];
       const want = [eye[0] - f[0] * 88 + right[0] * 24, eye[1] - f[1] * 88 + right[1] * 24, eye[2] - f[2] * 88 + 10];
@@ -1860,6 +1879,17 @@ export class Game {
     } else this.setCamera(eye, yaw, pitch, roll);
     this.sound.listener(eye, viewDir(yaw, pitch), [0, 0, 1]);
     this.updateMood(dt, t, eye, yaw, pitch);
+    // a huge map: the sun's shadows follow you instead of covering everything
+    if (this.stream) {
+      const dir = this.sun.userData.dir || (this.sun.userData.dir = this.sun.position.clone().sub(this.sun.target.position).normalize());
+      const cx = Math.round(eye[0] / 64) * 64, cy = Math.round(eye[1] / 64) * 64;
+      this.sun.target.position.set(cx, cy, 0);
+      this.sun.position.set(cx + dir.x * 12000, cy + dir.y * 12000, dir.z * 12000);
+      this.sun.target.updateMatrixWorld();
+      const cam = this.sun.shadow.camera;
+      if (cam.right !== 3200) { cam.left = cam.bottom = -3200; cam.right = cam.top = 3200; cam.near = 100; cam.far = 26000; cam.updateProjectionMatrix(); }
+    }
+    this.fv.update(dt, t, eye);
     this.sky.position.set(eye[0], eye[1], eye[2]);
     this.sky.userData.uniforms.uTime.value = t;
     this.eyePos = eye;
@@ -1878,7 +1908,7 @@ export class Game {
     const myTeam = this.info.get(this.myId)?.team;
     this.mv.update(dt);
     this.onVoiceFrame?.();
-    if (this.connected && this.mode && this.mode !== 'dm' && this.mode !== 'zombies' && this.mode !== 'parkour' && this.mode !== 'heist') {
+    if (this.connected && this.mode && this.mode !== 'dm' && this.mode !== 'zombies' && this.mode !== 'parkour' && this.mode !== 'heist' && this.mode !== 'freeplay') {
       const limit = this.mode === 'ctf' || this.mode === 'soccer' || this.mode === 'mugrball' ? this.caplimit : this.fraglimit;
       this.hud.teamBar({ kind: this.mode, score: this.teamScore, limit, state: this.flagState, myTeam, myId: this.myId, zm: this.zmState });
     }
@@ -1893,7 +1923,7 @@ export class Game {
     this.hud.powers(ps.alive ? pw : []);
     if (this.voting) this.hud.vote(this.voting);
     this.hud.update(ps);
-    if (this.timeLeft !== undefined && this.connected) this.hud.setTimer(this.timeLeft, this.limitLabel());
+    if (this.timeLeft !== undefined && this.connected && this.mode !== 'freeplay') this.hud.setTimer(this.timeLeft, this.limitLabel());
     if (!this.intermission) this.hud.scoreboard(this.keys.has('Tab') || !!this.touch?.scores || !!this.pad?.scores, this.info.values(), this.myId, this.mapName, this.scoreTeams(), this.scoreExtra());
     if (this.renderer.shadowMap.enabled && this.frameNo++ % (this.q.shadowEvery || 1) === 0) this.renderer.shadowMap.needsUpdate = true;
     this.adaptResolution(dt);

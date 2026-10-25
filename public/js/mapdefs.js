@@ -5,6 +5,7 @@ import { MV } from './pmove.js';
 import { BoxWorld } from './collide.js';
 import { floorGraph } from './nav.js';
 import { ITEM_ROTATION } from './weapons.js';
+import { HOSPITALS, HALF } from './citygen.js';
 
 function builder() {
   const B = [];
@@ -1184,6 +1185,13 @@ const hollow = (() => {
   return autoLayout({ name: 'Hollow', mood: 'fall', boxes: B, decor: D, sun: [0.6, -0.4, 0.45], bounds: [[-E, -E, -120], [E, E, 700]], killZ: -500, pads: [] }, { spawns: 16, items: 24, props: 10 });
 })();
 
-export const MODE_MAPS = { soccer: 'pitch', parkour: 'course', mugrball: 'court', heist: 'bank' };
+export const MODE_MAPS = { soccer: 'pitch', parkour: 'course', mugrball: 'court', heist: 'bank', freeplay: 'county' };
 
-export const CODE_MAPS = { foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court, bank, asylum, harvest, hollow };
+// ------------------------------------------------------------------ Mugr County (free roam): built a cell at a time by citygen.js
+const county = {
+  name: 'Mugr County', boxes: [], stream: true, pads: [], items: [], props: [], flags: null, killZ: -160, mood: 'city', sun: [0.45, 0.3, 0.84],
+  bounds: [[-HALF, -HALF, -200], [HALF, HALF, 8000]],
+  spawns: HOSPITALS.flatMap((h) => h.spawns),
+};
+
+export const CODE_MAPS = { county, foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court, bank, asylum, harvest, hollow };

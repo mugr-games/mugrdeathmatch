@@ -336,6 +336,61 @@ body.touch #netinfo { display: none; }
 #pl-result.win { border-left: 3px solid #3ddc6a; } #pl-result.lose { border-left: 3px solid #e0473a; }
 @media (max-width: 760px) { .pl-body { grid-template-columns: 1fr; } }
 #heist-hud { position: absolute; inset: 0; pointer-events: none; }
+/* free roam */
+#fp-hud { position: absolute; inset: 0; pointer-events: none; font-family: var(--ui); }
+#fp-money { position: absolute; right: 20px; top: 54px; text-align: right; }
+#fp-cash { font: 800 30px var(--num); color: #7dff9a; text-shadow: 0 2px 0 #0b2a12, 0 0 12px rgba(0,0,0,.6); letter-spacing: .02em; }
+#fp-stars { margin-top: 2px; font-size: 22px; letter-spacing: 2px; }
+#fp-stars i { font-style: normal; color: rgba(255,255,255,.22); text-shadow: 0 1px 2px #000; }
+#fp-stars i.on { color: #fff; }
+#fp-stars.flash i.on { animation: fpflash .5s steps(2) infinite; }
+@keyframes fpflash { 50% { color: rgba(255,255,255,.25); } }
+#fp-radar-box { position: absolute; left: 22px; bottom: 92px; width: 180px; }
+body.fp-on #timer { display: none; }
+#fp-radar { width: 180px; height: 180px; display: block; border-radius: 50%; box-shadow: 0 4px 18px rgba(0,0,0,.5); }
+#fp-zone { margin-top: 6px; text-align: center; font: 700 12px var(--ui); letter-spacing: .12em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 3px #000; }
+body.fp-on #voice-hud { bottom: 310px; }
+#fp-prompt { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); padding: 8px 16px; border-radius: 6px; background: rgba(0,0,0,.62); color: #fff; font: 14px var(--ui); text-align: center; white-space: nowrap; }
+#fp-prompt b { display: inline-block; min-width: 20px; padding: 1px 6px; margin-right: 6px; border-radius: 4px; background: #fff; color: #111; }
+#fp-prompt small { color: #ddd; font-size: 12px; } #fp-prompt small b { margin: 0 2px 0 6px; font-size: 11px; }
+#fp-prompt .bar { display: block; width: 240px; height: 6px; margin: 6px auto 0; border-radius: 3px; background: rgba(255,255,255,.2); overflow: hidden; } #fp-prompt .bar span { display: block; height: 100%; background: #7dff9a; }
+#fp-note { position: absolute; left: 22px; top: 48px; max-width: 340px; padding: 10px 14px; border-radius: 6px; background: rgba(10,12,14,.82); color: #fff; font: 13px/1.45 var(--ui); border-left: 3px solid var(--accent); }
+#fp-note.show { animation: fpin .25s ease-out; }
+@keyframes fpin { from { opacity: 0; transform: translateY(-6px); } }
+.fp-toast { position: absolute; right: 22px; top: 130px; font: 800 22px var(--num); color: #7dff9a; text-shadow: 0 2px 4px #000; animation: fptoast 1.6s ease-out forwards; }
+@keyframes fptoast { to { opacity: 0; transform: translateY(-40px); } }
+#fp-speed { position: absolute; right: 26px; bottom: 26px; text-align: right; color: #fff; text-shadow: 0 2px 4px #000; }
+#fp-speed b { font: 800 54px/1 var(--num); } #fp-speed small { font: 700 13px var(--ui); margin-left: 6px; color: #ccc; } #fp-speed span { display: block; font: 600 13px var(--ui); color: #ddd; letter-spacing: .08em; text-transform: uppercase; }
+body.fp-driving #ammo-box, body.fp-driving #crosshair { display: none; }
+#fp-help { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); font: 12px var(--ui); color: rgba(255,255,255,.75); text-shadow: 0 1px 2px #000; }
+#fp-help b { padding: 0 5px; border-radius: 3px; background: rgba(255,255,255,.85); color: #111; }
+#fp-phone { position: absolute; z-index: 5; right: 30px; bottom: 30px; width: 300px; height: 520px; overflow: auto; padding: 10px 14px 12px; border-radius: 30px; border: 8px solid #111; background: linear-gradient(180deg, #1e2a3a, #0e141c); color: #fff; box-shadow: 0 20px 50px rgba(0,0,0,.6); animation: fpphone .2s ease-out; }
+@keyframes fpphone { from { transform: translateY(40px); opacity: 0; } }
+#fp-phone .bar { display: flex; justify-content: space-between; font: 600 11px var(--ui); color: #ccc; padding: 2px 6px 8px; } #fp-phone .bar span:last-child { color: #7dff9a; }
+#fp-phone h3 { margin: 4px 0 10px; font: 800 18px var(--ui); }
+#fp-phone .apps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+#fp-phone .app { padding: 14px 8px; border-radius: 16px; background: rgba(255,255,255,.07); text-align: center; border: 2px solid transparent; }
+#fp-phone .app.on { border-color: var(--accent); background: rgba(255,176,0,.14); }
+#fp-phone .app .ic { display: block; font-size: 30px; } #fp-phone .app b { display: block; margin-top: 4px; font-size: 14px; } #fp-phone .app small { color: #aab; font-size: 11px; }
+#fp-phone .list, #fp-shop .list { list-style: none; margin: 0; padding: 0; }
+#fp-phone .list li, #fp-shop .list li { position: relative; padding: 9px 10px; margin-bottom: 6px; border-radius: 10px; background: rgba(255,255,255,.06); border: 2px solid transparent; }
+#fp-phone .list li.on, #fp-shop .list li.on { border-color: var(--accent); background: rgba(255,176,0,.12); }
+#fp-phone .list li.dim b { color: #999; }
+#fp-phone .list b, #fp-shop .list b { font-size: 14px; } #fp-phone .list small, #fp-shop .list small { display: block; color: #aab; font-size: 11px; margin-top: 2px; }
+#fp-phone .price, #fp-shop .price { position: absolute; right: 10px; top: 9px; font: 700 13px var(--num); color: #7dff9a; }
+#fp-phone .meter { display: block; height: 4px; margin-top: 6px; border-radius: 2px; background: rgba(255,255,255,.1); } #fp-phone .meter i { display: block; height: 100%; border-radius: 2px; background: #4fd6ff; }
+#fp-phone .sw { display: inline-block; width: 26px; height: 26px; border-radius: 50%; border: 3px solid transparent; vertical-align: middle; }
+#fp-phone .price .sw { width: 14px; height: 14px; border-width: 1px; border-color: #fff; }
+#fp-phone .paints { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; justify-items: center; margin: 10px 0; }
+#fp-phone .paints .sw.on { border-color: var(--accent); transform: scale(1.15); }
+#fp-phone .pick { text-align: center; font-size: 13px; color: #ccd; }
+#fp-phone .empty { color: #aab; font-size: 13px; }
+#fp-phone canvas { width: 100%; border-radius: 10px; display: block; }
+#fp-phone .legend { font-size: 11px; color: #ccd; } #fp-phone .legend i { display: inline-block; width: 9px; height: 9px; margin: 0 3px 0 8px; }
+#fp-phone .keys, #fp-shop .keys { margin-top: 10px; font-size: 11px; color: #99a; text-align: center; } #fp-phone .keys b, #fp-shop .keys b { color: #fff; }
+#fp-shop { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 360px; max-height: 70vh; overflow: auto; padding: 14px 16px; border-radius: 8px; background: rgba(16,16,18,.94); border: 1px solid rgba(255,207,58,.4); color: #fff; }
+#fp-shop h3 { margin: 0; font: 900 22px var(--ui); color: #ffcf3a; letter-spacing: .06em; } #fp-shop .cash { margin: 2px 0 10px; font: 700 15px var(--num); color: #7dff9a; }
+#fp-shop .list li.own b { color: #ffcf3a; }
 #hz-obj { position: absolute; left: 16px; top: 96px; max-width: 330px; font: 12px var(--ui); color: #fff; text-shadow: 0 1px 3px #000; }
 #hz-obj .st { display: inline-block; font: 700 12px var(--ui); letter-spacing: .1em; padding: 3px 8px; border-radius: 4px; margin-bottom: 6px; }
 #hz-obj .st.calm { background: rgba(40,160,80,.75); } #hz-obj .st.alarm { background: rgba(210,30,30,.85); animation: hzflash 1s infinite; } #hz-obj .st.break { background: rgba(200,140,20,.8); }
@@ -586,6 +641,16 @@ html, body { font: 14px/1.45 var(--ui); }
   <div id="scoreboard" hidden></div>
   <div id="netinfo"></div>
   <div id="voice-hud" hidden></div>
+  <div id="fp-hud" hidden>
+    <div id="fp-money"><div id="fp-cash">$0</div><div id="fp-stars" hidden></div></div>
+    <div id="fp-radar-box"><canvas id="fp-radar" width="200" height="200"></canvas><div id="fp-zone"></div></div>
+    <div id="fp-prompt" hidden></div>
+    <div id="fp-note" hidden></div>
+    <div id="fp-speed" hidden></div>
+    <div id="fp-phone" hidden></div>
+    <div id="fp-shop" hidden></div>
+    <div id="fp-help"><b>P</b> phone · <b>E</b> get in / use</div>
+  </div>
   <div id="heist-hud" hidden>
     <div id="hz-obj"></div>
     <div id="hz-prompt" hidden></div>
@@ -606,6 +671,7 @@ html, body { font: 14px/1.45 var(--ui); }
       <button id="btn-join" class="big" disabled><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg><span>Play</span></button>
       <button id="btn-invite" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>Copy invite</span></button>
       <button id="btn-disconnect" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg><span>Leave game</span></button>
+      <button id="btn-freeroam" class="feature"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 16l1.5-5a2 2 0 0 1 2-1.5h7a2 2 0 0 1 2 1.5L19 16"/><rect x="3" y="15" width="18" height="4" rx="1.5"/><circle cx="7.5" cy="19.5" r="1.5"/><circle cx="16.5" cy="19.5" r="1.5"/><path d="M8 6l2-2h4l2 2"/></svg><span>Free Roam<small>Mugr County: cars, cops, robberies</small></span></button>
       <button id="btn-heist" class="feature"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="13" rx="2"/><path d="M9 7V5h6v2M12 11v5M9.5 13.5h5"/></svg><span>Heist<small>2–4 player bank job</small></span></button>
       <button id="btn-shop"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h3l2.5 11h10L21 8H7"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg><span>Shop</span></button>
       <button id="btn-wardrobe"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4l-5 4 3 3 2-1v10h8V10l2 1 3-3-5-4c-1 2-2.5 3-4 3S9 6 8 4z"/></svg><span>Wardrobe</span></button>

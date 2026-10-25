@@ -2,6 +2,7 @@
 import { WEAPONS, WEAPON_INDEX, LOADOUTS, ZOMBIE } from './weapons.js';
 import { BTN, eyeHeight } from './pmove.js';
 import { rayAABB } from './collide.js';
+import { packCar, unpackCar } from './vehicle.js';
 
 export const MAX_HP = 100, MAX_ARMOR = 100;
 
@@ -190,6 +191,8 @@ export function packOwn(ps) {
     pw: [+(ps.haste || 0).toFixed(3), +(ps.boots || 0).toFixed(3), +(ps.dmgBoost || 0).toFixed(3)], sm: ps.speedMul || 1,
     // zombies perks (fire rate, reload time) and being downed
     rm: ps.rateMul || 1, lm: ps.reloadMul || 1, dn: ps.downed ? 1 : 0,
+    // free roam: the car you're driving, or the seat you ride in
+    car: ps.car ? packCar(ps.car) : 0, st: ps.seat ? [ps.seat.v, ps.seat.s] : 0,
   };
 }
 
@@ -202,6 +205,8 @@ export function unpackOwn(m, ps) {
   ps.rateMul = m.rm || 1;
   ps.reloadMul = m.lm || 1;
   ps.downed = !!m.dn;
+  ps.car = m.car ? unpackCar(m.car) : null;
+  ps.seat = m.st ? { v: m.st[0], s: m.st[1] } : null;
   return ps;
 }
 

@@ -275,6 +275,8 @@ export function createProfiles(file) {
     load,
     view,
     ready,
+    // keep changes made to a profile elsewhere (free roam money and garage)
+    save: (pr) => touch(pr),
     storage,
     // save everything now (before the server stops)
     flush: () => Promise.all(stores.map((s) => s.flush())),

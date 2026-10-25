@@ -245,7 +245,7 @@ function codeMap(id, def) {
     group.add(mesh);
   }
   // the pitch stays clean: no litter, tufts or wall clutter on a football ground
-  const detail = def.soccer || def.heist ? { group: new THREE.Group(), tick: () => {} } : decorate(id, def.boxes.filter((b) => b.mat !== 'clip'), def.bounds, pal);
+  const detail = def.soccer || def.heist || def.stream ? { group: new THREE.Group(), tick: () => {} } : decorate(id, def.boxes.filter((b) => b.mat !== 'clip'), def.bounds, pal);
   group.add(detail.group);
-  return { id, name: def.name, group, cells, boxes: def.boxes, spawns: def.spawns, bounds: def.bounds, sun: (Array.isArray(def.sun) ? def.sun : def.sun?.dir) || [0.3, 0.3, 0.85], pads: def.pads || [], killZ: def.killZ, tick: detail.tick, mood: def.mood || 'day' };
+  return { id, name: def.name, group, cells, boxes: def.boxes, spawns: def.spawns, bounds: def.bounds, sun: (Array.isArray(def.sun) ? def.sun : def.sun?.dir) || [0.3, 0.3, 0.85], pads: def.pads || [], killZ: def.killZ, tick: detail.tick, mood: def.mood || 'day', stream: !!def.stream };
 }

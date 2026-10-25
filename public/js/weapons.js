@@ -76,4 +76,10 @@ export const PERKS = {
 export const WALL_COST = { '357': 500, smg1: 1000, ar2: 1200, crossbow: 1250, shotgun: 1500, sniper: 1500, autoshotgun: 2000, lmg: 3000, grenade: 250 };
 export const BOX_COST = 950;
 export const BOX_POOL = ['357', 'smg1', 'ar2', 'shotgun', 'crossbow', 'sniper', 'rpg', 'grenade', 'lmg', 'autoshotgun', 'railgun'];
+// Free roam gun shop: [weapon, price, price of a full refill of its ammo]
+export const GUN_SHOP = [
+  ['pistol', 250, 40], ['357', 700, 90], ['smg1', 1500, 120], ['shotgun', 1300, 100], ['ar2', 3000, 180], ['autoshotgun', 4200, 220],
+  ['crossbow', 2200, 150], ['sniper', 5000, 260], ['lmg', 7500, 320], ['grenade', 600, 300], ['rpg', 9500, 900], ['railgun', 15000, 700],
+];
+export const ARMOR_PRICE = 400;
 export const DROP_NAMES = { maxammo: 'MAX AMMO', instakill: 'INSTA-KILL', double: 'DOUBLE POINTS', nuke: 'KABOOM' };

@@ -2,6 +2,20 @@
 export const DEVLOG = [
   {
     date: '2026-10-25',
+    title: 'Free Roam: Mugr County',
+    notes: [
+      'New: Free Roam on the main menu. Mugr County is about 6 km across, the size of San Andreas: the cities of Port Halcyon, Bayreach and Sundown, the towns of Pinecrest, Dustwater and Millbrook, farms, woods, desert, beaches, Mirror Lake and Mount Mugr, joined by highways.',
+      'Drive anything: walk up to a car and press E. Traffic drivers get thrown out. Space is the handbrake, H the horn (the siren in a police car), and F switches between first person (dashboard, wheel, your hands) and the chase camera.',
+      'Traffic keeps to its lane, stops at red lights, takes turns at junctions and honks at you. People walk the pavements, cross on the green and run from gunfire.',
+      'Your phone (P): buy cars and bikes in Motors and Moto, pick the colour, and have anything in your Garage brought to you. The Map shows the whole county.',
+      'Gun shops (yellow on the radar): buy guns, ammo and armour. What you buy is yours to keep.',
+      'Rob a gas station: keep a gun pointed at the cashier until the till is empty, grab the cash and run. Look away and they hit the alarm.',
+      'Wanted stars: crimes bring the police in cruisers that chase you, block you in and get out shooting. Break their line of sight for long enough and they give up.',
+      'Your cash, cars and guns are saved on your account.',
+    ],
+  },
+  {
+    date: '2026-10-25',
     title: 'Arms, third person, autumn and a darker zombies',
     notes: [
       'A new look: a redesigned main menu with a news card, cleaner dialogs, and a new HUD with health and armour bars and the weapon name by your ammo.',

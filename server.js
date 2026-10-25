@@ -17,6 +17,7 @@ import { createZombies } from './cod.js';
 import { createSoccer, createParkour, createMugrball } from './modes.js';
 import { createVoice } from './voice.js';
 import { createHeist } from './heist.js';
+import { createFreeplay } from './freeplay.js';
 import { createProfiles, OWNER_NAME } from './profiles.js';
 import { checkText, badName } from './filter.js';
 import { createReporter } from './moderation.js';
@@ -48,7 +49,7 @@ const MAX_ROOMS = 30;
 const NUM_COLORS = 8; // suit colours; the client owns the palette
 const NUM_MODELS = 4; // player characters, also drawn by the client
 const MAP_IDS = ['csdm', 'foundry', 'courtyard', 'skyline', 'warehouse', 'rooftops', 'bunker', 'ziggurat', 'docks', 'canyon', 'office', 'station', 'city', 'asylum', 'harvest', 'hollow'];
-const MODES = { dm: 'Deathmatch', tdm: 'Team deathmatch', ctf: 'Capture the flag', zombies: 'Zombies (rounds, co-op)', infection: 'Infection', soccer: 'Soccer', parkour: 'Parkour', mugrball: 'Mugrball', heist: 'Heist' };
+const MODES = { dm: 'Deathmatch', tdm: 'Team deathmatch', ctf: 'Capture the flag', zombies: 'Zombies (rounds, co-op)', infection: 'Infection', soccer: 'Soccer', parkour: 'Parkour', mugrball: 'Mugrball', heist: 'Heist', freeplay: 'Free roam (Mugr County)' };
 // modes without weapons or damage
 const PEACEFUL = new Set(['soccer', 'parkour']);
 const MAX_BOTS = 15;
@@ -65,7 +66,7 @@ function mapDef(id) {
     const m = CODE_MAPS[id];
     if (m) {
       def = {
-        name: m.name, boxes: m.boxes, pads: m.pads || [], killZ: m.killZ, bounds: m.bounds, doors: m.doors || [], buys: m.buys, zstart: m.zstart, soccer: m.soccer, checkpoints: m.checkpoints, hoops: m.hoops, heist: m.heist,
+        name: m.name, boxes: m.boxes, pads: m.pads || [], killZ: m.killZ, bounds: m.bounds, doors: m.doors || [], buys: m.buys, zstart: m.zstart, soccer: m.soccer, checkpoints: m.checkpoints, hoops: m.hoops, heist: m.heist, stream: m.stream,
         get spawns() { return m.spawns; }, get items() { return m.items; }, get props() { return m.props || []; }, get flags() { return m.flags; },
       };
     }
@@ -84,6 +85,7 @@ const navCache = new Map();
 function navFor(id) {
   if (!navCache.has(id)) {
     const def = mapDef(id);
+    if (def.stream) return null; // free roam: far too big for a walking grid (people there follow the pavements)
     navCache.set(id, buildNav(def.boxes, def.pads, def.bounds || boxBounds(def.boxes), def.doors));
   }
   return navCache.get(id);
@@ -106,18 +108,18 @@ function sanitize(s = {}) {
     mode,
     caplimit: Math.round(num(s.caplimit, 1, 30, mode === 'soccer' ? 5 : mode === 'mugrball' ? 10 : 3)),
     map: MODE_MAPS[mode] || (s.map === 'rotation' || MAP_IDS.includes(s.map) ? s.map : 'rotation'),
-    maxPlayers: mode === 'heist' ? 4 : Math.round(num(s.maxPlayers, 2, 16, 12)),
-    fraglimit: mode === 'heist' ? 0 : Math.round(num(s.fraglimit, 0, 200, 30)),
+    maxPlayers: mode === 'heist' ? 4 : Math.round(num(s.maxPlayers, 2, 16, mode === 'freeplay' ? 16 : 12)),
+    fraglimit: mode === 'heist' || mode === 'freeplay' ? 0 : Math.round(num(s.fraglimit, 0, 200, 30)),
     // infection always has a round timer (the survivors win when it runs out); zombies goes on until everyone's down
-    timelimit: mode === 'infection' ? Math.round(num(s.timelimit, 2, 30, 5)) || 5 : mode === 'zombies' || mode === 'parkour' || mode === 'heist' ? 0 : Math.round(num(s.timelimit, 0, 120, mode === 'soccer' || mode === 'mugrball' ? 10 : 15)),
+    timelimit: mode === 'infection' ? Math.round(num(s.timelimit, 2, 30, 5)) || 5 : mode === 'zombies' || mode === 'parkour' || mode === 'heist' || mode === 'freeplay' ? 0 : Math.round(num(s.timelimit, 0, 120, mode === 'soccer' || mode === 'mugrball' ? 10 : 15)),
     loadout: LOADOUTS[s.loadout] && !LOADOUTS[s.loadout].hidden ? s.loadout : 'default',
     // computer players (not in zombies, where everyone is on the same side)
-    bots: mode === 'zombies' || mode === 'parkour' || mode === 'heist' ? 0 : Math.round(num(s.bots, 0, MAX_BOTS, 0)),
+    bots: mode === 'zombies' || mode === 'parkour' || mode === 'heist' || mode === 'freeplay' ? 0 : Math.round(num(s.bots, 0, MAX_BOTS, 0)),
     botSkill: SKILLS[s.botSkill] ? s.botSkill : 'normal',
     gravity: num(s.gravity, 0.25, 2, 1),
     speed: num(s.speed, 0.5, 2, 1),
     jump: num(s.jump, 0.5, 2.5, 1),
-    items: s.items !== false && !PEACEFUL.has(mode),
+    items: s.items !== false && !PEACEFUL.has(mode) && mode !== 'freeplay',
     private: !!s.private,
     password: String(s.password || '').slice(0, 24),
   };
@@ -158,7 +160,7 @@ function startMatch(R, mapId) {
   // zombies has no pickups or props: weapons and perks are bought, and its item spots become the shops
   const heist = R.settings.mode === 'heist' && !!def.heist;
   const items = R.settings.items && !cod ? def.items.map((it, i) => ({ i, kind: it.kind || kinds[i % kinds.length], o: it.o.slice(), up: true, at: 0 })) : [];
-  const world = new BoxWorld(def.boxes, def.pads);
+  const world = new BoxWorld(def.boxes, def.pads, def.stream ? 512 : 256);
   // barricades only stand in zombies (other modes play the map wide open)
   const doorBoxes = cod || heist ? def.doors.map((d) => world.addBox({ mins: d.mins, maxs: d.maxs, mat: 'door' })) : [];
   const propByBox = new Map();
@@ -177,6 +179,7 @@ function startMatch(R, mapId) {
   R.pk = R.settings.mode === 'parkour' && def.checkpoints ? createParkour(R, def, modeApi(R)) : null;
   R.mb = R.settings.mode === 'mugrball' && def.soccer ? createMugrball(R, def, modeApi(R)) : null;
   R.heist = heist ? createHeist(R, def, R.map.nav, doorBoxes, heistApi(R)) : null;
+  R.fp = R.settings.mode === 'freeplay' && def.stream ? createFreeplay(R, freeplayApi(R)) : null;
   if (R.soccer) R.soccer.reset();
   if (R.mb) R.mb.reset();
   R.pick = R.settings.mode === 'tdm' ? { until: TEAM_PICK } : null;
@@ -197,6 +200,7 @@ function startMatch(R, mapId) {
     else if (teamMode(R) && !p.team) p.team = pickTeam(R);
     if (R.cz) R.cz.join(p);
     if (R.heist) R.heist.join(p);
+    if (R.fp) R.fp.join(p);
     respawn(R, p);
     send(p, welcome(R, p));
   }
@@ -231,6 +235,18 @@ function heistApi(R) {
     kill: (p, why) => kill(R, p, null, why, false),
     respawn: (p) => respawn(R, p),
     plan: (msg) => broadcast(R, msg),
+    players: () => R.players.values(),
+  };
+}
+
+// what free roam needs from the server
+function freeplayApi(R) {
+  return {
+    pushEvent: (ev, only) => pushEvent(R, ev, only),
+    send: (p, msg) => send(p, msg),
+    save: (p) => { if (p.profile) profiles.save(p.profile); },
+    damage: (p, attacker, dmg, kind, dir) => damage(R, p, attacker, dmg, kind, false, dir),
+    blast: (at, P, owner, weapon) => blast(R, at, P, owner, weapon),
     players: () => R.players.values(),
   };
 }
@@ -275,6 +291,7 @@ function welcome(R, p) {
     players: [...R.players.values()].map(info),
     cz: R.cz ? R.cz.welcome() : null,
     heist: R.heist ? R.heist.welcome() : null,
+    fp: R.fp ? R.fp.welcome(p) : null,
   };
 }
 
@@ -287,7 +304,7 @@ function watchWelcome(R) {
 function pickWatchRoom() {
   let best = null, score = 0;
   for (const R of rooms.values()) {
-    if (R.settings.private || R.ending || R.heist) continue;
+    if (R.settings.private || R.ending || R.heist || R.fp) continue;
     const n = humanCount(R) * 100 + R.players.size;
     if (n > score) { best = R; score = n; }
   }
@@ -327,6 +344,7 @@ function clean(s) {
 function respawn(R, p) {
   let { spawns } = R.map;
   if (R.cz && R.cz.startSpawns) spawns = R.cz.startSpawns;
+  if (R.fp) spawns = [R.fp.spawnPoint(p)];
   // spawns tagged for a team (soccer): your own side
   if (p.team && spawns.some((s) => s.team)) {
     const own = spawns.filter((s) => s.team === p.team);
@@ -356,6 +374,7 @@ function respawn(R, p) {
   if (p.team === 'zombie') zombieLoadout(p.ps);
   if (R.cz) R.cz.loadout(p);
   if (R.heist) R.heist.loadout(p);
+  if (R.fp) R.fp.loadout(p);
   p.yaw = best.yaw;
   p.pitch = 0;
   p.respawnAt = 0;
@@ -378,6 +397,7 @@ function joinRoom(R, p) {
   p.team = R.cz ? 'human' : R.zm ? (R.zm.started ? 'zombie' : 'human') : teamMode(R) ? pickTeam(R) : null;
   if (R.cz) R.cz.join(p);
   if (R.heist) R.heist.join(p);
+  if (R.fp) R.fp.join(p);
   // a person arriving in a full game with bots takes a bot's place
   if (!p.bot && R.players.size >= 16) { const b = [...R.players.values()].find((o) => o.bot); if (b) leaveRoom(b); }
   R.players.set(p.id, p);
@@ -416,6 +436,7 @@ function leaveRoom(p) {
   R.pk?.forget(p);
   R.mb?.drop(p);
   R.heist?.leave(p);
+  R.fp?.leave(p);
   voice.leftMatch(p.ws);
   if (R.vote) R.vote.votes.delete(p.id);
   R.players.delete(p.id);
@@ -464,8 +485,11 @@ function runCmd(R, p, cmd, dt, seq) {
     return;
   }
   if (dt <= 0) return;
-  if (pressed & BTN.ROCKETJUMP) rocketJump(R, p, cmd);
-  pmove(R.map.world, ps, cmd, dt, R.rules);
+  // free roam: driving a car (no shooting at the wheel) or riding in one (shoot out of the window)
+  const inCar = R.fp ? R.fp.cmd(p, cmd, dt, pressed) : 0;
+  if (inCar === 1) { ps.time += dt; return; }
+  if (pressed & BTN.ROCKETJUMP && !inCar) rocketJump(R, p, cmd);
+  if (!inCar) pmove(R.map.world, ps, cmd, dt, R.rules);
   if (ps.landSpeed) {
     // landing from your own rocket jump doesn't hurt
     const dmg = p.rjSoftLanding ? 0 : fallDamage(ps.landSpeed);
@@ -534,6 +558,7 @@ function fire(R, p, wi, cmd, seq) {
   const world = R.map.world;
   const zoomed = !!(cmd.buttons & BTN.ATTACK2) && !!W.zoom;
   if (R.heist) R.heist.shot(p, wi, start);
+  if (R.fp) R.fp.shot(p, wi, start);
 
   if (W.proj) {
     const dir = spreadDirs(W, cmd.yaw, cmd.pitch, seq, zoomed)[0];
@@ -552,6 +577,7 @@ function fire(R, p, wi, cmd, seq) {
   });
   if (R.cz) for (const z of R.cz.alive()) targets.push({ o: z, origin: z.ps.origin, ducked: false });
   if (R.heist) for (const n of R.heist.alive()) targets.push({ o: n, origin: n.ps.origin, ducked: n.ps.ducked });
+  if (R.fp) for (const n of R.fp.alive()) if ((n.ps.origin[0] - start[0]) ** 2 + (n.ps.origin[1] - start[1]) ** 2 < 8400 * 8400) targets.push({ o: n, origin: n.ps.origin, ducked: n.ps.ducked });
 
   if (W.melee) {
     const f = viewDir(cmd.yaw, cmd.pitch);
@@ -565,6 +591,7 @@ function fire(R, p, wi, cmd, seq) {
     pushEvent(R, { e: 'melee', id: p.id, hit: hit ? 2 : tr.fraction < 1 ? 1 : 0 });
     if (hit) hurtAny(R, hit.t.o, p, W.damage, W.id, false, f);
     else if (tr.fraction < 1 && R.map.propByBox.has(tr.box)) propDamage(R, R.map.propByBox.get(tr.box), W.damage * 2, p);
+    else if (tr.dyn && R.fp) R.fp.vehicleHit(tr.dyn.id, W.damage, p);
     return;
   }
 
@@ -591,6 +618,7 @@ function fire(R, p, wi, cmd, seq) {
     shots.push([...e.map(Math.round), hit ? hit.t.o.id : 0, hit ? 0 : tr.fraction < 1 ? 1 : 0, tr.normal.map((v) => +v.toFixed(2))]);
     if (R.mb) R.mb.shot(start, d, 8192 * frac, W.damage);
     if (R.heist) R.heist.whiz(start, e);
+    if (!hit && tr.dyn && R.fp) R.fp.vehicleHit(tr.dyn.id, W.damage, p);
     if (!hit && tr.fraction < 1 && R.map.propByBox.has(tr.box)) {
       const prop = R.map.propByBox.get(tr.box);
       propHits.set(prop, (propHits.get(prop) || 0) + W.damage);
@@ -655,6 +683,7 @@ function explode(R, pr, at, owner) {
 function blast(R, at, P, owner, weapon, skipProp) {
   if (R.mb) R.mb.blast(at, P);
   if (R.heist) R.heist.blast(at);
+  if (R.fp) R.fp.blast(at, P, owner);
   for (const o of hittable(R)) {
     if (!o.ps.alive) continue;
     const c = [o.ps.origin[0], o.ps.origin[1], o.ps.origin[2] + 36];
@@ -772,11 +801,12 @@ function flagThink(R) {
 
 // players and zombies alike
 function hittable(R) {
-  return R.cz ? [...R.players.values(), ...R.cz.alive()] : R.heist ? [...R.players.values(), ...R.heist.alive()] : R.players.values();
+  return R.cz ? [...R.players.values(), ...R.cz.alive()] : R.heist ? [...R.players.values(), ...R.heist.alive()] : R.fp ? [...R.players.values(), ...R.fp.alive()] : R.players.values();
 }
 
 function hurtAny(R, o, attacker, dmg, weapon, head, dir) {
   if (o.isZombie) R.cz.hurt(o, attacker, attacker && attacker.ps.dmgBoost > attacker.ps.time ? dmg * 2 : dmg, weapon, head, dir);
+  else if (o.isPed) R.fp.hurt(o, attacker, dmg, weapon, head, dir);
   else if (o.isNpc) R.heist.hurt(o, attacker, dmg, weapon, head, dir);
   else damage(R, o, attacker, dmg, weapon, head, dir);
 }
@@ -810,6 +840,7 @@ function damage(R, victim, attacker, dmg, weapon, head, dir) {
   if (attacker && attacker !== victim && attacker.team && attacker.team === victim.team) return;
   if (attacker && attacker !== victim && attacker.ps.dmgBoost > attacker.ps.time) dmg *= 2;
   if (R.mb) R.mb.hit(victim, attacker, weapon);
+  if (R.fp && (ps.car || ps.seat) && weapon !== 'car') dmg *= 0.6; // the car takes some of it
   const dead = applyDamage(ps, dmg);
   if (dir) {
     // a little knockback
@@ -830,6 +861,7 @@ function kill(R, victim, attacker, weapon, head) {
   // zombies: back next round
   victim.respawnAt = R.cz ? Infinity : R.heist ? R.time + R.heist.respawnDelay() : R.time + 2;
   R.heist?.died(victim);
+  R.fp?.died(victim, attacker);
   if (attacker && attacker !== victim) {
     attacker.frags++;
     award(attacker, COIN_KILL, 'kill');
@@ -1054,6 +1086,7 @@ function tick(R) {
   if (R.soccer) R.soccer.think(TICK);
   if (R.mb) R.mb.think(TICK);
   if (R.heist) R.heist.think(TICK);
+  if (R.fp) R.fp.think(TICK);
   if (R.pk && !R.ending) R.pk.think();
   if (R.cz && !R.ending) R.cz.think(TICK);
   pickThink(R);
@@ -1083,7 +1116,7 @@ function snapshot(R) {
     const s = p.ps;
     list.push([
       p.id, r1(s.origin[0]), r1(s.origin[1]), r1(s.origin[2]), r1(p.yaw), r1(p.pitch),
-      (s.ducked ? 1 : 0) | (s.onGround ? 2 : 0) | (s.alive ? 4 : 0) | (s.reloadEnd ? 8 : 0) | (s.dmgBoost > s.time ? 16 : 0) | (s.haste > s.time ? 32 : 0) | (s.downed ? 64 : 0),
+      (s.ducked ? 1 : 0) | (s.onGround ? 2 : 0) | (s.alive ? 4 : 0) | (s.reloadEnd ? 8 : 0) | (s.dmgBoost > s.time ? 16 : 0) | (s.haste > s.time ? 32 : 0) | (s.downed ? 64 : 0) | (s.car || s.seat ? 128 : 0),
       s.cur, r1(s.velocity[0]), r1(s.velocity[1]), r1(s.velocity[2]),
     ]);
   }
@@ -1109,7 +1142,7 @@ function snapshot(R) {
   for (const p of R.players.values()) {
     if (p.bot) continue;
     const ev = events.filter((e) => !e.only || e.only === p.id);
-    send(p, { t: 's', st: +R.time.toFixed(3), ack: p.ack, me: packOwn(p.ps), pl: list, ev, tl, ...flagState, ...(R.cz ? { zp: R.cz.personal(p) } : {}), ...(R.pk ? { pp: R.pk.personal(p) } : {}), ...(R.heist ? { hkp: R.heist.personal(p) } : {}) });
+    send(p, { t: 's', st: +R.time.toFixed(3), ack: p.ack, me: packOwn(p.ps), pl: list, ev, tl, ...flagState, ...(R.cz ? { zp: R.cz.personal(p) } : {}), ...(R.pk ? { pp: R.pk.personal(p) } : {}), ...(R.heist ? { hkp: R.heist.personal(p) } : {}), ...(R.fp ? R.fp.view(p, R.tick % 4 === 0) : {}) });
   }
   if (R.watchers.size) {
     const msg = JSON.stringify({ t: 's', st: +R.time.toFixed(3), ack: 0, me: null, pl: list, ev: events.filter((e) => !e.only), tl, ...flagState });
@@ -1637,6 +1670,12 @@ wss.on('connection', (ws, req) => {
               if (rooms.size >= MAX_ROOMS) return fail('The server has too many games running. Try again in a minute.');
               R = createRoom({ mode: 'heist', name: 'Heist crew' });
             }
+          } else if (key === 'FREEROAM') {
+            R = [...rooms.values()].filter((r) => r.fp && !r.settings.private && humanCount(r) < r.settings.maxPlayers).sort((a, b) => humanCount(b) - humanCount(a))[0];
+            if (!R) {
+              if (rooms.size >= MAX_ROOMS) return fail('The server has too many games running. Try again in a minute.');
+              R = createRoom({ mode: 'freeplay', name: 'Free Roam' });
+            }
           } else R = /^\d+$/.test(key) ? rooms.get(+key) : [...rooms.values()].find((r) => r.code === key);
           if (!R) return fail(/^\d+$/.test(key) ? 'That game has ended.' : `No game with the code ${key}.`);
           if (R.settings.private && !/^[A-Z0-9]{4}$/.test(key)) return fail('That game is private. Ask for its code.');
@@ -1652,6 +1691,7 @@ wss.on('connection', (ws, req) => {
         profiles.load(m.token).then(async (pr) => {
           me.profile = pr;
           if (!pr) return;
+          if (me.room?.fp) me.room.fp.profile(me);
           send(me, { t: 'coins', coins: pr.coins });
           let changed = Object.keys(pr.eq).length > 0;
           // signed in: play under the account name. A guest using someone's account name gets a guest name.
@@ -1676,6 +1716,7 @@ wss.on('connection', (ws, req) => {
     }
     else if (m.t === 'team' && R.pick && typeof m.team === 'string') setTeam(R, p, m.team);
     else if (m.t === 'heist' && R.heist) R.heist.message(p, m);
+    else if (m.t === 'fp' && R.fp) R.fp.message(p, m);
     else if (m.t === 'vote' && R.vote && R.vote.options.includes(m.map)) { R.vote.votes.set(p.id, m.map); broadcast(R, { t: 'votes', c: voteCounts(R) }); }
   });
   ws.on('close', () => {
@@ -1704,6 +1745,7 @@ for (const m of [
   { name: 'Main · Deathmatch', mode: 'dm', fraglimit: 30, timelimit: 15 },
   { name: 'Main · Team Deathmatch', mode: 'tdm', fraglimit: 50, timelimit: 15 },
   { name: 'Main · Capture the Flag', mode: 'ctf', caplimit: 3, timelimit: 20 },
+  { name: 'Main · Free Roam', mode: 'freeplay' },
   { name: 'Main · Zombies', mode: 'zombies', map: 'city' },
   { name: 'Main · Zombies: Asylum', mode: 'zombies', map: 'asylum' },
   { name: 'Main · Zombies: Harvest', mode: 'zombies', map: 'harvest' },

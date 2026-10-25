@@ -6,14 +6,20 @@ export const MASK_PLAYERSOLID = 0x1;
 export const MASK_SHOT = 0x1;
 
 const EPS = 0.03125;
-const CELL = 256;
 
 export class BoxWorld {
   // boxes: [{ mins:[x,y,z], maxs:[x,y,z], mat }]. pads: jump pads [{ mins, maxs, vel }].
-  constructor(boxes, pads = []) {
+  // cell: broadphase grid size (bigger for a huge world of big boxes).
+  constructor(boxes, pads = [], cell = 256) {
     this.boxes = boxes.slice();
     this.pads = pads;
+    this.cell = cell;
     this.grid = new Map();
+    // moving things that aren't part of the map (cars): [{ mins, maxs, id, shotTop }], replaced every tick.
+    // Traces skip the ones with id === skip (your own car), and ones they start inside (so you can always get
+    // out of something that drove into you). shotTop: bullets pass over the box above this height (windows).
+    this.dyn = [];
+    this.skip = 0;
     this.stamp = new Int32Array(this.boxes.length + 256);
     this.off = new Uint8Array(this.boxes.length + 256); // switched-off boxes (broken props)
     this.check = 0;
@@ -22,8 +28,9 @@ export class BoxWorld {
   }
 
   insert(b, i) {
-    for (let x = Math.floor(b.mins[0] / CELL); x <= Math.floor(b.maxs[0] / CELL); x++)
-      for (let y = Math.floor(b.mins[1] / CELL); y <= Math.floor(b.maxs[1] / CELL); y++) {
+    const C = this.cell;
+    for (let x = Math.floor(b.mins[0] / C); x <= Math.floor(b.maxs[0] / C); x++)
+      for (let y = Math.floor(b.mins[1] / C); y <= Math.floor(b.maxs[1] / C); y++) {
         const k = x * 73856093 ^ y * 19349663;
         let list = this.grid.get(k);
         if (!list) this.grid.set(k, (list = []));
@@ -59,6 +66,7 @@ export class BoxWorld {
     tw.normal[0] = tw.normal[1] = tw.normal[2] = 0;
     tw.contents = 0;
     tw.box = -1;
+    tw.dyn = null;
     for (let i = 0; i < 3; i++) {
       const c = (mins[i] + maxs[i]) * 0.5;
       tw.ext[i] = (maxs[i] - mins[i]) * 0.5;
@@ -68,7 +76,8 @@ export class BoxWorld {
     const lo0 = Math.min(tw.start[0], tw.end[0]) - tw.ext[0] - 1, hi0 = Math.max(tw.start[0], tw.end[0]) + tw.ext[0] + 1;
     const lo1 = Math.min(tw.start[1], tw.end[1]) - tw.ext[1] - 1, hi1 = Math.max(tw.start[1], tw.end[1]) + tw.ext[1] + 1;
     this.check++;
-    const cx0 = Math.floor(lo0 / CELL), cx1 = Math.floor(hi0 / CELL), cy0 = Math.floor(lo1 / CELL), cy1 = Math.floor(hi1 / CELL);
+    const C = this.cell;
+    const cx0 = Math.floor(lo0 / C), cx1 = Math.floor(hi0 / C), cy0 = Math.floor(lo1 / C), cy1 = Math.floor(hi1 / C);
     // very long traces (bullets) walk a lot of cells; that's fine for an arena-sized map
     for (let x = cx0; x <= cx1; x++) {
       for (let y = cy0; y <= cy1; y++) {
@@ -77,17 +86,32 @@ export class BoxWorld {
         for (const i of list) {
           if (this.stamp[i] === this.check || this.off[i]) continue;
           this.stamp[i] = this.check;
-          this.clip(i);
+          this.clip(this.boxes[i], i);
           if (tw.allsolid) break;
         }
+      }
+    }
+    if (this.dyn.length && !tw.allsolid) {
+      const lo2 = Math.min(tw.start[2], tw.end[2]) - tw.ext[2] - 1, hi2 = Math.max(tw.start[2], tw.end[2]) + tw.ext[2] + 1;
+      const ray = tw.ext[0] === 0 && tw.ext[1] === 0 && tw.ext[2] === 0;
+      for (const b of this.dyn) {
+        if (b.id === this.skip) continue;
+        const top = ray && b.shotTop !== undefined ? b.shotTop : b.maxs[2];
+        if (b.maxs[0] < lo0 || b.mins[0] > hi0 || b.maxs[1] < lo1 || b.mins[1] > hi1 || top < lo2 || b.mins[2] > hi2) continue;
+        let inside = true;
+        for (let a = 0; a < 3 && inside; a++) inside = tw.start[a] + tw.ext[a] > b.mins[a] && tw.start[a] - tw.ext[a] < (a === 2 ? top : b.maxs[a]);
+        if (inside) continue;
+        const f = tw.fraction;
+        if (top !== b.maxs[2]) { DYN_SHOT.mins = b.mins; DYN_SHOT.maxs[0] = b.maxs[0]; DYN_SHOT.maxs[1] = b.maxs[1]; DYN_SHOT.maxs[2] = top; this.clip(DYN_SHOT, -1); }
+        else this.clip(b, -1);
+        if (tw.fraction < f) tw.dyn = b;
       }
     }
     for (let i = 0; i < 3; i++) tw.endpos[i] = start[i] + tw.fraction * (end[i] - start[i]);
     return tw;
   }
 
-  clip(index) {
-    const box = this.boxes[index];
+  clip(box, index) {
     const tw = this.tw;
     let enter = -1, leave = 1, ci = -1, cs = 0, getout = false, startout = false;
     for (let a = 0; a < 3; a++) {
@@ -120,9 +144,11 @@ export class BoxWorld {
       tw.normal[ci] = cs;
       tw.contents = CONTENTS.SOLID;
       tw.box = index;
+      tw.dyn = null;
     }
   }
 }
+const DYN_SHOT = { mins: null, maxs: [0, 0, 0] };
 
 // Ray vs axis-aligned box (for hit volumes). Returns entry fraction or -1.
 export function rayAABB(s, e, mins, maxs) {
