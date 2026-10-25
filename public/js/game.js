@@ -314,6 +314,7 @@ export class Game {
     const map = await loadMap(id, progress);
     if (this.mapGroup) { this.scene.remove(this.mapGroup); this.mapGroup.traverse((o) => o.geometry?.dispose()); }
     this.mapGroup = map.group;
+    this.mapTick = map.tick || null;
     this.scene.add(map.group);
     this.world = new BoxWorld(map.boxes, map.pads);
     this.killZ = map.killZ;
@@ -1522,6 +1523,7 @@ export class Game {
     this.sound.listener(eye, viewDir(yaw, pitch), [0, 0, 1]);
     this.sky.position.set(eye[0], eye[1], eye[2]);
     this.sky.userData.uniforms.uTime.value = t;
+    this.mapTick?.(t);
 
     this.updatePlayers(dt);
     if (this.mode === 'zombies') this.zv.update(dt, t);

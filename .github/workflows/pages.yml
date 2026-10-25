@@ -26,9 +26,12 @@ jobs:
         with:
           node-version: 22
       - run: npm ci --omit=dev
+      - id: pages
+        uses: actions/configure-pages@v5
       - name: Build the page
         env:
           GAME_SERVER_URL: ${{ vars.GAME_SERVER_URL }}
+          PAGE_URL: ${{ steps.pages.outputs.base_url }}
         run: node tools/build_pages.mjs _site
       - uses: actions/upload-pages-artifact@v3
         with:

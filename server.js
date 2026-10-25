@@ -1119,6 +1119,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && /^\/api\/(profile|buy|equip)$/.test(p)) return profileApi(req, res, p.slice(5));
   if (p === '/api/rooms') return json(res, [...rooms.values()].filter((r) => !r.settings.private).map(roomInfo));
   if (p === '/') p = '/index.html';
+  if (p === '/index.html') return servePage(req, res);
   if (PACKED && p.startsWith('/models/')) {
     const file = path.join(MODELS_DIR, p.slice(8));
     if (!file.startsWith(MODELS_DIR)) { res.writeHead(403); return res.end(); }
@@ -1128,6 +1129,22 @@ const server = http.createServer((req, res) => {
   if (!file.startsWith(path.join(ROOT, 'public'))) { res.writeHead(403); return res.end(); }
   serveFile(res, file, req);
 });
+
+// the game page, with link-preview tags pointing at the address it was opened from (behind a proxy or tunnel
+// the original scheme arrives in x-forwarded-proto)
+function servePage(req, res) {
+  let html;
+  try { html = readGameFile('public/index.html').toString(); } catch { res.writeHead(404); return res.end('not found'); }
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  const proto = String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+  if (/^[a-z0-9.:-]+$/i.test(host) && /^https?$/.test(proto)) {
+    const base = `${proto}://${host}`;
+    html = html.replace('<meta property="og:image" content="og.png">', `<meta property="og:image" content="${base}/og.png">`)
+      .replace('<meta property="og:url" content="">', `<meta property="og:url" content="${base}/">`);
+  }
+  res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-cache' });
+  res.end(req.method === 'HEAD' ? undefined : html);
+}
 
 function serveFile(res, file, req, fromDisk = false) {
   const type = MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';

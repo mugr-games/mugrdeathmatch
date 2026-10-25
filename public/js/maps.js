@@ -5,6 +5,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CODE_MAPS } from './mapdefs.js';
 import { surfaceMaterial, neonMaterial } from './shaders.js';
+import { decorate } from './mapdetail.js';
 
 // Each code-built map gets its own palette so they don't all look alike.
 const PALETTES = {
@@ -105,11 +106,14 @@ export async function loadMap(id, progress = () => {}) {
   turn.scale.setScalar(def.scale);
   turn.add(model);
   group.add(turn);
+  const boxes = def.boxes.map((b) => ({ mins: b.slice(0, 3), maxs: b.slice(3, 6) }));
+  // block maps carry no materials: the ground level counts as grass
+  const detail = decorate(id, boxes, def.bounds, undefined, { grassBelow: 104 }); // the block map's ground is at z 100
+  group.add(detail.group);
   group.updateMatrixWorld(true);
   return {
-    id, name: def.name, group,
-    boxes: def.boxes.map((b) => ({ mins: b.slice(0, 3), maxs: b.slice(3, 6) })),
-    spawns: def.spawns, bounds: def.bounds, sun: [-0.4, 0.35, 0.85], pads: [], killZ: def.killZ,
+    id, name: def.name, group, boxes,
+    spawns: def.spawns, bounds: def.bounds, sun: [-0.4, 0.35, 0.85], pads: [], killZ: def.killZ, tick: detail.tick,
   };
 }
 
@@ -145,5 +149,7 @@ function codeMap(id, def) {
     beam.position.set(c[0] + dir.x * 60, c[1] + dir.y * 60, c[2] + dir.z * 60);
     group.add(beam);
   }
-  return { id, name: def.name, group, boxes: def.boxes, spawns: def.spawns, bounds: def.bounds, sun: (Array.isArray(def.sun) ? def.sun : def.sun?.dir) || [0.3, 0.3, 0.85], pads: def.pads || [], killZ: def.killZ };
+  const detail = decorate(id, def.boxes, def.bounds, pal);
+  group.add(detail.group);
+  return { id, name: def.name, group, boxes: def.boxes, spawns: def.spawns, bounds: def.bounds, sun: (Array.isArray(def.sun) ? def.sun : def.sun?.dir) || [0.3, 0.3, 0.85], pads: def.pads || [], killZ: def.killZ, tick: detail.tick };
 }

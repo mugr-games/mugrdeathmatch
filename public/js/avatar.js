@@ -208,6 +208,37 @@ function fabric(mat, scale) {
   return mat;
 }
 
+// rot for zombies: decay blotches, dried blood patches and drips running down, wetter where it's fresh
+function rot(mat, scale) {
+  if (isPotato()) return mat;
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vObj;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObj = position;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vObj;
+        float zh(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+        float zn(vec3 p) {
+          vec3 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+          return mix(mix(mix(zh(i), zh(i + vec3(1, 0, 0)), f.x), mix(zh(i + vec3(0, 1, 0)), zh(i + vec3(1, 1, 0)), f.x), f.y),
+                     mix(mix(zh(i + vec3(0, 0, 1)), zh(i + vec3(1, 0, 1)), f.x), mix(zh(i + vec3(0, 1, 1)), zh(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+        }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        vec3 zp = vObj * ${scale.toFixed(2)};
+        float zrot = smoothstep(.45, .75, zn(zp * .35) * .65 + zn(zp * 1.3) * .35);
+        float zblood = smoothstep(.71, .77, zn(zp * .28 + 7.));
+        float zdrip = smoothstep(.8, .86, zn(vec3(zp.x * 1.6, zp.y * 1.6, zp.z * .12) + 3.)) * step(.45, zn(zp * .2 + 1.));
+        float zwet = max(zblood, zdrip);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(.42, .38, .3), zrot);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.13, .012, .008), zwet * .85);`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, .28, zwet);`);
+  };
+  mat.customProgramCacheKey = () => 'rot' + scale;
+  return mat;
+}
+
 // the materials a character in this colour wears
 export function avatarMaterials(colorIndex) {
   const c = suitRGB(colorIndex);
@@ -221,6 +252,21 @@ export function avatarMaterials(colorIndex) {
   const emit = (color, i) => (potato
     ? new THREE.MeshLambertMaterial({ color: 0x0a1418, emissive: color, emissiveIntensity: i })
     : new THREE.MeshStandardMaterial({ color: 0x0a1418, emissive: color, emissiveIntensity: i, roughness: 0.2, metalness: 0.3 }));
+  if (zombie) {
+    // a dead soldier: a filthy, torn grey-green suit, a dark cracked visor and bare bone and flesh
+    return {
+      suit: rot(mk([0.33, 0.37, 0.28], 0.9), 1),
+      pad: rot(mk([0.2, 0.22, 0.17], 0.92), 1.2),
+      armor: rot(mk([0.16, 0.16, 0.14], 0.6, 0.2), 0.8),
+      dark: mk([0.06, 0.06, 0.05], 0.7, 0.1),
+      metal: mk([0.35, 0.33, 0.3], 0.6, 0.6),
+      visor: emit(new THREE.Color(0.35, 0.03, 0.02), 0.2),
+      lamp: emit(new THREE.Color(0.3, 0.25, 0.1), 0.2),
+      bone: mk([0.78, 0.72, 0.58], 0.55),
+      flesh: mk([0.32, 0.04, 0.04], 0.35),
+      eye: emit(new THREE.Color(1, 0.1, 0.03), 5),
+    };
+  }
   return {
     suit: fabric(mk(c, 0.82), 2.6),
     pad: fabric(mk(c.map((v) => v * 0.55), 0.88), 1.8),
@@ -366,6 +412,26 @@ function buildBack(id, bx, g) {
   return anim;
 }
 
+// what makes a zombie look dead: glowing eyes behind a broken visor, a torn-open jaw, ribs through a hole in
+// the chest, a bone through one forearm and rags hanging off the waist (model 0's shape, which zombies use)
+function buildZombie(av) {
+  const M = av.matSet;
+  const add = (group, geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; group.add(m); return m; };
+  for (const s of [-1, 1]) add(av.head, at(sph(1.15, 10, 8), 7.6, s * 2.6, 7.9), M.eye);
+  add(av.head, at(rbox(3.6, 6, 2.2, 0.6), 6, 0, 3.2, 0, 0.25), M.flesh); // open, bloody jaw
+  for (let i = 0; i < 4; i++) add(av.head, at(rbox(0.8, 0.9, 1.2, 0.2), 7.6, -1.6 + i * 1.05, 4.1), M.bone); // teeth
+  add(av.torso, at(rbox(1.6, 7.5, 10, 0.6), 6.2, 3.6, 12.5), M.flesh); // hole in the chest
+  for (let i = 0; i < 4; i++) add(av.torso, at(rbox(1, 7.8, 0.9, 0.35), 6.9, 3.6, 8.8 + i * 2.4, 0.08 * (i - 1.5)), M.bone); // ribs
+  const fore = av.arms[1].fore;
+  add(fore, at(cyl(0.8, 0.7, 7, 8), 2.2, 0, -6, 0, 0.35), M.bone); // bone through the forearm
+  add(fore, at(cyl(2.9, 2.9, 1.6, 10), 0.6, 0, -4.6), M.flesh);
+  for (const [y, len, tilt] of [[-5, 10, 0.15], [-1, 7, -0.1], [4, 12, 0.1], [7, 8, -0.2]]) {
+    add(av.hips, at(rbox(0.6, 2.6, len, 0.25), 5.4, y, -2 - len / 2, tilt, 0.1), M.pad); // rags at the front
+    add(av.hips, at(rbox(0.6, 2.4, len * 0.8, 0.25), -5.4, -y, -2 - len * 0.4, -tilt, -0.1), M.pad); // and the back
+  }
+  for (const s of [-1, 1]) add(av.legs[s > 0 ? 1 : 0].knee, at(rbox(4.2, 5.5, 3, 0.8), 0.8, 0, -4, 0.2 * s), M.flesh); // torn knees
+}
+
 export class Avatar {
   constructor(colorIndex, model = 0, cos = {}) {
     this.model = model;
@@ -420,7 +486,9 @@ export class Avatar {
     this.phase = 0;
     this.hipHeight = 38;
     this.breath = Math.random() * 6;
-    this.wear(cos);
+    this.zombie = colorIndex === ZOMBIE_SKIN;
+    if (this.zombie) buildZombie(this);
+    else this.wear(cos);
   }
 
   // put on cosmetics: { hat, back, glow } of catalogue ids
@@ -473,13 +541,43 @@ export class Avatar {
       A.fore.rotation.y = -0.55;
     }
 
-    const C = this.cos;
+    if (this.zombie) this.shamble(dt, st, moving, run);
+
+    const C = this.cos || {};
     if (C.cape) C.cape.rotation.y = 0.12 + run * 0.75 + (moving ? Math.sin(this.phase * 2) * 0.05 : Math.sin(this.breath) * 0.02) + (st.ground ? 0 : 0.5);
     if (C.flag) C.flag.rotation.z = Math.sin(this.breath * 2.2) * 0.15 + run * 0.3;
     if (C.flame) { C.flame.visible = !st.ground; C.flame.scale.z = 0.8 + Math.random() * 0.4; }
     if (C.halo) { C.halo.position.z = HEAD_TOP[this.model] + 5 + Math.sin(this.breath * 1.5) * 0.6; C.halo.rotation.z += dt; }
     if (C.wings) for (const { w, s } of C.wings) w.rotation.x = s * (st.ground ? Math.sin(this.breath) * 0.04 : Math.sin(this.breath * 6) * 0.3);
     if (C.rainbow) this.matSet.visor.emissive.setHSL((this.breath * 0.08) % 1, 1, 0.55);
+  }
+
+  // zombies: hunched over, head lolling, arms reaching out (swiping when attacking), dragging one leg
+  shamble(dt, st, moving, run) {
+    const t = this.breath;
+    const attacking = st.pitch < -20;
+    this.torso.rotation.y += 0.42;
+    this.torso.rotation.x = Math.sin(t * 0.9) * 0.08 + (moving ? Math.sin(this.phase) * 0.12 : 0);
+    this.head.rotation.y = -0.35 + Math.sin(t * 0.7) * 0.12;
+    this.head.rotation.x = 0.28 + Math.sin(t * 0.55) * 0.18;
+    for (const A of this.arms) {
+      const sway = Math.sin(t * 1.7 + A.s) * 0.1;
+      if (attacking) {
+        const k = Math.sin(t * 9 + A.s * 1.5);
+        A.upper.rotation.y = -1.9 + k * 0.6;
+        A.upper.rotation.x = A.s * (0.2 + k * 0.25);
+        A.fore.rotation.y = -0.6;
+      } else {
+        A.upper.rotation.y = -1.45 + sway;
+        A.upper.rotation.x = A.s * -0.12;
+        A.fore.rotation.y = -0.12 + sway * 0.5;
+      }
+    }
+    // the right leg drags: shorter swing, toes scraping
+    const R = this.legs[0];
+    R.hip.rotation.y *= 0.45;
+    R.knee.rotation.y = R.knee.rotation.y * 0.4 + 0.12;
+    if (moving) this.hips.position.z -= Math.max(0, Math.sin(this.phase)) * 1.5 * (0.5 + run);
   }
 
   dispose() {

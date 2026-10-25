@@ -24,8 +24,17 @@ fs.cpSync(path.join(three, 'examples/jsm'), path.join(out, 'vendor/addons'), { r
 
 const index = path.join(out, 'index.html');
 const html = fs.readFileSync(index, 'utf8');
-const filled = html.replace('<meta name="game-server" content="">', `<meta name="game-server" content="${server}">`);
+let filled = html.replace('<meta name="game-server" content="">', `<meta name="game-server" content="${server}">`);
 if (filled === html) { console.error('index.html has no <meta name="game-server" content=""> to fill in'); process.exit(1); }
+// link previews need absolute addresses; PAGE_URL comes from actions/configure-pages
+const page = (process.env.PAGE_URL || '').trim().replace(/\/+$/, '');
+if (/^https?:\/\/[^\s"<>]+$/.test(page)) filled = withPageUrl(filled, page);
+else console.warn('PAGE_URL not set: link previews will have no picture');
 fs.writeFileSync(index, filled);
 fs.writeFileSync(path.join(out, '.nojekyll'), '');
 console.log(`Built ${out} for the game server at ${server}`);
+
+function withPageUrl(text, base) {
+  return text.replace('<meta property="og:image" content="og.png">', `<meta property="og:image" content="${base}/og.png">`)
+    .replace('<meta property="og:url" content="">', `<meta property="og:url" content="${base}/">`);
+}
