@@ -22,6 +22,20 @@ export const OWNER_NAME = 'watermelon';
 const OWNER_COINS = 1000000;
 const OWNER_ITEMS = ['owner_cape'];
 
+// lifetime stats kept on every profile. Counters add up; "best" ones keep the highest value seen.
+const COUNTERS = ['kills', 'deaths', 'headshots', 'wins', 'matches', 'zkills', 'coins'];
+const BESTS = ['streak', 'round'];
+// leaderboard categories: how each ranks a profile (null = not on that board yet)
+export const BOARDS = {
+  kills: (s) => s.kills || null,
+  wins: (s) => s.wins || null,
+  kd: (s) => ((s.kills || 0) >= 20 ? Math.round(((s.kills || 0) / Math.max(1, s.deaths || 0)) * 100) / 100 : null),
+  streak: (s) => s.streak || null,
+  zkills: (s) => s.zkills || null,
+  coins: (s) => s.coins || null,
+};
+const BOARD_SIZE = 100;
+
 // a JSON file of key -> value
 function fileStore(file) {
   let all = {};
@@ -131,9 +145,33 @@ export function createProfiles(file) {
   const accounts = cachedStore(mk(path.join(path.dirname(file), 'accounts.json'), 'mugr:u:'), 'accounts');
   const dms = cachedStore(mk(path.join(path.dirname(file), 'messages.json'), 'mugr:d:'), 'messages');
   const bans = cachedStore(mk(path.join(path.dirname(file), 'bans.json'), 'mugr:b:'), 'bans');
+  const boards = cachedStore(mk(path.join(path.dirname(file), 'leaderboard.json'), 'mugr:l:'), 'leaderboard');
   console.log(`[profiles] saving coins, cosmetics and accounts to ${profiles.name}`);
   if (profiles.kind === 'file' && process.env.RENDER) console.warn('[profiles] WARNING: Render forgets files when it restarts. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to keep accounts.');
-  const stores = [profiles, accounts, dms, bans];
+  const stores = [profiles, accounts, dms, bans, boards];
+
+  // the leaderboard: the top 100 signed-in players in each category, kept as one saved document
+  let board = null;
+  const boardReady = boards.get('top', () => Object.fromEntries(Object.keys(BOARDS).map((k) => [k, []])))
+    .then((b) => { board = b; for (const k of Object.keys(BOARDS)) board[k] ||= []; })
+    .catch((e) => console.error('[leaderboard] could not load', e.message));
+  function rank(pr) {
+    if (!pr.name || !board) return;
+    let changed = false;
+    for (const [k, score] of Object.entries(BOARDS)) {
+      const v = score(pr.stats || {});
+      const list = board[k];
+      const i = list.findIndex((e) => e.n === pr.name);
+      if (v === null) { if (i >= 0) { list.splice(i, 1); changed = true; } continue; }
+      if (i >= 0) { if (list[i].v === v) continue; list[i].v = v; }
+      else if (list.length >= BOARD_SIZE && v <= list[list.length - 1].v) continue;
+      else list.push({ n: pr.name, v });
+      list.sort((a, b) => b.v - a.v);
+      if (list.length > BOARD_SIZE) list.length = BOARD_SIZE;
+      changed = true;
+    }
+    if (changed) boards.save('top', board);
+  }
   // where things are saved and whether that works (shown in /api/info)
   const storage = { kind: profiles.kind, ok: profiles.kind === 'file', lastError: null };
   if (profiles.ping) {
@@ -152,7 +190,7 @@ export function createProfiles(file) {
     return pr;
   }
 
-  const view = (pr) => ({ coins: pr.coins, owned: pr.owned, eq: pr.eq, name: pr.name || null });
+  const view = (pr) => ({ coins: pr.coins, owned: pr.owned, eq: pr.eq, name: pr.name || null, stats: pr.stats || {} });
   const newToken = () => crypto.randomBytes(16).toString('hex');
 
   // give the owner their coins (once) and items
@@ -210,6 +248,7 @@ export function createProfiles(file) {
       accounts.save(key, { name, token, created: Date.now(), ...(await hashPassword(password)) });
       pr.name = name;
       touch(pr);
+      rank(pr);
       return { token, ...view(pr) };
     },
     async login(name, password, guestToken) {
@@ -220,20 +259,43 @@ export function createProfiles(file) {
       if (!pr) return { error: 'The server can\'t reach its database right now. Try again in a moment.' };
       // coins and items this browser earned as a guest join the account (once: the guest is emptied)
       const guest = guestToken !== acc.token ? await load(guestToken) : null;
-      if (guest && !guest.name && (guest.coins > 0 || guest.owned.length)) {
+      if (guest && !guest.name && (guest.coins > 0 || guest.owned.length || Object.values(guest.stats || {}).some(Boolean))) {
         pr.coins += guest.coins;
         for (const id of guest.owned) if (!pr.owned.includes(id)) pr.owned.push(id);
+        const gs = guest.stats || {}, s = (pr.stats ||= {});
+        for (const k of COUNTERS) if (gs[k]) s[k] = (s[k] || 0) + gs[k];
+        for (const k of BESTS) if ((gs[k] || 0) > (s[k] || 0)) s[k] = gs[k];
+        guest.stats = {};
         guest.coins = 0;
         guest.owned = [];
         guest.eq = {};
         touch(guest);
         touch(pr);
+        rank(pr);
       }
       return { token: acc.token, ...view(pr) };
     },
     award(pr, n) {
       pr.coins += n;
+      this.stat(pr, { coins: n });
+    },
+
+    // ---------------------------------------------------------------- stats
+    // add to counters ({ kills: 1, headshots: 1 }) and raise bests ({ streak: 7 })
+    stat(pr, change) {
+      if (!pr) return;
+      const s = (pr.stats ||= {});
+      for (const [k, v] of Object.entries(change)) {
+        if (!v) continue;
+        if (COUNTERS.includes(k)) s[k] = (s[k] || 0) + v;
+        else if (BESTS.includes(k)) { if (v <= (s[k] || 0)) continue; s[k] = v; }
+      }
       touch(pr);
+      rank(pr);
+    },
+    async leaderboard() {
+      await boardReady;
+      return Object.fromEntries(Object.entries(board || {}).map(([k, list]) => [k, list.slice(0, 50)]));
     },
 
     // ---------------------------------------------------------------- friends (account keys are lower-case names)

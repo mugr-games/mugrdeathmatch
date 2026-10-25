@@ -96,7 +96,7 @@ export function createZombies(R, def, nav, doorBoxes, api) {
     if (dir) { z.ps.velocity[0] += dir[0] * Math.min(120, dmg * 2); z.ps.velocity[1] += dir[1] * Math.min(120, dmg * 2); }
     if (z.hp > 0) return;
     const melee = WEAPONS[WEAPON_INDEX[weapon]]?.melee;
-    if (attacker && !attacker.bot) { attacker.points += (melee ? 120 : head ? 90 : 50) * mul; attacker.frags++; }
+    if (attacker && !attacker.bot) { attacker.points += (melee ? 120 : head ? 90 : 50) * mul; attacker.frags++; api.zkill?.(attacker, head); }
     die(z, head, attacker);
   };
 

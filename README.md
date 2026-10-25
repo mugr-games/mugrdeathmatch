@@ -117,6 +117,13 @@ the current bans with Unban. In a match the same works from chat: `/kick name [r
 `/unban name`, `/bans`. A ban covers the player's account, their browser's save code and their internet
 address, so it sticks when they make a new account (it can also catch others sharing that connection).
 
+## Stats and leaderboard
+
+Every player's kills, deaths, headshots, wins, matches, best kill streak, zombie kills, best zombie round and
+coins earned are kept on their profile (guests' stats move into their account when they sign in). The menu's
+Leaderboard shows the top 50 signed-in players for kills, wins, K/D (from 20 kills), best streak, zombie kills
+and coins earned, next to your own stats. A win is being on the winning team, or top scorer in deathmatch.
+
 ## Coins and cosmetics
 
 Every kill pays 10 coins, and every player on the winning team of a team deathmatch or capture the flag match

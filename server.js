@@ -713,6 +713,7 @@ function zombieApi(R) {
     pushEvent: (ev, only) => pushEvent(R, ev, only),
     respawn: (p) => respawn(R, p),
     kill: (p, weapon) => kill(R, p, null, weapon, false),
+    zkill: (p, head) => profiles.stat(p.profile, { zkills: 1, headshots: head ? 1 : 0 }),
     damage: (p, dmg, dir) => damage(R, p, null, dmg, 'zombie', false, dir),
     endMatch: (win, extra) => endMatch(R, win, extra),
   };
@@ -750,8 +751,14 @@ function kill(R, victim, attacker, weapon, head) {
   victim.deaths++;
   // zombies: back next round
   victim.respawnAt = R.cz ? Infinity : R.time + 2;
-  if (attacker && attacker !== victim) { attacker.frags++; award(attacker, COIN_KILL, 'kill'); }
-  else if (!R.cz) victim.frags--;
+  if (attacker && attacker !== victim) {
+    attacker.frags++;
+    award(attacker, COIN_KILL, 'kill');
+    attacker.streak = (attacker.streak || 0) + 1;
+    profiles.stat(attacker.profile, { kills: 1, headshots: head ? 1 : 0, streak: attacker.streak });
+  } else if (!R.cz) victim.frags--;
+  victim.streak = 0;
+  profiles.stat(victim.profile, { deaths: 1 });
   if (R.settings.mode === 'tdm' && attacker && attacker !== victim && attacker.team) R.teamScore[attacker.team]++;
   dropFlag(R, victim);
   // velocity at death (after the hit's knockback) lets clients throw the ragdoll the right way
@@ -846,6 +853,14 @@ function zombieThink(R) {
 
 function endMatch(R, winnerTeam, extra = {}) {
   if (R.ending) return;
+  // stats: everyone gets a match played; the winning team (or deathmatch's top scorer) gets a win;
+  // a zombies game over records how many rounds the team survived
+  const humans = [...R.players.values()].filter((p) => !p.bot);
+  const top = Math.max(0, ...humans.map((p) => p.frags));
+  for (const p of humans) {
+    const won = TEAMS.includes(winnerTeam) || winnerTeam === 'human' || winnerTeam === 'zombie' ? p.team === winnerTeam : R.settings.mode === 'dm' && top > 0 && p.frags === top;
+    profiles.stat(p.profile, { matches: 1, wins: won ? 1 : 0, round: extra.round || 0 });
+  }
   if ((R.settings.mode === 'tdm' || R.settings.mode === 'ctf') && TEAMS.includes(winnerTeam)) {
     for (const p of R.players.values()) if (p.team === winnerTeam) award(p, COIN_TEAM_WIN, 'win');
   }
@@ -1139,6 +1154,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === 'OPTIONS' && p.startsWith('/api/')) { res.writeHead(204, CORS); return res.end(); }
   if (req.method === 'POST' && /^\/api\/(profile|buy|equip|register|login)$/.test(p)) return profileApi(req, res, p.slice(5));
+  if (p === '/api/leaderboard') return void profiles.leaderboard().then((b) => json(res, b)).catch((e) => json(res, { error: e.message }));
   if (p === '/api/rooms') return json(res, [...rooms.values()].filter((r) => !r.settings.private).map(roomInfo));
   if (p === '/') p = '/index.html';
   if (p === '/index.html') return servePage(req, res);

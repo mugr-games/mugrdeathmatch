@@ -325,6 +325,23 @@ body.touch #netinfo { display: none; }
 #banned h2 { font: bold 28px var(--ui); color: #ff6a5a; margin: 0 0 10px; }
 #banned p { color: var(--text-dim); margin: 0 0 16px; }
 @media (max-width: 640px) { .fr-body { grid-template-columns: 1fr; } }
+/* ---------- leaderboard ---------- */
+#dlg-leaders { width: min(760px, calc(100vw - 32px)); }
+.lb-body { display: grid; grid-template-columns: 1fr 230px; gap: 16px; }
+.lb-list { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow: auto; counter-reset: none; }
+.lb-list li { display: grid; grid-template-columns: 36px 1fr auto; gap: 8px; padding: 6px 6px; border-bottom: 1px solid rgba(255,255,255,.06); align-items: center; }
+.lb-list li.me { background: rgba(255,176,0,.14); border-radius: 3px; }
+.lb-list .rank { color: var(--text-dim); font-weight: bold; text-align: right; }
+.lb-list li:nth-child(1) .rank { color: #ffd23a; } .lb-list li:nth-child(2) .rank { color: #d8d8e0; } .lb-list li:nth-child(3) .rank { color: #e0965a; }
+.lb-list .who { color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-list .val { color: #ffd23a; font-weight: bold; font-variant-numeric: tabular-nums; }
+.lb-list li.empty { display: block; color: var(--text-dim); border: 0; }
+.lb-mine { background: var(--panel-dark); border-radius: 4px; padding: 10px 12px; }
+.lb-mine h3 { margin: 0 0 8px; font: bold 13px var(--ui); color: #fff; }
+.lb-mine dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; margin: 0; }
+.lb-mine dt { color: var(--text-dim); } .lb-mine dd { margin: 0; color: #fff; font-weight: bold; text-align: right; font-variant-numeric: tabular-nums; }
+.lb-mine p { font-size: 12px; margin: 10px 0 0; }
+@media (max-width: 640px) { .lb-body { grid-template-columns: 1fr; } }
 /* ---------- devlog ---------- */
 .devlog { margin: 0; padding: 0; list-style: none; }
 .devlog > li { margin: 0 0 14px; }
@@ -365,6 +382,7 @@ body.touch #netinfo { display: none; }
     <button id="btn-disconnect" hidden>Leave game</button>
     <button id="btn-shop">Shop</button>
     <button id="btn-wardrobe">Wardrobe</button>
+    <button id="btn-leaders">Leaderboard</button>
     <button id="btn-friends">Friends<span class="badge" id="fr-badge" hidden></span></button>
     <button id="btn-mod" hidden>Moderation</button>
     <button id="btn-options">Options</button>
@@ -477,6 +495,16 @@ body.touch #netinfo { display: none; }
     <p>Signed in as <b id="acct-who"></b>. Your coins and cosmetics are saved to this account.</p>
     <div class="actions"><button type="button" class="btn" id="acct-logout">Sign out</button><button type="button" class="btn primary" id="acct-close">Close</button></div>
   </div>
+</div>
+
+<div class="dialog" id="dlg-leaders" hidden role="dialog" aria-labelledby="dlg-leaders-title">
+  <h2 id="dlg-leaders-title">Leaderboard</h2>
+  <div class="tabs" role="tablist" id="lb-tabs"></div>
+  <div class="lb-body">
+    <ol class="lb-list" id="lb-list"></ol>
+    <div class="lb-mine" id="lb-mine"></div>
+  </div>
+  <div class="actions"><button type="button" class="btn primary" id="lb-close">Close</button></div>
 </div>
 
 <div class="dialog" id="dlg-friends" hidden role="dialog" aria-labelledby="dlg-friends-title">

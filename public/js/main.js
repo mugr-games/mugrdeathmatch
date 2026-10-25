@@ -184,6 +184,35 @@ $('acct-logout').onclick = () => {
 };
 
 $('btn-friends').onclick = () => { game?.sound.start(); social?.open(); };
+
+// ------------------------------------------------------------------ leaderboard and your stats
+const BOARDS = [
+  ['kills', 'Kills'], ['wins', 'Wins'], ['kd', 'K/D', 'Needs 20 kills'], ['streak', 'Best streak'], ['zkills', 'Zombie kills'], ['coins', 'Coins earned'],
+];
+let lbTab = 'kills', lbData = null;
+function renderBoard() {
+  $('lb-tabs').innerHTML = BOARDS.map(([k, label]) => `<button class="tab${k === lbTab ? ' on' : ''}" data-k="${k}" role="tab">${label}</button>`).join('');
+  for (const b of $('lb-tabs').children) b.onclick = () => { lbTab = b.dataset.k; renderBoard(); };
+  const list = lbData?.[lbTab] || [];
+  const fmt = (v) => (lbTab === 'kd' ? v.toFixed(2) : v.toLocaleString());
+  $('lb-list').innerHTML = lbData === null ? '<li class="empty">Loading…</li>' : lbData.error ? `<li class="empty">${esc(lbData.error)}</li>`
+    : list.map((e, i) => `<li class="${e.n === account ? 'me' : ''}"><span class="rank">${i + 1}</span><span class="who">${esc(e.n)}</span><span class="val">${fmt(e.v)}</span></li>`).join('')
+      || `<li class="empty">Nobody here yet${BOARDS.find((b) => b[0] === lbTab)[2] ? ` (${BOARDS.find((b) => b[0] === lbTab)[2].toLowerCase()})` : ''}. Play a match to get on the board!</li>`;
+  const s = locker?.profile.stats || {};
+  const kd = (s.kills || 0) / Math.max(1, s.deaths || 0);
+  const rows = [['Kills', s.kills], ['Deaths', s.deaths], ['K/D', kd.toFixed(2)], ['Headshots', s.headshots], ['Wins', s.wins], ['Matches', s.matches], ['Best streak', s.streak], ['Zombie kills', s.zkills], ['Best zombie round', s.round], ['Coins earned', s.coins]];
+  $('lb-mine').innerHTML = `<h3>${account ? esc(account) : 'Your stats'}</h3><dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${typeof v === 'string' ? v : (v || 0).toLocaleString()}</dd>`).join('')}</dl>`
+    + (account ? '' : '<p>Sign in to get on the leaderboard. Your stats so far come with you.</p>');
+}
+$('btn-leaders').onclick = async () => {
+  lbData = null;
+  show('dlg-leaders');
+  renderBoard();
+  await locker?.load(); // fresh personal stats
+  lbData = await fetch(api('/api/leaderboard')).then((r) => r.json()).catch(() => ({ error: 'Can\'t reach the server.' }));
+  renderBoard();
+};
+$('lb-close').onclick = () => hide('dlg-leaders');
 $('btn-mod').onclick = () => social?.openMod();
 $('fr-signin').onclick = () => { social?.close(); $('btn-account').click(); };
 
@@ -563,7 +592,7 @@ requestAnimationFrame(loop);
 // ------------------------------------------------------------------ helpers
 function show(id) { $(id).hidden = false; }
 function hide(id) { $(id).hidden = true; }
-function closeDialogs() { hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
+function closeDialogs() { hide('dlg-leaders'); hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
 function status(t) { $('menu-status').textContent = t; }
 function loading(t) { $('loading').hidden = !t; $('loading-text').textContent = t; }
 
