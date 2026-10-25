@@ -49,13 +49,17 @@ files, so the multiplayer server runs on Render's free plan and the page connect
 3. In the GitHub repository: Settings → Secrets and variables → Actions → Variables, add `GAME_SERVER_URL` with
    that address. Then Settings → Pages → Source: GitHub Actions, and re-run the "Publish the game page"
    workflow from the Actions tab.
-4. Optional but recommended, so coins survive: Render's free servers lose their files when they sleep (after
+4. The owner account: in Render open the service → Environment and add `OWNER_PASSWORD` with the password you
+   want for the account `watermelon` (1,000,000 coins and the Owner cape). The server creates the account when
+   it starts; change the variable to change the password. Nobody can register that name.
+5. Strongly recommended, so accounts and coins survive: Render's free servers lose their files when they sleep (after
    15 idle minutes) or restart. Create a free Redis database on upstash.com, then in Render open the service →
    Environment and add `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` from the database's REST API
-   section. Without them, coins and cosmetics reset whenever the server restarts.
+   section. Without them, accounts, coins and cosmetics reset whenever the server restarts.
 
 The free server sleeps when nobody has played for 15 minutes; the page wakes it, which takes about a minute.
-Every push redeploys both. Coins belong to the browser and the address: share one link (the GitHub one).
+Every push redeploys both. Guests' coins belong to the browser and the address; signed-in players keep theirs
+on any device. Share one link (the GitHub one).
 
 ## Models
 

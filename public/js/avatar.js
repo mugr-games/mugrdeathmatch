@@ -381,6 +381,15 @@ function buildBack(id, bx, g) {
     add(at(rbox(0.8, 19, 34, 0.35), -0.5, 0, -16), cmat('#8a1420', 0.9), pivot);
     add(at(rbox(1, 20, 2, 0.4), -0.5, 0, -0.5), cmat('#d8b030', 0.4, 0.8), pivot);
     anim.cape = pivot;
+  } else if (id === 'owner_cape') {
+    const pivot = group(bx + 1, 0, 21);
+    add(at(rbox(0.9, 21, 38, 0.4), -0.5, 0, -18), cmat('#3a0f6a', 0.55, 0.1), pivot);
+    add(at(rbox(1.1, 22, 2.4, 0.5), -0.5, 0, -0.6), cmat('#ffcc33', 0.25, 1, 0.6), pivot); // gold collar
+    add(at(rbox(1.1, 22, 1.4, 0.4), -0.5, 0, -36.6), cmat('#ffcc33', 0.25, 1, 0.9), pivot); // glowing hem
+    for (const s of [-1, 1]) add(at(rbox(1.05, 1.2, 36, 0.4), -0.5, s * 10.4, -18), cmat('#ffcc33', 0.25, 1, 0.9), pivot); // edges
+    add(at(rbox(1.2, 6, 6, 0.5), -1, 0, -12, Math.PI / 4), cmat('#ffcc33', 0.2, 1, 1.4), pivot); // crest
+    add(at(sph(1.4, 10, 8), -1.6, 0, -12), cmat('#ff3060', 0.2, 0, 2), pivot); // jewel
+    anim.cape = pivot;
   } else if (id === 'banner') {
     add(at(cyl(0.5, 0.5, 42, 8), bx - 1, 3, 26), cmat('#2b2b2e', 0.4, 0.6));
     const flag = group(bx - 1, 3, 44);

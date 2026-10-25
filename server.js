@@ -14,7 +14,7 @@ import { launch, stepProj } from './public/js/projectiles.js';
 import { buildNav, boxBounds } from './public/js/nav.js';
 import { SKILLS, newBrain, botName, botCommand } from './bots.js';
 import { createZombies } from './cod.js';
-import { createProfiles } from './profiles.js';
+import { createProfiles, OWNER_NAME } from './profiles.js';
 import { COIN_KILL, COIN_TEAM_WIN } from './public/js/cosmetics.js';
 
 // Packed build (the standalone .exe, see tools/build_exe.mjs): game files are assets inside the executable,
@@ -275,7 +275,9 @@ function newPlayer(ws, name, color, model) {
 }
 
 function clean(s) {
-  return String(s || '').replace(/[^\p{L}\p{N} _\-.!?'()[\]·]/gu, '').trim().slice(0, 32);
+  const name = String(s || '').replace(/[^\p{L}\p{N} _\-.!?'()[\]·]/gu, '').trim().slice(0, 32);
+  // the owner's name only comes from logging in to the owner account
+  return name.toLowerCase() === OWNER_NAME ? 'Player' + Math.floor(100 + Math.random() * 900) : name;
 }
 
 function respawn(R, p) {
@@ -1033,12 +1035,25 @@ function award(p, n, why) {
 }
 
 // shop and wardrobe: POST { token, ... } -> the profile, or { error }
+// accounts: POST /api/register { name, password, token } or /api/login { name, password } -> { token, name, ... }
+const loginTries = new Map();
+setInterval(() => { const now = Date.now(); for (const [ip, t] of loginTries) if (t.every((x) => now - x > 60000)) loginTries.delete(ip); }, 60000);
 function profileApi(req, res, route) {
   let body = '';
   req.on('data', (d) => { body += d; if (body.length > 4096) req.destroy(); });
   req.on('end', async () => {
     let m;
     try { m = JSON.parse(body || '{}'); } catch { return json(res, { error: 'Bad request.' }); }
+    if (route === 'register' || route === 'login') {
+      // a few tries a minute per address, so passwords can't be guessed quickly
+      const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+      const now = Date.now(), tries = (loginTries.get(ip) || []).filter((t) => now - t < 60000);
+      if (tries.length >= 8) return json(res, { error: 'Too many tries. Wait a minute and try again.' });
+      tries.push(now);
+      loginTries.set(ip, tries);
+      const r = route === 'register' ? await profiles.register(m.name, m.password, m.token) : await profiles.login(m.name, m.password);
+      return json(res, r);
+    }
     const pr = await profiles.load(m.token);
     if (!pr) return json(res, { error: 'Your save code is not valid.' });
     let error = null;
@@ -1116,7 +1131,7 @@ const server = http.createServer((req, res) => {
     });
   }
   if (req.method === 'OPTIONS' && p.startsWith('/api/')) { res.writeHead(204, CORS); return res.end(); }
-  if (req.method === 'POST' && /^\/api\/(profile|buy|equip)$/.test(p)) return profileApi(req, res, p.slice(5));
+  if (req.method === 'POST' && /^\/api\/(profile|buy|equip|register|login)$/.test(p)) return profileApi(req, res, p.slice(5));
   if (p === '/api/rooms') return json(res, [...rooms.values()].filter((r) => !r.settings.private).map(roomInfo));
   if (p === '/') p = '/index.html';
   if (p === '/index.html') return servePage(req, res);
@@ -1200,11 +1215,15 @@ wss.on('connection', (ws) => {
       joinRoom(R, p);
       // coins and cosmetics arrive a moment later (they may come from an online database)
       const me = p;
-      profiles.load(m.token).then((pr) => {
+      profiles.load(m.token).then(async (pr) => {
         me.profile = pr;
         if (!pr) return;
         send(me, { t: 'coins', coins: pr.coins });
-        if (me.room && Object.keys(pr.eq).length) broadcast(me.room, { t: 'info', p: info(me) });
+        let changed = Object.keys(pr.eq).length > 0;
+        // signed in: play under the account name. A guest using someone's account name gets a guest name.
+        if (pr.name && me.name !== pr.name) { me.name = pr.name; changed = true; }
+        else if (!pr.name && (await profiles.nameTaken(me.name))) { me.name = 'Player' + Math.floor(100 + Math.random() * 900); changed = true; }
+        if (me.room && changed) broadcast(me.room, { t: 'info', p: info(me) });
       });
       return;
     }

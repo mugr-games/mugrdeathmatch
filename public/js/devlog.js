@@ -12,6 +12,7 @@ export const DEVLOG = [
       'Sharper surfaces: cracks, moss, rust, scratches, wood knots, pebbles, rain streaks and puddles. Big walls repeat less.',
       'All new sounds: guns have a crack, a punch and an echo, with a clack from the action. There are new footsteps for each surface, debris after explosions, ricochets and reload sounds. Far-off sounds are muffled and echoey.',
       'Rocket jumping: press Q (right stick click on a controller, RJ on phones) for a blast at your feet that launches you. Last weapon moved to X.',
+      'Accounts: register with a username and password to keep your coins and cosmetics on any device. You stay signed in.',
       'Zombies look properly dead: rotting, blood-stained suits, glowing eyes behind broken visors, exposed ribs and bone, rags, and a hunched, limping shamble with reaching arms.',
       'Every map has more detail: trims, wall lamps, pipes, vents, cables, rubble, stains, grass and floating dust.',
       'Sharing the game link on Discord now shows a preview card with a picture.',

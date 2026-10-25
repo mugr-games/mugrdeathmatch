@@ -4,7 +4,7 @@ import { SUIT_COLORS, MODELS } from './avatar.js';
 import { SLOTS, MAP_CREDITS, setAvailable, hasModel } from './assets.js';
 import { esc } from './hud.js';
 import { TouchControls, isTouch } from './touch.js';
-import { Locker } from './locker.js';
+import { Locker, setSaveToken } from './locker.js';
 import { GamepadInput } from './gamepad.js';
 import { DEVLOG } from './devlog.js';
 import { api, pageUrl, SERVER } from './net.js';
@@ -21,6 +21,7 @@ const save = () => { try { localStorage.setItem('arena.settings', JSON.stringify
 
 let game = null;
 let locker = null;
+let account = null; // the signed-in username, or null for a guest
 let pad = null;
 let serverInfo = null;
 let playing = false;
@@ -55,7 +56,13 @@ async function boot() {
     start: () => { if (!$('btn-resume').hidden && !document.querySelector('.dialog:not([hidden])')) resume(); },
     back: () => { if (document.querySelector('.dialog:not([hidden])')) closeDialogs(); },
   });
-  locker.onChange((p) => { $('menu-coins').textContent = p.coins.toLocaleString(); });
+  locker.onChange((p) => {
+    $('menu-coins').textContent = p.coins.toLocaleString();
+    account = p.name || null;
+    $('acct-name').textContent = account || 'Guest';
+    $('btn-account').textContent = account ? 'Account' : 'Sign in / Register';
+    if (account && settings.name !== account) { settings.name = account; save(); }
+  });
   game.onCoins = (m) => {
     locker.coins(m.coins);
     if (m.add) coinToast(`+${m.add} coins${m.why === 'win' ? ' · your team won!' : ''}`, m.why === 'win');
@@ -127,6 +134,51 @@ function coinToast(text, big) {
 }
 $('btn-shop').onclick = () => { game?.sound.start(); locker?.open('shop'); };
 $('btn-wardrobe').onclick = () => { game?.sound.start(); locker?.open('wardrobe'); };
+// ------------------------------------------------------------------ accounts
+let acctMode = 'login';
+function setAcctMode(mode) {
+  acctMode = mode;
+  for (const b of document.querySelectorAll('.acct-tab')) b.classList.toggle('on', b.dataset.mode === mode);
+  $('acct-go').textContent = mode === 'login' ? 'Sign in' : 'Create account';
+  $('acct-pass').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+  $('acct-hint').textContent = mode === 'login'
+    ? 'Sign in to get your coins and cosmetics on any device. You stay signed in on this browser.'
+    : 'Usernames are 3 to 16 letters, numbers or _. Passwords need at least 6 characters. Your coins and cosmetics come with you.';
+  $('acct-err').textContent = '';
+}
+for (const b of document.querySelectorAll('.acct-tab')) b.onclick = () => setAcctMode(b.dataset.mode);
+$('btn-account').onclick = () => {
+  $('acct-out').hidden = !!account;
+  $('acct-in').hidden = !account;
+  $('acct-who').textContent = account || '';
+  setAcctMode('login');
+  show('dlg-account');
+  if (!account) $('acct-user').focus();
+};
+$('acct-cancel').onclick = $('acct-close').onclick = () => hide('dlg-account');
+$('acct-form').onsubmit = async (e) => {
+  e.preventDefault();
+  $('acct-err').textContent = '';
+  $('acct-go').disabled = true;
+  const body = { name: $('acct-user').value.trim(), password: $('acct-pass').value, token: locker?.token };
+  const r = await fetch(api('/api/' + acctMode), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    .then((x) => x.json()).catch(() => ({ error: 'Can\'t reach the server.' }));
+  $('acct-go').disabled = false;
+  if (r.error) { $('acct-err').textContent = r.error; return; }
+  // this browser now uses the account's save code; reload so everything (and any match) picks it up
+  setSaveToken(r.token);
+  settings.name = r.name;
+  save();
+  location.reload();
+};
+$('acct-logout').onclick = () => {
+  // a fresh guest save code; the account's coins stay with the account
+  try { localStorage.removeItem('arena.token'); } catch {}
+  settings.name = 'Player' + Math.floor(100 + Math.random() * 900);
+  save();
+  location.reload();
+};
+
 $('btn-devlog').onclick = () => {
   $('devlog-list').innerHTML = DEVLOG.map((d) => `<li><h3>${esc(d.title)}<small>${esc(d.date)}</small></h3><ul>${d.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></li>`).join('');
   show('dlg-devlog');
@@ -368,6 +420,7 @@ $('cr-ok').onclick = () => hide('dlg-credits');
 // ------------------------------------------------------------------ options
 function fillOptions() {
   $('o-name').value = settings.name;
+  $('o-name').disabled = !!account; // signed in: you play under your account name
   const sel = $('o-color');
   sel.innerHTML = SUIT_COLORS.map((c, i) => `<option value="${i}">${c.name}</option>`).join('');
   sel.value = String(settings.color);
@@ -391,7 +444,7 @@ function applyLive() {
 $('btn-options').onclick = () => { fillOptions(); show('dlg-options'); };
 $('o-ok').onclick = () => {
   const name = $('o-name').value.trim().slice(0, 24);
-  if (name) settings.name = name;
+  if (name && !account) settings.name = name;
   const color = +$('o-color').value, model = +$('o-model').value;
   if (color !== settings.color || model !== settings.model) { settings.color = color; settings.model = model; game?.send({ t: 'color', color, model }); }
   const quality = $('o-quality').value, reload = quality !== settings.quality;
@@ -502,7 +555,7 @@ requestAnimationFrame(loop);
 // ------------------------------------------------------------------ helpers
 function show(id) { $(id).hidden = false; }
 function hide(id) { $(id).hidden = true; }
-function closeDialogs() { hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
+function closeDialogs() { hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
 function status(t) { $('menu-status').textContent = t; }
 function loading(t) { $('loading').hidden = !t; $('loading-text').textContent = t; }
 

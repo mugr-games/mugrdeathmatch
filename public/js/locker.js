@@ -77,6 +77,11 @@ class Preview {
   }
 }
 
+// switch this browser to another save code (after logging in or registering)
+export function setSaveToken(t) {
+  try { localStorage.setItem('arena.token', t); } catch {}
+}
+
 // opts: { settings, save(), onLook(color, model), sound }
 export class Locker {
   constructor(opts) {
@@ -169,7 +174,8 @@ export class Locker {
     $('lk-look').hidden = this.tab !== 'wardrobe';
     $('lk-slots').innerHTML = Object.entries(COS_SLOTS).map(([k, v]) => `<button type="button" class="lk-slot${k === this.slot ? ' on' : ''}" data-slot="${k}">${v}</button>`).join('');
     for (const b of $('lk-slots').children) b.onclick = () => { this.slot = b.dataset.slot; this.render(); };
-    const items = COSMETICS.filter((c) => c.slot === this.slot && (this.tab === 'shop' || P.owned.includes(c.id)));
+    // hidden items (the Owner cape) aren't for sale: they only show up for whoever has them
+    const items = COSMETICS.filter((c) => c.slot === this.slot && (c.hidden ? P.owned.includes(c.id) : this.tab === 'shop' || P.owned.includes(c.id)));
     const cards = items.map((c) => {
       const owned = P.owned.includes(c.id), worn = P.eq[c.slot] === c.id;
       const swatch = c.color ? `<i class="lk-sw" style="background:${c.color === 'rainbow' ? 'linear-gradient(90deg,#f33,#fd3,#3f6,#3cf,#a3f)' : c.color}"></i>` : '';
