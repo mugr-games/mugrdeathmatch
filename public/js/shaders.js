@@ -3,7 +3,7 @@
 // layer (grime, streaks, puddles) so large walls don't look tiled. Units: 40 = one block.
 import * as THREE from 'three';
 
-const TYPES = { stone: 0, brick: 1, clay: 2, wood: 3, metal: 4, plate: 5, panel: 6, hazard: 7, concrete: 8, grass: 9, dirt: 10, grassside: 11, crate: 12, barrel: 13 };
+const TYPES = { stone: 0, brick: 1, clay: 2, wood: 3, metal: 4, plate: 5, panel: 6, hazard: 7, concrete: 8, grass: 9, dirt: 10, grassside: 11, crate: 12, barrel: 13, asphalt: 14, marble: 15, tile: 16, cobble: 17, leaves: 18 };
 
 // Potato mode: cheap Lambert lighting, fewer noise octaves, no bump mapping. Set before any map loads.
 let POTATO = false;
@@ -72,14 +72,24 @@ vec4 surfacePattern(vec3 P, vec3 N, out float rough, out float wet) {
   vec2 cell = floor(uv / 40.); vec2 f = fract(uv / 40.);
   float edge = min(min(f.x, 1. - f.x), min(f.y, 1. - f.y));
   float weather = 1.; // how much grime and streaking this surface takes
-  if (t == 0) { // stone blocks: speckled, chipped edges, the odd crack and moss on top faces
+  if (t == 0) { // stone: cut blocks in courses of different lengths, recessed mortar, chips, cracks, moss on top
+    vec2 bs = up ? vec2(48., 48.) : vec2(36., 18.);
+    float row = floor(uv.y / bs.y);
+    float len = bs.x * (.7 + .6 * h21(vec2(row, 3.)));
+    vec2 bu = vec2(uv.x + row * 13.7, uv.y);
+    vec2 bc = vec2(floor(bu.x / len), row);
+    vec2 bfr = vec2(fract(bu.x / len), fract(uv.y / bs.y));
+    float be = min(min(bfr.x, 1. - bfr.x) * len, min(bfr.y, 1. - bfr.y) * bs.y);
+    cell = bc;
+    edge = be / 40.;
     float n = fbm(uv * .09) * .6 + gnoise(uv * .7) * .25 + h21(floor(uv * 1.5)) * .15;
-    float chip = smoothstep(0., .06 + .04 * gnoise(uv * .4), edge);
+    float chip = smoothstep(.0, 1.6 + 1.2 * gnoise(uv * .4), be);
     col = mix(uTintA, uTintB, smoothstep(.3, .8, n)) * (.88 + .24 * h21(cell));
     float cr = cracks(uv, .05, .45);
     col *= 1. - cr * .45;
     if (up) { float moss = smoothstep(.62, .78, fbm(uv * .02 + 11.)) * (1. - chip * .5); col = mix(col, vec3(.16, .24, .09), moss * .7); }
-    h = n * .55 + chip * .35 - cr * .25; rough = .88;
+    col = mix(uTintB * .55, col, smoothstep(.0, .9, be)); // mortar lines
+    h = n * .55 + chip * .45 - cr * .25; rough = .88;
   } else if (t == 1) { // running-bond bricks, 20 x 10, each brick its own shade with worn corners
     vec2 b = uv / vec2(20., 10.); b.x += step(1., mod(floor(b.y), 2.)) * .5;
     vec2 bi = floor(b), bf = fract(b);
@@ -174,13 +184,71 @@ vec4 surfacePattern(vec3 P, vec3 N, out float rough, out float wet) {
     col = t == 9 ? mix(grass, dirt, bare) : t == 10 ? dirt : mix(dirt, grass, top);
     h = t == 10 ? n * .5 + pebble * .5 : n * .6 + blades * .4; rough = .95; weather = .3;
   }
+  else if (t == 14) { // asphalt: fine aggregate, darker tar patches, cracks, worn lighter where wheels go
+    float n = fbm(uv * .04);
+    float agg = h21(floor(uv * 3.1)) * .5 + gnoise(uv * 2.3) * .5;
+    float patchy = smoothstep(.58, .62, fbm(uv * .008 + 21.));
+    float cr = cracks(uv, .02, .5);
+    col = uTintA * (.75 + .3 * n + .25 * (agg - .5)) * (1. - patchy * .3) * (1. - cr * .5);
+    col += vec3(.04) * smoothstep(.75, .95, agg);
+    h = .5 + agg * .25 - cr * .4 - patchy * .05; rough = .92 - patchy * .1; weather = .6;
+  } else if (t == 15) { // polished marble: soft cloudy colour with thin veins, big tiles, glossy
+    vec2 tf = fract(uv / 80.);
+    float seam = 1. - smoothstep(0., .012, min(min(tf.x, 1. - tf.x), min(tf.y, 1. - tf.y)));
+    vec2 tc = floor(uv / 80.);
+    vec2 w = uv * .02 + h22(tc) * 9.;
+    float veins = 1. - smoothstep(0., .07, abs(fbm(w + fbm(w * 1.7) * 1.2) - .5));
+    float cloud = fbm(uv * .015 + tc);
+    col = mix(uTintA, uTintB, cloud * .7) * (1. - veins * .45) * (1. - seam * .4);
+    h = .6 - seam * .5 - veins * .05; rough = .12 + cloud * .1 + seam * .5; weather = .25;
+  } else if (t == 16) { // square floor tiles with grout, a few cracked or stained
+    vec2 tf = fract(uv / 24.), tc = floor(uv / 24.);
+    float grout = 1. - smoothstep(.03, .06, min(min(tf.x, 1. - tf.x), min(tf.y, 1. - tf.y)));
+    float checker = mod(tc.x + tc.y, 2.);
+    float stain = smoothstep(.6, .85, fbm(uv * .02 + 5.));
+    col = mix(uTintA, uTintB, checker) * (.92 + .16 * h21(tc)) * (1. - stain * .2);
+    col = mix(col, vec3(.35, .33, .3), grout);
+    h = .6 - grout * .5; rough = mix(.35 + stain * .3, .9, grout); weather = .5;
+  } else if (t == 17) { // cobblestones: rounded stones in a voronoi pattern, dirt between them
+    vec2 v = voro(uv * .11);
+    float stone = smoothstep(.02, .14, v.y);
+    vec2 sc = floor(uv * .11);
+    col = mix(uTintB * .5, uTintA * (.75 + .4 * h21(sc + floor(v.x * 3.))) * (.85 + .3 * gnoise(uv * .6)), stone);
+    h = stone * (.55 + .35 * (1. - v.x)) + .1; rough = mix(.95, .7, stone);
+  } else if (t == 18) { // autumn ground: grass and earth under a carpet of fallen leaves (red, orange, yellow, brown)
+    float n = gnoise(uv * .9) * .5 + fbm(uv * .06) * .5;
+    vec3 ground = mix(uTintB * (.8 + .3 * n), uTintA * (.7 + .4 * n), smoothstep(.35, .65, fbm(uv * .03)));
+    float leaf = 0.; vec3 lcol = vec3(0.);
+    for (int k = 0; k < 3; k++) {
+      vec2 g = uv * (.28 + float(k) * .11) + float(k) * 17.;
+      vec2 cid = floor(g), f2 = fract(g) - .5;
+      vec2 r = h22(cid) - .5;
+      float a = h21(cid + 3.) * 6.28;
+      vec2 q = mat2(cos(a), -sin(a), sin(a), cos(a)) * (f2 - r * .5);
+      float shape = 1. - smoothstep(.14, .19, length(q * vec2(1., 1.9)) + abs(q.y) * .3);
+      shape *= step(.25, h21(cid + 9.));
+      float pick = h21(cid + 5.);
+      vec3 c = pick < .3 ? vec3(.62, .14, .05) : pick < .6 ? vec3(.85, .38, .07) : pick < .85 ? vec3(.86, .66, .14) : vec3(.4, .24, .1);
+      c *= .8 + .3 * gnoise(uv * 2. + float(k));
+      lcol = mix(lcol, c, shape); leaf = max(leaf, shape);
+    }
+    float cover = smoothstep(.25, .6, fbm(uv * .012 + 4.));
+    leaf *= .55 + cover * .45;
+    col = mix(ground, lcol, leaf);
+    h = n * .4 + leaf * .35; rough = .9; weather = .4;
+  }
   // weathering shared by every surface: big blotchy grime, rain streaks down walls, puddles on hard floors
   float macro = fbm(P.xy * .0016 + P.z * .001);
   col *= mix(1., .86 + .28 * macro, weather);
   if (side) {
     float streak = gnoise(vec2(uv.x * .12, P.z * .006)) * gnoise(vec2(uv.x * .03, P.z * .002) + 4.);
     col *= 1. - smoothstep(.35, .7, streak) * .22 * weather;
+    // dirt splashed up the bottom of walls standing on the ground
+    float base = 1. - smoothstep(0., 26. + 10. * gnoise(vec2(uv.x * .05, 0.)), P.z);
+    col *= 1. - base * .28 * weather;
   }
+  // cavities read darker (a cheap ambient occlusion from the height)
+  col *= .82 + .36 * clamp(h, 0., 1.);
   if (up && (t == 0 || t == 5 || t == 8)) {
     wet = smoothstep(.62, .7, fbm(uv * .006 + 17.));
     col *= 1. - wet * .35;
@@ -242,7 +310,8 @@ export function surfaceMaterial(type, opts = {}) {
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
           // fade fine bumps with distance so far walls don't shimmer
           float sFade = 1. / (1. + length(fwidth(vWPos)) * .35);
-          normal = bumpNormal(-vViewPosition, normal, sPat.a, uBump * sFade * (1. - sWet * .8), faceDirection);`);
+          float sMicro = (gnoise(vWPos.xy * 1.7 + vWPos.z * .9) - .5) * .08 * smoothstep(.6, .95, sFade);
+          normal = bumpNormal(-vViewPosition, normal, sPat.a + sMicro, uBump * sFade * (1. - sWet * .8), faceDirection);`);
     }
   };
   mat.customProgramCacheKey = () => (POTATO ? 'surface-potato' : 'surface' + OCTAVES);

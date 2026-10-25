@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { BoxWorld, MASK_SHOT } from './collide.js';
@@ -16,7 +17,7 @@ import { Occlusion, setDrawn, seesAny, HIDDEN_LAYER } from './occlusion.js';
 import { loadSlot, instance, WEAPON_SLOT, ITEM_SLOT } from './assets.js';
 import { Synth } from './synth.js';
 import { Hud } from './hud.js';
-import { Avatar, ZOMBIE_SKIN, MODELS } from './avatar.js';
+import { Avatar, ZOMBIE_SKIN, MODELS, HOLDS, holdPoints, reachArm, avatarMaterials } from './avatar.js';
 import { Ragdoll } from './ragdoll.js';
 import { ZombiesView } from './zview.js';
 import { socketUrl } from './net.js';
@@ -49,6 +50,7 @@ function angDiff(a, b) {
 
 // Source-style model frame (X forward, Y left, Z up) -> camera frame (-Z forward, +Y up, +X right)
 const TO_VIEW = new THREE.Matrix4().set(0, -1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, 0, 0, 1);
+const FROM_VIEW = TO_VIEW.clone().invert();
 
 // ------------------------------------------------------------------ small procedural textures for effects
 function canvasTex(size, draw) {
@@ -169,12 +171,14 @@ class Character {
     if (this.weapon) { this.mount.remove(this.weapon); this.weapon = null; }
     // zombies fight with their fists: nothing in their hands
     if (this.avatar) this.avatar.unarmed = !slot || slot === 'claws';
-    if (!slot || slot === 'claws') return;
+    if (!slot || slot === 'claws') { this.avatar?.setHold(null); return; }
     const proto = await loadSlot(slot);
     if (this.wslot !== slot) return;
     this.weapon = instance(proto);
     this.weapon.position.x = 4;
+    this.weapon.rotation.x = HOLDS[slot]?.spin || 0;
     this.mount.add(this.weapon);
+    this.avatar?.setHold(slot, proto.object?.userData.size || proto.userData?.size, 4);
     if (this.root.userData.drawn === false) this.weapon.traverse((o) => o.layers.set(HIDDEN_LAYER));
   }
 
@@ -279,7 +283,7 @@ export class Game {
     this.info = new Map();
     this.connected = false;
     this.mapId = null;
-    this.vm = { holder: new THREE.Group(), model: null, wi: -1, draw: 1, kick: 0, swing: 1, reload: 0, reloadDur: 1, bob: 0, swayX: 0, swayY: 0, lastYaw: 0, lastPitch: 0 };
+    this.vm = { holder: new THREE.Group(), pivot: null, model: null, wi: -1, draw: 1, kick: 0, swing: 1, reload: 0, reloadDur: 1, bob: 0, swayX: 0, swayY: 0, lastYaw: 0, lastPitch: 0, roll: 0, rollV: 0, pump: 0, sprint: 0, land: 0, wasGround: true, arms: null };
     this.vmScene.add(this.vm.holder);
     this.vmFlashSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: FLASH, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, color: 0xffffff }));
     this.vmFlashSprite.visible = false;
@@ -1066,40 +1070,103 @@ export class Game {
   }
 
   // ---------------------------------------------------------------- viewmodel (procedurally animated)
+  // The gun in front of the camera, with your arms holding it: hands placed on the grip and the support grip
+  // (IK from shoulders just out of view), so they stay on the gun through recoil, reloads and pumping.
   async setupViewmodel(force) {
     const wi = this.ps.cur;
     if (!force && this.vm.wi === wi) return;
     this.vm.wi = wi;
-    const proto = await loadSlot(WEAPON_SLOT[WEAPONS[wi].id]);
+    const slot = WEAPON_SLOT[WEAPONS[wi].id];
+    const proto = await loadSlot(slot);
     if (this.vm.wi !== wi) return;
-    if (this.vm.model) this.vm.holder.remove(this.vm.model);
+    const vm = this.vm;
+    if (!vm.pivot) { vm.pivot = new THREE.Group(); vm.holder.add(vm.pivot); }
+    if (vm.model) vm.pivot.remove(vm.model);
     const model = instance(proto);
     model.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
     const size = proto.object.userData.size || new THREE.Vector3(20, 3, 6);
-    this.vm.model = model;
-    this.vm.len = size.x;
-    this.vm.muzzle = new THREE.Vector3(size.x / 2 + 1, 0, size.z * 0.18);
-    this.vm.holder.add(model);
-    this.vm.draw = 0;
-    this.vm.reload = 0;
+    model.rotation.x = HOLDS[slot]?.spin || 0;
+    vm.model = model;
+    vm.len = size.x;
+    vm.hold = holdPoints(slot, size);
+    vm.slot = slot;
+    vm.muzzle = new THREE.Vector3(size.x / 2 + 1, 0, size.z * 0.18);
+    // melee weapons turn about the hand: the model sits so its grip is the pivot's origin
+    if (vm.hold.melee) model.position.set(-vm.hold.right[0], -vm.hold.right[1], -vm.hold.right[2]);
+    vm.pivot.position.set(0, 0, 0);
+    vm.pivot.add(model);
+    vm.draw = 0;
+    vm.reload = 0;
+    this.buildVmArms();
+  }
+
+  // your arms, in your suit colour (rebuilt when it changes)
+  buildVmArms() {
+    const vm = this.vm;
+    const info = this.info.get(this.myId);
+    const color = this.colorFor(info);
+    if (vm.arms && vm.armsColor === color) return;
+    if (vm.arms) { this.vmScene.remove(vm.arms.root); vm.arms.root.traverse((o) => o.geometry?.dispose()); }
+    vm.armsColor = color;
+    const M = avatarMaterials(color);
+    for (const m of Object.values(M)) if (m) { m.fog = false; }
+    const root = new THREE.Group();
+    root.matrixAutoUpdate = false;
+    root.matrix.copy(TO_VIEW); // built in body space (x forward, y left, z up), shown in camera space
+    root.matrixWorldNeedsUpdate = true;
+    const cyl = (r0, r1, len, z, mat) => { const g = new THREE.CylinderGeometry(r0, r1, len, 14).rotateX(Math.PI / 2).translate(0, 0, z); return new THREE.Mesh(g, mat); };
+    const arms = [-1, 1].map((s) => {
+      const upper = new THREE.Group();
+      upper.add(cyl(3.1, 2.8, 16, -8, M.suit));
+      const fore = new THREE.Group();
+      fore.position.z = -16;
+      upper.add(fore);
+      fore.add(cyl(2.8, 2.35, 13, -6.5, M.suit));
+      fore.add(cyl(3.05, 3.05, 2, -12.6, M.pad));
+      const glove = new THREE.Mesh(new RoundedBoxGeometry(4.8, 3.8, 5, 2, 1.3), M.dark);
+      glove.position.set(0.4, 0, -16);
+      const thumb = new THREE.Mesh(new RoundedBoxGeometry(1.7, 1.7, 3.6, 2, 0.7), M.dark);
+      thumb.position.set(1.8, -s * 1.8, -15);
+      thumb.rotation.y = -0.5;
+      fore.add(glove, thumb);
+      root.add(upper);
+      return { upper, fore, s, shoulder: new THREE.Vector3(-7, s * 10.5, -13) };
+    });
+    vm.arms = { root, arms };
+    this.vmScene.add(root);
   }
 
   vmEvent(name, dur) {
     const vm = this.vm;
-    if (name === 'fire') vm.kick = Math.min(1.6, vm.kick + (['shotgun', '357', 'autoshotgun', 'railgun'].includes(WEAPONS[this.ps.cur].id) ? 1 : 0.45));
+    const id = WEAPONS[this.ps.cur].id;
+    if (name === 'fire') {
+      vm.kick = Math.min(1.6, vm.kick + (['shotgun', '357', 'autoshotgun', 'railgun', 'sniper', 'rpg'].includes(id) ? 1 : 0.45));
+      // automatic fire shakes the gun about a little; pumps and bolts get worked after each shot
+      vm.rollV += (Math.random() - 0.5) * (WEAPONS[this.ps.cur].semi ? 0.02 : 0.06);
+      if (vm.hold?.pump || vm.hold?.bolt) vm.pump = 0.0001;
+    }
     if (name === 'swing') vm.swing = 0;
-    if (name === 'reload') { vm.reload = 0.0001; vm.reloadDur = dur; }
+    if (name === 'reload') { vm.reload = 0.0001; vm.reloadDur = dur; vm.shell = dur < 0.6; }
+    const me = this.self?.obj;
+    if (me) { if (name === 'fire') me.fire(); if (name === 'swing') me.melee(); if (name === 'reload') me.reload(dur); }
   }
 
   updateViewmodel(dt) {
     const vm = this.vm;
     if (vm.wi !== this.ps.cur) this.setupViewmodel();
-    vm.holder.visible = this.ps.alive && this.connected && !this.zoomed && !this.unarmed();
+    const show = this.ps.alive && this.connected && !this.zoomed && !this.unarmed() && !this.thirdPerson;
+    vm.holder.visible = show;
+    if (vm.arms) vm.arms.root.visible = show && !!vm.model;
     if (!vm.model) return;
-    vm.draw = Math.min(1, vm.draw + dt / 0.4);
+    if (show) this.buildVmArms();
+    const t = performance.now() / 1000;
+    vm.draw = Math.min(1, vm.draw + dt / 0.45);
     vm.kick *= Math.exp(-dt * 14);
-    vm.swing = Math.min(1, vm.swing + dt / 0.35);
+    vm.swing = Math.min(1, vm.swing + dt / 0.42);
     if (vm.reload > 0) { vm.reload += dt / vm.reloadDur; if (vm.reload >= 1) vm.reload = 0; }
+    if (vm.pump > 0) { vm.pump += dt / 0.45; if (vm.pump >= 1) vm.pump = 0; }
+    vm.roll = (vm.roll + vm.rollV) * Math.exp(-dt * 10);
+    vm.rollV *= Math.exp(-dt * 20);
     // sway lags behind mouse movement
     const dy = angDiff(vm.lastYaw, this.yaw), dp = this.pitch - vm.lastPitch;
     vm.lastYaw = this.yaw; vm.lastPitch = this.pitch;
@@ -1108,24 +1175,78 @@ export class Game {
     const speed = Math.hypot(this.ps.velocity[0], this.ps.velocity[1]);
     const bobAmt = this.ps.onGround ? Math.min(1, speed / 400) : 0;
     vm.bob += dt * (5 + speed / 70);
+    // sprinting tucks the gun down and across; landing dips it; standing still it breathes
+    const sprinting = this.ps.onGround && speed > 290 && !vm.reload && vm.swing >= 1;
+    vm.sprint += ((sprinting ? 1 : 0) - vm.sprint) * Math.min(1, dt * 8);
+    if (this.ps.onGround && !vm.wasGround) vm.land = Math.min(1, Math.max(0.3, (this.ps.landSpeed || 300) / 600));
+    vm.wasGround = this.ps.onGround;
+    vm.land *= Math.exp(-dt * 7);
+    const breathe = Math.sin(t * 1.6) * 0.25 * (1 - bobAmt);
     const L = vm.len || 20;
     const draw = 1 - Math.pow(1 - vm.draw, 3);
     const rl = vm.reload > 0 ? Math.sin(vm.reload * Math.PI) : 0;
-    const swing = vm.swing < 1 ? Math.sin(vm.swing * Math.PI) : 0;
+    const H = vm.hold || {};
+    const sp = vm.sprint;
     // position in camera space (x right, y up, z toward viewer)
-    const x = 5.5 + Math.sin(vm.bob) * 0.5 * bobAmt + vm.swayX * 0.6 - swing * 4;
-    const y = -5.5 - L * 0.06 - Math.abs(Math.cos(vm.bob)) * 0.5 * bobAmt - (1 - draw) * 12 - rl * 5 + vm.swayY * 0.4;
-    const z = -9 - L * 0.42 + vm.kick * 2.4 + swing * 3;
+    let x = 7.4 + Math.sin(vm.bob) * 0.5 * bobAmt + vm.swayX * 0.6 + sp * 2.5;
+    let y = -3.6 - L * 0.05 - Math.abs(Math.cos(vm.bob)) * 0.5 * bobAmt - (1 - draw) * 12 - rl * (vm.shell ? 2 : 4.5) + vm.swayY * 0.4 + breathe - vm.land * 2.5 - sp * 2.5;
+    let z = -15 - L * 0.5 + vm.kick * 2.4;
+    let rx = vm.kick * 0.12 + rl * (vm.shell ? 0.1 : 0.3) - (1 - draw) * 0.6 - sp * 0.35 + vm.land * 0.08;
+    let ry = -vm.swayX * 0.03 + sp * 0.75;
+    let rz = rl * (vm.shell ? 0.25 : 0.55) + vm.roll + sp * 0.3;
+    // pistols: held further in and higher, both hands showing
+    if (H.short) { x -= 1.6; y += 1.9; z -= 1.5; }
+    // the crowbar: upright in the right hand; a swing chops down and across
+    vm.pivot.rotation.set(0, 0, 0);
+    vm.pivot.scale.setScalar(H.melee ? 0.6 : 1); // a long crowbar drawn smaller, so the hand can hold it in view
+    if (H.melee) vm.pivot.position.set(H.right[0] * 0.6, H.right[1], H.right[2]);
+    if (H.melee) {
+      const k = vm.swing;
+      const wind = k < 0.22 ? k / 0.22 : 1, chop = k < 0.22 ? 0 : Math.sin(Math.min(1, (k - 0.22) / 0.45) * Math.PI);
+      const swinging = k < 1;
+      x = 6.5 + vm.swayX * 0.6 - chop * 8 + (swinging ? wind * 2 * (1 - chop) : 0);
+      y = -5 + breathe + (swinging ? wind * 4 * (1 - chop) : 0) - chop * 3 - (1 - draw) * 12 - vm.land * 2;
+      z = -23 + chop * 3;
+      rx = -(1 - draw) * 0.6;
+      ry = 0.1;
+      rz = -0.15 + chop * 0.8;
+      vm.pivot.rotation.y = -0.95 - (swinging ? wind * (1 - chop) * 0.55 : 0) + chop * 1.8; // upright, back, then forward through
+      vm.pivot.rotation.x = chop * 0.35;
+    }
     const m = new THREE.Matrix4().makeTranslation(x, y, z);
-    m.multiply(new THREE.Matrix4().makeRotationX(vm.kick * 0.12 + rl * 0.35 - (1 - draw) * 0.6));
-    m.multiply(new THREE.Matrix4().makeRotationY(-vm.swayX * 0.03 + swing * 1.1));
-    m.multiply(new THREE.Matrix4().makeRotationZ(rl * 0.5));
+    m.multiply(new THREE.Matrix4().makeRotationX(rx));
+    m.multiply(new THREE.Matrix4().makeRotationY(ry));
+    m.multiply(new THREE.Matrix4().makeRotationZ(rz));
     m.multiply(TO_VIEW);
     vm.holder.matrixAutoUpdate = false;
     vm.holder.matrix.copy(m);
     vm.holder.matrixWorldNeedsUpdate = true;
+    vm.pivot.updateMatrix();
+    // the hands: right on the grip, left on the support grip (to the magazine for a reload, sliding the pump)
+    if (vm.arms && show) {
+      vm.model.updateMatrix();
+      const toBody = (v) => v.applyMatrix4(vm.model.matrix).applyMatrix4(vm.pivot.matrix).applyMatrix4(m).applyMatrix4(FROM_VIEW);
+      for (const A of vm.arms.arms) {
+        const right = A.s < 0;
+        const g = right ? H.right : H.left;
+        A.upper.position.copy(A.shoulder);
+        if (!g) {
+          // one-handed: the left arm hangs out of sight
+          A.upper.visible = false;
+          continue;
+        }
+        A.upper.visible = true;
+        const target = new THREE.Vector3(...g);
+        if (!right && rl > 0 && H.mag) {
+          const out = Math.min(1, vm.reload * 2.2);
+          target.lerp(new THREE.Vector3(...H.mag), out).add(new THREE.Vector3(0, 0, -Math.sin(Math.min(1, vm.reload * 1.4) * Math.PI) * (vm.shell ? 2 : 9)));
+        }
+        if (!right && vm.pump > 0) target.x -= Math.sin(vm.pump * Math.PI) * L * 0.13;
+        reachArm(A.upper, A.fore, A.shoulder, toBody(target), A.s, 16, 16);
+      }
+    }
     // muzzle flash
-    if (this.flashT > 0) {
+    if (this.flashT > 0 && !H.melee) {
       this.flashT -= dt;
       const p = vm.muzzle.clone().applyMatrix4(m);
       this.vmFlashSprite.position.copy(p);
@@ -1138,6 +1259,43 @@ export class Game {
       this.vmFlashSprite.visible = false;
       this.vmFlash.intensity = 0;
     }
+  }
+
+  // ---------------------------------------------------------------- your own body (third person)
+  setThirdPerson(on) {
+    this.thirdPerson = !!on;
+    this.tpDist = 0;
+  }
+
+  updateSelf(dt) {
+    const show = this.thirdPerson && this.connected && this.ps.alive;
+    if (!show) { if (this.self) this.self.obj.root.visible = false; return; }
+    const info = this.info.get(this.myId);
+    const key = `${this.colorFor(info)}|${this.modelFor(info)}|${JSON.stringify(info?.cos || {})}`;
+    if (!this.self || this.self.key !== key) {
+      if (this.self?.loading) return;
+      if (this.self?.obj) { this.scene.remove(this.self.obj.root); this.self.obj.dispose(); }
+      this.self = { key, loading: true, obj: null, slot: undefined };
+      this.playerProto.then((proto) => {
+        const c = new Character(this, this.colorFor(info), proto, this.modelFor(info), info?.cos || {});
+        this.scene.add(c.root);
+        this.self.obj = c;
+        this.self.loading = false;
+      });
+      return;
+    }
+    const c = this.self.obj;
+    if (!c) return;
+    const ps = this.ps;
+    const slot = this.unarmed() ? null : WEAPON_SLOT[WEAPONS[ps.cur].id];
+    if (slot !== this.self.slot) { this.self.slot = slot; c.setWeapon(slot); }
+    const o = [ps.origin[0] + this.smoothErr[0], ps.origin[1] + this.smoothErr[1], ps.origin[2] + this.smoothErr[2]];
+    const v = ps.velocity, speed = Math.hypot(v[0], v[1]), yr = this.yaw * DEG;
+    c.animate(dt, { speed, fwdSpeed: v[0] * Math.cos(yr) + v[1] * Math.sin(yr), sideSpeed: v[0] * Math.sin(yr) - v[1] * Math.cos(yr), ground: ps.onGround, ducked: ps.ducked, pitch: this.pitch, alive: true, vz: v[2] });
+    c.root.matrix.makeRotationZ(yr).setPosition(o[0], o[1], o[2]);
+    c.root.matrixWorldNeedsUpdate = true;
+    c.root.visible = true;
+    c.root.updateMatrixWorld(true);
   }
 
   // ---------------------------------------------------------------- local weapon effects (predicted)
@@ -1576,6 +1734,16 @@ export class Game {
     this.zoomScale = this.zoomed ? Wc.zoom / this.baseFov : 1;
     const scope = document.getElementById('scope');
     if (scope && scope.hidden === this.zoomed) scope.hidden = !this.zoomed;
+    if (this.thirdPerson && ps.alive && this.connected && !this.zoomed && !lookAt) {
+      const f = viewDir(yaw, pitch), y = yaw * DEG;
+      const right = [Math.sin(y), -Math.cos(y), 0];
+      const want = [eye[0] - f[0] * 88 + right[0] * 24, eye[1] - f[1] * 88 + right[1] * 24, eye[2] - f[2] * 88 + 10];
+      const tr = this.world.trace(eye, want, [-5, -5, -5], [5, 5, 5]);
+      const k = Math.max(0, tr.fraction - 0.04);
+      this.tpDist = Math.min(this.tpDist ?? k, k) + Math.min(1, dt * 4) * (k - Math.min(this.tpDist ?? k, k)); // in fast, out slowly
+      eye = [eye[0] + (want[0] - eye[0]) * this.tpDist, eye[1] + (want[1] - eye[1]) * this.tpDist, eye[2] + (want[2] - eye[2]) * this.tpDist];
+    }
+    this.updateSelf(dt);
     this.shake = Math.max(0, (this.shake || 0) - dt * 14);
     if (this.shake > 0) {
       const a = this.shake;

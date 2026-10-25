@@ -51,6 +51,7 @@ async function boot() {
   locker = new Locker({ settings, save, sound: game.sound, onLook: (color, model) => game.send({ t: 'color', color, model }) });
   game.token = locker.token;
   voice = new Voice({ game, account: () => account, signIn: () => $('btn-account').click() });
+  game.setThirdPerson(!!settings.thirdPerson);
   heistMenu = new HeistMenu({
     game: () => game, play, resume, status, name: () => settings.name, leave: () => { $('btn-disconnect').click(); closeLobby(); show('menu'); },
     // the planning screen: the menu and mouse capture step aside
@@ -577,6 +578,8 @@ document.addEventListener('keydown', (e) => {
   // during the end-of-match vote the number keys pick a map instead of a weapon
   if (/^Digit[1-5]$/.test(e.code)) numberKey(+e.code.slice(5));
   if (e.code === 'KeyX') game.pick(game.lastW);
+  // third person on and off
+  if (e.code === 'KeyF') { settings.thirdPerson = !game.thirdPerson; game.setThirdPerson(settings.thirdPerson); save(); status(game.thirdPerson ? 'Third person (F to switch back)' : 'First person'); }
   if (e.code === 'KeyY' || e.code === 'KeyT') { e.preventDefault(); openChat(); }
 });
 document.addEventListener('keyup', (e) => game?.keys.delete(e.code));

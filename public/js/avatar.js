@@ -194,18 +194,38 @@ function fabric(mat, scale) {
       .replace('#include <common>', '#include <common>\nvarying vec3 vObj;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObj = position;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vObj;')
+      .replace('#include <common>', `#include <common>
+        varying vec3 vObj;
+        float fh(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+        float fn(vec3 p) {
+          vec3 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+          return mix(mix(mix(fh(i), fh(i + vec3(1, 0, 0)), f.x), mix(fh(i + vec3(0, 1, 0)), fh(i + vec3(1, 1, 0)), f.x), f.y),
+                     mix(mix(fh(i + vec3(0, 0, 1)), fh(i + vec3(1, 0, 1)), f.x), mix(fh(i + vec3(0, 1, 1)), fh(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+        }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
-        float wv = sin((vObj.x + vObj.y) * ${scale.toFixed(2)}) * sin((vObj.z - vObj.y * .5) * ${scale.toFixed(2)});
-        diffuseColor.rgb *= .97 + .03 * wv;`)
+        // twill weave, a ripstop grid of heavier threads, grime and wear
+        vec3 fp = vObj * ${scale.toFixed(2)};
+        float twill = sin((fp.x + fp.y + fp.z * .6) * 3.1) * .5 + .5;
+        float warp = sin((fp.z - fp.y * .4) * 2.3) * .5 + .5;
+        float wv = twill * .6 + warp * .4;
+        vec3 rg = abs(fract(vObj * .42) - .5);
+        float rip = 1. - smoothstep(.0, .035, min(rg.x, min(rg.y, rg.z)));
+        float grime = fn(vObj * .18) * .6 + fn(vObj * .7) * .4;
+        float wear = smoothstep(.62, .82, fn(vObj * .5 + 7.));
+        diffuseColor.rgb *= (.9 + .12 * wv) * (1. - rip * .12) * (1. - smoothstep(.45, .85, grime) * .22);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.18 + .02, wear * .5);`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor *= .88 + .16 * wv - wear * .1;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         vec3 wsx = dFdx(-vViewPosition), wsy = dFdy(-vViewPosition);
         vec3 wr1 = cross(wsy, normal), wr2 = cross(normal, wsx);
         float wdet = dot(wsx, wr1) * faceDirection;
-        vec2 wdh = vec2(dFdx(wv), dFdy(wv)) * .06;
+        float wh = wv * .7 - rip * .5;
+        float wfade = 1. / (1. + length(fwidth(vObj)) * 6.);
+        vec2 wdh = vec2(dFdx(wh), dFdy(wh)) * .09 * wfade;
         normal = normalize(abs(wdet) * normal - sign(wdet) * (wdh.x * wr1 + wdh.y * wr2));`);
   };
-  mat.customProgramCacheKey = () => 'fabric' + scale;
+  mat.customProgramCacheKey = () => 'fabric2' + scale;
   return mat;
 }
 
@@ -280,6 +300,52 @@ export function avatarMaterials(colorIndex) {
 }
 
 // the head of a character as its own group (for ragdolls); origin at the neck, facing +X
+// How each weapon is held, as fractions of the model's length (x, along the barrel) and height (z), with y in
+// game units (left is +): where the right hand grips, where the left hand supports it (null: one hand), and
+// where the magazine comes out for a reload. Weapon models are centred, barrel along +x, grip down.
+export const HOLDS = {
+  crowbar: { right: [-0.3, 0, 0], left: null, melee: true, spin: Math.PI }, // spin: turned about its length (claw forward)
+  pistol: { right: [-0.18, 0, -0.42], left: [-0.2, 1.8, -0.48], mag: [-0.2, 0, -0.9], short: true },
+  revolver: { right: [-0.22, 0, -0.4], left: [-0.24, 1.8, -0.46], mag: [0.05, 2, 0], short: true },
+  smg: { right: [-0.1, 0, -0.42], left: [0.22, 0, -0.32], mag: [0.02, 0, -0.85] },
+  rifle: { right: [-0.08, 0, -0.42], left: [0.2, 0, -0.28], mag: [0.04, 0, -0.85] },
+  shotgun: { right: [-0.24, 0, -0.38], left: [0.16, 0, -0.32], mag: [0.05, 0, -0.5], pump: true },
+  autoshotgun: { right: [-0.18, 0, -0.4], left: [0.16, 0, -0.3], mag: [0.02, 0, -0.85] },
+  sniper: { right: [-0.16, 0, -0.42], left: [0.16, 0, -0.3], mag: [-0.02, 0, -0.8], bolt: true },
+  crossbow: { right: [-0.16, 0, -0.4], left: [0.16, 0, -0.3], mag: [0.3, 0, 0.3] },
+  lmg: { right: [-0.14, 0, -0.42], left: [0.12, 0, -0.32], mag: [0.04, 3, -0.6] },
+  rocket: { right: [-0.02, 0, -0.5], left: [0.2, 0, -0.5], mag: [-0.4, 0, 0] },
+  railgun: { right: [-0.12, 0, -0.42], left: [0.18, 0, -0.3], mag: [0, 0, -0.8] },
+  grenade: { right: [0, 0, 0], left: null },
+};
+// a hold's grip points in the weapon's own space, for a model of this size
+export function holdPoints(slot, size) {
+  const H = HOLDS[slot] || HOLDS.rifle;
+  const pt = (p) => (p ? [p[0] * size.x, p[1], p[2] * size.z] : null);
+  return { ...H, right: pt(H.right), left: pt(H.left), mag: pt(H.mag || [0, 0, -0.8]) };
+}
+
+// two-bone arm IK: point the upper arm and forearm (both 12 long, hanging along -z) so the hand reaches `target`
+// (in the shoulder's parent space). The elbow bends toward `pole` (down, out and back).
+const DOWN = new THREE.Vector3(0, 0, -1);
+const _v = new THREE.Vector3(), _t = new THREE.Vector3(), _n = new THREE.Vector3(), _e = new THREE.Vector3(), _q = new THREE.Quaternion();
+export function reachArm(upper, fore, shoulder, target, side, L1 = 12, L2 = 12) {
+  _v.copy(target).sub(shoulder);
+  const D = Math.max(3, Math.min(L1 + L2 - 0.3, _v.length()));
+  _t.copy(_v).normalize();
+  _n.set(-0.35, side * 0.55, -1).normalize(); // the pole
+  _n.crossVectors(_t, _n);
+  if (_n.lengthSq() < 1e-6) _n.set(0, side, 0);
+  _n.normalize();
+  const a = Math.acos(Math.max(-1, Math.min(1, (L1 * L1 + D * D - L2 * L2) / (2 * L1 * D))));
+  _e.copy(_t).applyAxisAngle(_n, a); // the upper arm's direction
+  upper.quaternion.setFromUnitVectors(DOWN, _e);
+  // the forearm, from the elbow to the hand, in the upper arm's own space
+  _t.copy(_v).normalize().multiplyScalar(D).sub(_e.multiplyScalar(L1)).normalize();
+  _q.copy(upper.quaternion).invert();
+  fore.quaternion.setFromUnitVectors(DOWN, _t.applyQuaternion(_q));
+}
+
 export function headGroup(model, mats) {
   const g = new THREE.Group();
   for (const [mat, geo] of template(model).head) {
@@ -525,8 +591,17 @@ export class Avatar {
     else if (glow) this.matSet.visor.emissive.set(glow);
   }
 
+  // what's in the hand: a hold from HOLDS (null: nothing). offset: where the model sits in the hand mount.
+  setHold(slot, size, offset = 4) {
+    if (!slot || !size) { this.grips = null; return; }
+    const H = holdPoints(slot, size);
+    const off = (p) => (p ? new THREE.Vector3(p[0] + offset, p[1], p[2]) : null);
+    this.grips = { ...H, right: off(H.right), left: off(H.left), mag: off(H.mag) };
+    this.weaponLen = size.x;
+  }
+
   // ---------------------------------------------------------------- one-off motions (from game events)
-  fire() { this.kick = 1; }
+  fire() { this.kick = 1; this.pumpT = this.grips?.pump || this.grips?.bolt ? 0.5 : 0; }
   reload(dur = 1.4) { this.reloadT = this.reloadDur = Math.max(0.4, dur); }
   flinch() { this.flinchT = 0.28; }
   // zombies (and fists): a punch with the other arm each time
@@ -591,13 +666,19 @@ export class Avatar {
     const fl = Math.sin((this.flinchT / 0.28) * Math.PI);
     this.torso.rotation.y = aim * 0.55 + run * dirF * 0.22 + (st.ducked ? 0.25 : 0) + Math.sin(this.breath) * 0.015 - this.kick * 0.06 + r * 0.12 - fl * 0.25;
     this.torso.rotation.x = -dirS * run * 0.14 + (moving ? -step * 0.03 : 0);
+    // a real sprint: lean well into it, head up to see where you're going
+    const sprint = moving && st.ground ? Math.max(0, Math.min(1, (st.speed - 300) / 90)) * Math.max(0, dirF) : 0;
+    this.torso.rotation.y += sprint * 0.22;
+    this.head.rotation.y -= sprint * 0.18;
     this.torso.rotation.z = -this.hips.rotation.z * 2.1;
     this.head.rotation.y = aim * 0.45 - this.torso.rotation.y * 0.25 + fl * 0.3;
     this.head.rotation.z = -this.torso.rotation.z * 0.4;
     this.head.rotation.x = -this.torso.rotation.x * 0.5;
 
-    // ---- arms: hold the weapon at the chest, bob with the run, kick when firing, dip for a reload
-    for (const A of this.arms) {
+    // ---- arms: both hands on the weapon (IK), or the old fixed pose for anything without a hold
+    this.pumpT = Math.max(0, (this.pumpT || 0) - dt);
+    if (this.grips && !this.unarmed && !this.zombie) this.holdWeapon(st, moving, run, r);
+    else for (const A of this.arms) {
       const lead = A.s > 0; // the left hand supports the barrel and does the reloading
       A.upper.rotation.y = -1.25 + this.kick * 0.35 + (moving ? Math.sin(this.phase * 2) * 0.05 * run : 0) + (lead ? r * 0.95 : r * 0.15);
       A.upper.rotation.x = (lead ? -0.35 : 0.5) + (lead ? r * 0.3 : 0);
@@ -616,6 +697,45 @@ export class Avatar {
     if (C.halo) { C.halo.position.z = HEAD_TOP[this.model] + 5 + Math.sin(this.breath * 1.5) * 0.6; C.halo.rotation.z += dt; }
     if (C.wings) for (const { w, s } of C.wings) w.rotation.x = s * (st.ground ? Math.sin(this.breath) * 0.04 : Math.sin(this.breath * 6) * 0.3);
     if (C.rainbow) this.matSet.visor.emissive.setHSL((this.breath * 0.08) % 1, 1, 0.55);
+  }
+
+  // the weapon in the hands: where it sits (aimed by the torso, kicked by recoil, lowered when sprinting, tipped
+  // for a reload; a crowbar upright, chopping when it swings) and both arms reaching for it
+  holdWeapon(st, moving, run, r) {
+    const G = this.grips, hand = this.hand;
+    const bob = moving ? Math.sin(this.phase * 2) * 0.5 * (0.4 + run) : Math.sin(this.breath) * 0.15;
+    let px = 15 - this.kick * 2.4, py = -4, pz = 14 + bob - r * 2.5, ry = -this.kick * 0.22 + r * 0.3, rx = -r * 0.45, rz = 0;
+    if (G.short) { px = 18 - this.kick * 2; py = -1.5; pz = 16 + bob; } // pistols out in front, both hands
+    if (G.melee) {
+      // the crowbar upright in the right hand; a swing is a chop from over the shoulder
+      const k = this.punchT > 0 ? 1 - this.punchT / 0.45 : 1;
+      const up = k < 0.25 ? k / 0.25 : 1, chop = k < 0.25 ? 0 : Math.sin(Math.min(1, (k - 0.25) / 0.45) * Math.PI);
+      px = 13 + chop * 6 - up * 4 * (1 - chop);
+      py = -10 + chop * 5;
+      pz = 7 + (k < 1 ? up * 9 * (1 - chop) : 0) + bob;
+      ry = -1.2 - (k < 1 ? (1 - chop) * up * 0.6 : 0) + chop * 1.7;
+      rx = chop * 0.4;
+    } else if (run > 0.85 && moving && st.ground) { ry += 0.55; pz -= 2; px -= 2; rz = 0.35; } // sprinting: muzzle down and across
+    hand.position.set(px, py, pz);
+    hand.rotation.set(rx, ry, rz);
+    hand.updateMatrix();
+    for (const A of this.arms) {
+      const right = A.s < 0;
+      let g = right ? G.right : G.left;
+      if (!g) {
+        // a free left hand: hanging by the side, swinging with the stride
+        A.upper.rotation.set(A.s * 0.1, 0.05 + (moving ? -Math.sin(this.phase) * 0.45 * (0.3 + run) : Math.sin(this.breath) * 0.02), 0);
+        A.fore.rotation.set(0, -0.25 - (moving ? 0.3 * run : 0), 0);
+        continue;
+      }
+      _v.copy(g);
+      // reload: the support hand goes to the magazine, down to the belt, and back
+      if (!right && r > 0) _v.lerp(G.mag, Math.min(1, r * 1.6)).add(_n.set(0, 0, -r * 6));
+      // pump or bolt after a shot: the support hand slides back
+      if (!right && this.pumpT > 0) _v.x -= Math.sin((this.pumpT / 0.5) * Math.PI) * (this.weaponLen || 20) * 0.12;
+      _v.applyMatrix4(hand.matrix);
+      reachArm(A.upper, A.fore, A.sh.position, _v, A.s);
+    }
   }
 
   // a punch for one arm: wind back, snap out straight, recover. k is 0..1 through the punch.

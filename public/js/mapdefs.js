@@ -788,7 +788,7 @@ const bank = (() => {
   const H = 220; // ceiling
   // ground: the street in front, the alley on the east side, a back lot behind
   box(-1500, -1400, -64, 1500, 1100, 0, 'concrete');
-  deco(-1500, -1300, 0, 1500, -760, 0.4, 'plate'); // road
+  deco(-1500, -1300, 0, 1500, -760, 0.4, 'asphalt'); // road
   for (let x = -1450; x < 1500; x += 220) deco(x, -1034, 0.4, x + 110, -1026, 0.8, 'line');
   deco(-1500, -760, 0, 1500, -748, 6, 'concrete'); // kerb
   // the block around it: buildings either side, a wall behind, the far side of the street
@@ -800,8 +800,7 @@ const bank = (() => {
   box(-1520, -1420, 600, 1520, 1120, 620, 'clip');
   // parked cars to hide behind, and the getaway van
   for (const [x, y] of [[-480, -900], [300, -960], [820, -880], [-200, -1180], [1150, -1160]]) box(x - 85, y - 40, 0, x + 85, y + 40, 58, 'metal');
-  box(-1160, -850, 0, -940, -750, 112, 'metal');
-  deco(-1150, -852, 70, -1060, -848, 104, 'glass');
+  box(-1160, -850, 0, -900, -750, 112, 'clip'); // the van (drawn by the heist view)
   // ---- the bank: stone walls, a glass front, a flat roof
   box(-640, -520, 0, -70, -500, H, 'stone');
   box(70, -520, 0, 640, -500, H, 'stone');

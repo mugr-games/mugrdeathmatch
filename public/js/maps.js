@@ -55,7 +55,12 @@ function glassMat() {
 function surf(mat, pal) {
   if (mat === 'neon') return neonMaterial(pal.neon);
   if (mat === 'line') return surfaceMaterial('concrete', { color: '#f4f4ee', bump: 0.2 });
-  if (mat === 'stone' || mat === 'marble') { const c = pal[mat] || ['#c8c2b8', '#a8a294']; return surfaceMaterial('stone', { color: c[0], color2: c[1] }); }
+  if (mat === 'stone') { const c = pal.stone || ['#c8c2b8', '#a8a294']; return surfaceMaterial('stone', { color: c[0], color2: c[1] }); }
+  if (mat === 'marble') { const c = pal.marble || ['#ece8e0', '#cfc8bc']; return surfaceMaterial('marble', { color: c[0], color2: c[1], bump: 0.6 }); }
+  if (mat === 'asphalt') return surfaceMaterial('asphalt', { color: pal.asphalt || '#3a3b3e', bump: 1.2 });
+  if (mat === 'tile') { const c = pal.tile || ['#d8d4cc', '#b8b0a2']; return surfaceMaterial('tile', { color: c[0], color2: c[1], bump: 0.8 }); }
+  if (mat === 'cobble') { const c = pal.cobble || ['#8a8478', '#4a4034']; return surfaceMaterial('cobble', { color: c[0], color2: c[1], bump: 2 }); }
+  if (mat === 'leaves') { const c = pal.grass || ['#6a7a36', '#5a4430']; return surfaceMaterial('leaves', { color: c[0], color2: c[1] }); }
   if (mat === 'brick') { const c = pal.brick || ['#9b5640', '#b5aa9c']; return surfaceMaterial('brick', { color: c[0], color2: c[1] }); }
   if (mat === 'wood') { const c = pal.wood || ['#8a6438', '#5e4126']; return surfaceMaterial('wood', { color: c[0], color2: c[1] }); }
   if (mat === 'glass') return glassMat();
