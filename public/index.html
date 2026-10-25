@@ -307,7 +307,37 @@ body.touch #netinfo { display: none; }
 #dlg-account .hint { font-size: 12px; }
 /* ---------- friends, messages, moderation ---------- */
 #menu nav .badge { display: inline-block; min-width: 18px; padding: 1px 5px; margin-left: 6px; border-radius: 9px; background: #e0473a; color: #fff; font-size: 11px; text-align: center; vertical-align: middle; text-shadow: none; }
-#dlg-friends, #dlg-mod { width: min(820px, calc(100vw - 32px)); }
+#dlg-friends, #dlg-mod, #dlg-voice { width: min(820px, calc(100vw - 32px)); }
+/* ---------- voice chat ---------- */
+.vc-body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.vc-body h3 { margin: 0 0 8px; font-size: 14px; }
+.vc-list, .vc-members { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow: auto; }
+.vc-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 4px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.vc-list li.here { background: rgba(255,176,0,.08); }
+.vc-list li small { color: var(--text-dim); }
+.vc-list .who { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.vc-list .who .muted { text-decoration: line-through; }
+.vc-list .tag { font-size: 12px; color: var(--accent); white-space: nowrap; }
+.vc-list .btn { padding: 3px 12px; font-size: 12px; }
+.vc-list li.empty, .vc-members li.empty { color: var(--text-dim); border: 0; }
+#vc-create { display: flex; gap: 6px; margin-top: 10px; } #vc-create input { flex: 1; min-width: 0; }
+#vc-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+#vc-controls .btn { padding: 4px 12px; font-size: 12px; } #vc-controls .btn.on { background: #e0473a; border-color: #e0473a; color: #fff; }
+.vc-settings { display: grid; gap: 6px; margin-bottom: 12px; padding: 8px 10px; border-radius: 6px; background: rgba(255,255,255,.04); font-size: 13px; }
+.vc-settings label { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; } .vc-settings small, .vc-body h3 small { color: var(--text-dim); font-weight: normal; }
+.vc-members li .btn.x { margin-left: auto; padding: 1px 6px; font-size: 12px; } .vc-members li .btn.x + input[type=range] { margin-left: 0; }
+.vc-members li { display: flex; align-items: center; gap: 6px; padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.vc-members li small { color: var(--text-dim); } .vc-members li small.warn { color: #e0a33a; }
+.vc-members li input[type=range] { margin-left: auto; width: 90px; }
+.vc-members .dot { width: 10px; height: 10px; border-radius: 50%; background: #555; flex: none; transition: background .1s, box-shadow .1s; }
+.vc-members li.talk .dot { background: #3ddc6a; box-shadow: 0 0 8px #3ddc6a; }
+#vc-err { min-height: 1.3em; margin-top: 8px; color: #ff7a6e; font-size: 13px; }
+#menu nav .badge.live { background: #2fae55; }
+#voice-hud { position: absolute; left: 18px; bottom: 96px; min-width: 150px; color: #fff; font: 600 13px var(--ui); pointer-events: none; text-shadow: 0 1px 3px #000; }
+#voice-hud .ch { font: 700 10px var(--ui); letter-spacing: .08em; color: #9aa; margin-bottom: 3px; } #voice-hud .ch small { font-weight: normal; letter-spacing: 0; color: #8a9; }
+#voice-hud > div:not(.ch) { display: flex; align-items: center; gap: 6px; padding: 2px 8px 2px 4px; margin-top: 2px; background: linear-gradient(90deg, rgba(0,0,0,.55), rgba(0,0,0,0)); border-left: 3px solid #6dff95; }
+#voice-hud .spk { font-size: 12px; }
+@media (max-width: 640px) { .vc-body { grid-template-columns: 1fr; } }
 .fr-body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .fr-list { list-style: none; margin: 0; padding: 0; max-height: 330px; overflow: auto; }
 .fr-list li { display: flex; align-items: center; gap: 6px; padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,.06); }
@@ -403,6 +433,7 @@ body.touch #netinfo { display: none; }
   <div class="hbox" id="ammo-box" hidden><span class="lbl">AMMO</span><span class="big" id="ammo-clip">0</span><span class="res" id="ammo-res">0</span></div>
   <div id="scoreboard" hidden></div>
   <div id="netinfo"></div>
+  <div id="voice-hud" hidden></div>
 </div>
 
 <div id="menu">
@@ -419,6 +450,7 @@ body.touch #netinfo { display: none; }
     <button id="btn-wardrobe">Wardrobe</button>
     <button id="btn-leaders">Leaderboard</button>
     <button id="btn-friends">Friends<span class="badge" id="fr-badge" hidden></span></button>
+    <button id="btn-voice">Voice<span class="badge live" id="vc-badge" hidden></span></button>
     <button id="btn-mod" hidden>Owner menu</button>
     <button id="btn-options">Options</button>
     <button id="btn-devlog">Devlog</button>
@@ -540,6 +572,37 @@ body.touch #netinfo { display: none; }
     <div class="lb-mine" id="lb-mine"></div>
   </div>
   <div class="actions"><button type="button" class="btn primary" id="lb-close">Close</button></div>
+</div>
+
+<div class="dialog" id="dlg-voice" hidden role="dialog" aria-labelledby="dlg-voice-title">
+  <h2 id="dlg-voice-title">Voice chat</h2>
+  <div id="vc-guest" hidden>
+    <p>Sign in to talk. As a guest you can still hear game chat in matches, and see who's on each voice server.</p>
+    <div class="actions"><button type="button" class="btn primary" id="vc-signin">Sign in / Register</button></div>
+  </div>
+  <div class="vc-body">
+    <div>
+      <h3>Voice servers <small>(party chat)</small></h3>
+      <ul class="vc-list" id="vc-list"></ul>
+      <form id="vc-create"><input type="text" id="vc-name" maxlength="24" placeholder="New channel name" autocomplete="off"><button type="submit" class="btn">Create</button></form>
+    </div>
+    <div>
+      <div class="vc-settings">
+        <label><input type="checkbox" id="vc-game"> Game chat in matches <small>(your team, or everyone in free-for-all)</small></label>
+        <label>Microphone <select id="vc-mic"><option value="open">Open mic</option><option value="ptt">Push to talk (hold V)</option><option value="off">Off (listen only)</option></select></label>
+      </div>
+      <h3 id="vc-room-title">Not in voice</h3>
+      <div id="vc-controls" hidden>
+        <button type="button" class="btn" id="vc-mute">Mute mic</button>
+        <button type="button" class="btn" id="vc-deafen">Deafen</button>
+        <button type="button" class="btn" id="vc-leave">Leave</button>
+      </div>
+      <ul class="vc-members" id="vc-members"></ul>
+      <p class="hint">You stay in your channel while you play. Voice goes straight between players' browsers; a few strict networks (some schools and offices) block it.</p>
+    </div>
+  </div>
+  <div id="vc-err" role="alert"></div>
+  <div class="actions"><button type="button" class="btn" id="vc-close">Close</button></div>
 </div>
 
 <div class="dialog" id="dlg-friends" hidden role="dialog" aria-labelledby="dlg-friends-title">

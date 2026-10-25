@@ -413,6 +413,7 @@ export class Game {
         this.connected = false;
         try { await this.onWelcome(m); this.resetView(); this.connected = true; this.settle(); } catch (err) { this.settle(err); }
       } else if (m.t === 'watch-none') { this.stopWatching(); this.onWatch?.(null); }
+      else if (m.t === 'voice') this.onVoice?.(m);
       else if (SOCIAL.has(m.t)) this.onSocial?.(m);
       else if (m.t === 'coins' && !this.connected) this.onCoins?.(m);
       else if (m.t === 'error') this.settle(new Error(m.text));
@@ -1594,6 +1595,7 @@ export class Game {
     this.updateEffects(dt);
     const myTeam = this.info.get(this.myId)?.team;
     this.mv.update(dt);
+    this.onVoiceFrame?.();
     if (this.connected && this.mode && this.mode !== 'dm' && this.mode !== 'zombies' && this.mode !== 'parkour') {
       const limit = this.mode === 'ctf' || this.mode === 'soccer' || this.mode === 'mugrball' ? this.caplimit : this.fraglimit;
       this.hud.teamBar({ kind: this.mode, score: this.teamScore, limit, state: this.flagState, myTeam, myId: this.myId, zm: this.zmState });

@@ -15,6 +15,7 @@ import { buildNav, boxBounds } from './public/js/nav.js';
 import { SKILLS, newBrain, botName, botCommand } from './bots.js';
 import { createZombies } from './cod.js';
 import { createSoccer, createParkour, createMugrball } from './modes.js';
+import { createVoice } from './voice.js';
 import { createProfiles, OWNER_NAME } from './profiles.js';
 import { checkText, badName } from './filter.js';
 import { createReporter } from './moderation.js';
@@ -393,6 +394,7 @@ function leaveRoom(p) {
   dropFlag(R, p);
   R.pk?.forget(p);
   R.mb?.drop(p);
+  voice.leftMatch(p.ws);
   if (R.vote) R.vote.votes.delete(p.id);
   R.players.delete(p.id);
   p.room = null;
@@ -1301,6 +1303,7 @@ async function hello(ws, token) {
   ws.token = pr ? token : null;
   ws.profile = pr;
   ws.acct = key;
+  voice.recheck([ws]);
   const ban = await profiles.isBanned(banKeys(ws));
   if (ban) return bounce(ws, ban);
   if (key) {
@@ -1448,6 +1451,7 @@ async function ownerAction(ws, m) {
     const keys = new Set([(await profiles.account(t.key)) && 'a:' + t.key, ...t.socks.flatMap((s) => [s.acct && 'a:' + s.acct, s.ip && 'i:' + s.ip])].filter(Boolean));
     for (const k of keys) { if (a === 'mute') mutes.set(k, Date.now() + mins * 60000); else mutes.delete(k); }
     for (const s of t.socks) sys(s, a === 'mute' ? `The owner muted you for ${mins} minutes.` : 'You can chat again.');
+    voice.recheck(t.socks);
     reporter.action(a === 'mute' ? 'Muted' : 'Unmuted', `${t.display}${a === 'mute' ? ` for ${mins} minutes` : ''}`);
     return say(a === 'mute' ? `Muted ${t.display} for ${mins} minutes.` : `Unmuted ${t.display}.`);
   }
@@ -1537,6 +1541,7 @@ async function social(ws, m) {
     if (!other || !(await profiles.areFriends(ws.acct, other.name.toLowerCase()))) return;
     return wsSend(ws, { t: 'dms', with: other.name, msgs: await profiles.dmHistory(ws.acct, other.name.toLowerCase()) });
   }
+  if (m.t === 'voice') return voice.handle(ws, m);
   if (m.t === 'mod') {
     if (m.action === 'list') return modList(ws);
     if (['kick', 'ban', 'unban'].includes(m.action)) await modAction(ws, m.action, m.name, m.reason);
@@ -1544,7 +1549,25 @@ async function social(ws, m) {
     return modList(ws);
   }
 }
-const SOCIAL = new Set(['friends', 'friend', 'dm', 'dms', 'mod']);
+const SOCIAL = new Set(['friends', 'friend', 'dm', 'dms', 'mod', 'voice']);
+
+// voice chat channels: signed-in, not muted by the owner, and a clean channel name
+const voice = createVoice({
+  send: wsSend,
+  isOwner,
+  canTalk: (ws) => (!ws.acct ? 'Sign in to use voice chat.' : mutedFor(ws) ? `You're muted for ${mutedFor(ws)} more minute${mutedFor(ws) === 1 ? '' : 's'}.` : null),
+  checkName: (name) => (badName(name) || checkText(name).level ? 'Pick a different channel name.' : null),
+  // a voice server for every game mode, plus a lobby
+  servers: ['Lobby', ...Object.values(MODES).map((n) => n.replace(/ \(.*\)$/, ''))],
+  // game chat: your team in team games, everyone otherwise
+  gameChannel: (ws) => {
+    const p = playerOf(ws);
+    if (!p || !p.room) return null;
+    const team = p.team && p.team !== 'human' ? p.team : null;
+    const label = team ? team[0].toUpperCase() + team.slice(1) + ' team' : 'Match';
+    return { key: `g${p.room.id}-${team || 'all'}`, name: `${label} · ${p.room.settings.name}`, pid: p.id };
+  },
+});
 
 wss.on('connection', (ws, req) => {
   let p = null;
@@ -1617,6 +1640,7 @@ wss.on('connection', (ws, req) => {
   });
   ws.on('close', () => {
     unwatch(ws);
+    voice.gone(ws);
     if (ws.acct) { online.get(ws.acct)?.delete(ws); if (!online.get(ws.acct)?.size) online.delete(ws.acct); presence(ws.acct); }
     if (p) { console.log(`[leave] ${p.name}`); leaveRoom(p); }
   });

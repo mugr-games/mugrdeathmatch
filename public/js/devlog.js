@@ -1,6 +1,17 @@
 // The in-game devlog (main menu → Devlog), newest first. Add an entry at the top for each update.
 export const DEVLOG = [
   {
+    date: '2026-10-25',
+    title: 'Voice chat',
+    notes: [
+      'Game chat, like CoD: in a match you\'re in voice with your team automatically (everyone in free-for-all). Open mic, push to talk (hold V), or mic off.',
+      'Voice servers (main menu → Voice): one for every game mode plus a Lobby, and you can make your own. Being in one is party chat, which overrides game chat; you stay in it while you play.',
+      'A speaker shows over the head of anyone talking, and who\'s talking is listed bottom left. Mute or set the volume of anyone in the Voice tab.',
+      'Sign in to talk. Guests can listen to game chat.',
+      'The leaderboard has Goals and Parkour times.',
+    ],
+  },
+  {
     date: '2026-10-24',
     title: 'MUGR DEATHMATCH: the looks update',
     notes: [
