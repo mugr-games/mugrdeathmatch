@@ -26,6 +26,9 @@ const PALETTES = {
   pitch: { concrete: '#8f9298', plate: '#5c6066', metal: '#b8bec6', panel: ['#1f56b8', '#173f88'], hazard: '#e8c020', neon: '#fff4d8', grass: ['#3f8f3a', '#347a30'] },
   court: { concrete: '#8f9298', plate: '#5a5248', metal: '#c4cad2', panel: ['#b8401f', '#8a2f16'], hazard: '#ff6a1a', neon: '#fff4d8', grass: ['#3f8f3a', '#347a30'] },
   bank: { concrete: '#9a968f', plate: '#2f3236', metal: '#7c8590', panel: ['#cfc8b8', '#b4ab98'], hazard: '#c8a040', neon: '#ffd890', stone: ['#d8d0c2', '#b9ae9c'], brick: ['#8e4a38', '#b0a596'], wood: ['#6e4a2c', '#4e331e'], marble: ['#ece8e0', '#cfc8bc'] },
+  asylum: { concrete: '#8f8c84', plate: '#4a4c4e', metal: '#7a8088', panel: ['#b8c0a8', '#8e9680'], hazard: '#b89a40', neon: '#d8f0ff', stone: ['#8a8478', '#6a6458'], wood: ['#6a5038', '#463424'], tile: ['#c8ccc0', '#a8ae9e'], grass: ['#4a5a32', '#3a3424'] },
+  harvest: { concrete: '#a8a090', plate: '#5a5048', metal: '#8a8e90', panel: ['#b89a70', '#8a7050'], hazard: '#d8a040', neon: '#ffd890', stone: ['#9a9284', '#7a7264'], wood: ['#8a6440', '#5a4028'], grass: ['#8a8a3a', '#6a4a2c'], corn: ['#c8b058', '#8a7a34'], foliage: ['#d06a1e', '#8a2e10'] },
+  hollow: { concrete: '#9a948a', plate: '#4a4440', metal: '#7a7a7a', panel: ['#b0a080', '#8a7a5a'], hazard: '#c84a2a', neon: '#ffcf80', stone: ['#9a948a', '#6e685e'], wood: ['#7a5636', '#503622'], grass: ['#7a7a34', '#5a4028'], cobble: ['#8e887c', '#4a4238'], foliage: ['#e0821e', '#9a3812'] },
   course: { concrete: '#c8c2b8', plate: '#4f5a6e', metal: '#9aa4b0', panel: ['#8a92a8', '#6a7288'], hazard: '#ffcf1a', neon: '#ff4fd8' },
 };
 // goal nets: a white grid you can see through
@@ -52,6 +55,12 @@ function glassMat() {
   return (glass ||= new THREE.MeshStandardMaterial({ color: 0x9fc4d8, metalness: 0.9, roughness: 0.08, transparent: true, opacity: 0.45 }));
 }
 
+// creeks and fountains: dark, glossy, see-through
+let water = null;
+function waterMat() {
+  return (water ||= new THREE.MeshStandardMaterial({ color: 0x24404e, metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.78 }));
+}
+
 function surf(mat, pal) {
   if (mat === 'neon') return neonMaterial(pal.neon);
   if (mat === 'line') return surfaceMaterial('concrete', { color: '#f4f4ee', bump: 0.2 });
@@ -64,6 +73,16 @@ function surf(mat, pal) {
   if (mat === 'brick') { const c = pal.brick || ['#9b5640', '#b5aa9c']; return surfaceMaterial('brick', { color: c[0], color2: c[1] }); }
   if (mat === 'wood') { const c = pal.wood || ['#8a6438', '#5e4126']; return surfaceMaterial('wood', { color: c[0], color2: c[1] }); }
   if (mat === 'glass') return glassMat();
+  if (mat === 'water') return waterMat();
+  if (mat === 'corn') { const c = pal.corn || ['#c8b058', '#8a7a34']; return surfaceMaterial('grass', { color: c[0], color2: c[1], bump: 2.2 }); }
+  if (mat === 'foliage') { const c = pal.foliage || ['#d06a1e', '#8a2e10']; return surfaceMaterial('grass', { color: c[0], color2: c[1], bump: 2.5 }); }
+  if (mat === 'hay') return surfaceMaterial('wood', { color: '#d8b860', color2: '#a8883a', bump: 2 });
+  if (mat === 'roof') return surfaceMaterial('brick', { color: '#5a4a44', color2: '#32282a' });
+  if (mat === 'barn') return surfaceMaterial('wood', { color: '#9a2a1e', color2: '#661a12' });
+  if (mat === 'tractor') return surfaceMaterial('metal', { color: '#2f7a2a' });
+  if (mat === 'pumpkin') return surfaceMaterial('clay', { color: '#e8761a' });
+  if (mat === 'logs') return surfaceMaterial('wood', { color: '#7a5232', color2: '#4a3020', bump: 2.2 });
+  if (mat === 'awning') return surfaceMaterial('hazard', { color: '#c03a2a' });
   if (mat === 'grass') return surfaceMaterial('grass', { color: (pal.grass || ['#4e7a36'])[0], color2: (pal.grass || [0, '#3a5a28'])[1] });
   if (mat === 'panel') return surfaceMaterial('panel', { color: pal.panel[0], color2: pal.panel[1] });
   if (mat === 'hazard') return surfaceMaterial('hazard', { color: pal.hazard });
@@ -228,5 +247,5 @@ function codeMap(id, def) {
   // the pitch stays clean: no litter, tufts or wall clutter on a football ground
   const detail = def.soccer || def.heist ? { group: new THREE.Group(), tick: () => {} } : decorate(id, def.boxes.filter((b) => b.mat !== 'clip'), def.bounds, pal);
   group.add(detail.group);
-  return { id, name: def.name, group, cells, boxes: def.boxes, spawns: def.spawns, bounds: def.bounds, sun: (Array.isArray(def.sun) ? def.sun : def.sun?.dir) || [0.3, 0.3, 0.85], pads: def.pads || [], killZ: def.killZ, tick: detail.tick };
+  return { id, name: def.name, group, cells, boxes: def.boxes, spawns: def.spawns, bounds: def.bounds, sun: (Array.isArray(def.sun) ? def.sun : def.sun?.dir) || [0.3, 0.3, 0.85], pads: def.pads || [], killZ: def.killZ, tick: detail.tick, mood: def.mood || 'day' };
 }

@@ -333,6 +333,8 @@ export function makeSky(sunDir) {
     uTop: { value: new THREE.Color('#2a64c8') },
     uHorizon: { value: new THREE.Color('#c9d9ee') },
     uGround: { value: new THREE.Color('#4a4a4f') },
+    uGlow: { value: 1 }, // the sun disc and its glare (a dim moon at night)
+    uCloud: { value: new THREE.Color(1, 1, 1) },
   };
   const mat = new THREE.ShaderMaterial({
     uniforms,
@@ -340,7 +342,7 @@ export function makeSky(sunDir) {
     depthWrite: false,
     vertexShader: /* glsl */ `varying vec3 vDir; void main() { vDir = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.); gl_Position = p.xyww; }`,
     fragmentShader: /* glsl */ `
-      uniform vec3 uSun; uniform float uTime; uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uGround;
+      uniform vec3 uSun; uniform float uTime; uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uGround; uniform float uGlow; uniform vec3 uCloud;
       varying vec3 vDir;
       ${NOISE}
       void main() {
@@ -348,11 +350,11 @@ export function makeSky(sunDir) {
         float h = d.z;
         vec3 c = h > 0. ? mix(uHorizon, uTop, pow(h, .45)) : mix(uHorizon, uGround, pow(-h, .35));
         float s = max(dot(d, uSun), 0.);
-        c += vec3(1., .85, .6) * (pow(s, 900.) * 40. + pow(s, 12.) * .35);
+        c += vec3(1., .85, .6) * (pow(s, 900.) * 40. + pow(s, 12.) * .35) * uGlow;
         if (h > 0.) {
           vec2 cp = d.xy / (h + .12) * 3. + vec2(uTime * .01, 0.);
           float cl = smoothstep(.45, .8, fbm(cp) * .7 + fbm(cp * 2.7) * .3);
-          c = mix(c, vec3(1.) * (.85 + .3 * s), cl * smoothstep(0., .25, h) * .85);
+          c = mix(c, uCloud * (.85 + .3 * s * uGlow), cl * smoothstep(0., .25, h) * .85);
         }
         gl_FragColor = vec4(c, 1.);
         #include <tonemapping_fragment>

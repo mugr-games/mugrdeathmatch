@@ -2,6 +2,19 @@
 export const DEVLOG = [
   {
     date: '2026-10-25',
+    title: 'Arms, third person, autumn and a darker zombies',
+    notes: [
+      'You can see your arms in first person now, holding the gun with both hands. Reloads, shotgun pumps and sprinting all move them.',
+      'Everyone holds their weapons properly in their hands. The crowbar is held upright and chops when you swing it.',
+      'Third person: press F to switch between first and third person.',
+      'Zombies is played at night now: dark, foggy, and you carry a flashlight.',
+      'New zombies map: Asylum, a walled hospital with four wings behind barricades.',
+      'New autumn maps: Harvest (a farm with a barn, silo, pumpkin patch and corn maze, also playable as zombies) and Hollow (a village with a chapel and bell tower, cabins and a covered bridge). Leaves fall as you play.',
+      'Better textures: stone in real courses, asphalt roads, marble, tiles, cobbles and leaf-covered ground, grime where walls meet the floor, and woven suits.',
+    ],
+  },
+  {
+    date: '2026-10-25',
     title: 'The Bank Job (heist)',
     notes: [
       'New: Heist on the main menu. Find a crew of 2 to 4, or host a private one and share the code.',

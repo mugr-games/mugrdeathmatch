@@ -950,6 +950,240 @@ const course = (() => {
 })();
 
 // maps only played in their own mode (not in the normal rotation)
+// ------------------------------------------------------------------ Asylum (zombies): a walled hospital around a courtyard
+// You start in the courtyard. Four wings (north wards, east surgery, south offices, west kitchens) are behind
+// barricades, and the corner rooms that join them behind dearer ones. Plays as a normal arena too.
+const asylum = (() => {
+  const { B, box, stairs } = builder();
+  const D = [];
+  const deco = (x0, y0, z0, x1, y1, z1, mat) => D.push({ mins: [Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)], maxs: [Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)], mat });
+  const E = 1600, C = 450, H = 260, DOOR = 170;
+  const doors = [];
+  box(-E - 300, -E - 300, -64, E + 300, E + 300, 0, 'tile');
+  deco(-C, -C, 0, C, C, 0.5, 'grass');
+  // the outer wall, tall and grim
+  box(-E - 40, -E - 40, 0, E + 40, -E, 420, 'stone'); box(-E - 40, E, 0, E + 40, E + 40, 420, 'stone');
+  box(-E - 40, -E, 0, -E, E, 420, 'stone'); box(E, -E, 0, E + 40, E, 420, 'stone');
+  // a wall along x (at y) or y (at x) from a to b, with barricaded doorways [centre, cost]
+  const wall = (axis, at, a, b, gaps, mat = 'panel') => {
+    let p = a;
+    for (const [c, cost] of [...gaps, [b + DOOR / 2, 0]]) {
+      const g0 = c - DOOR / 2, g1 = c + DOOR / 2;
+      if (g0 > p) { if (axis === 'x') box(p, at - 12, 0, g0, at + 12, H, mat); else box(at - 12, p, 0, at + 12, g0, H, mat); }
+      if (cost) {
+        if (axis === 'x') box(g0, at - 12, 160, g1, at + 12, H, mat); else box(at - 12, g0, 160, at + 12, g1, H, mat);
+        doors.push({ mins: axis === 'x' ? [g0, at - 20, 0] : [at - 20, g0, 0], maxs: axis === 'x' ? [g1, at + 20, 160] : [at + 20, g1, 160], cost, name: 'Boarded door' });
+      }
+      p = Math.max(p, g1);
+    }
+  };
+  // the courtyard ring: one barricade into each wing
+  wall('x', C, -C, C, [[0, 750]], 'stone'); wall('x', -C, -C, C, [[0, 1000]], 'stone');
+  wall('y', C, -C, C, [[0, 1000]], 'stone'); wall('y', -C, -C, C, [[0, 1250]], 'stone');
+  // wings to corner rooms (the wings are x or y in -C..C; corners beyond both)
+  for (const s of [-1, 1]) {
+    wall('y', s * C, s > 0 ? C : -E, s > 0 ? E : -C, [[s * 1000, 1500]]); // N/S wings into the corner rooms beside them
+    wall('y', -s * C, s > 0 ? C : -E, s > 0 ? E : -C, [[s * 1000, 1500]]);
+    wall('x', s * C, C, E, [[1000, 1500]]); wall('x', s * C, -E, -C, [[-1000, 1500]]);
+  }
+  // the courtyard: a dry fountain, benches, two dead trees
+  box(-70, -70, 0, 70, 70, 30, 'stone'); box(-18, -18, 30, 18, 18, 90, 'stone'); deco(-60, -60, 30, 60, 60, 31, 'water');
+  for (const [x, y] of [[-260, 200], [260, -200], [-260, -200], [260, 200]]) box(x - 50, y - 14, 0, x + 50, y + 14, 20, 'wood');
+  for (const [x, y] of [[-300, 320], [300, -320]]) { box(x - 10, y - 10, 0, x + 10, y + 10, 200, 'wood'); deco(x - 70, y - 4, 150, x + 70, y + 4, 156, 'wood'); deco(x - 4, y - 60, 175, x + 4, y + 60, 181, 'wood'); }
+  // north wing: two wards of beds either side of a corridor
+  box(-C, 900, 0, -60, 920, H, 'panel'); box(60, 900, 0, C, 920, H, 'panel');
+  for (const x of [-360, -240, -120, 120, 240, 360]) for (const y of [700, 1150, 1400]) { box(x - 22, y - 44, 0, x + 22, y + 44, 24, 'metal'); deco(x - 20, y - 42, 24, x + 20, y + 42, 30, 'tile'); }
+  // east wing: the operating theatre (a table under a lamp) and a raised viewing gallery
+  box(700, -120, 0, 900, -40, 36, 'metal'); deco(760, -110, 200, 840, -50, 206, 'neon');
+  box(1250, -C, 0, E, C, 80, 'tile'); stairs(1250, 0, 0, '-x', 140, 5, 'tile');
+  box(1250, -C, 80, 1270, -90, 120, 'metal'); box(1250, 90, 80, 1270, C, 120, 'metal'); // gallery rail, open at the stairs
+  for (const y of [-300, -150, 150, 300]) box(1000, y - 30, 0, 1080, y + 30, 50, 'metal');
+  // south wing: offices with desks and filing cabinets
+  box(-C, -900, 0, -60, -880, H, 'panel'); box(60, -900, 0, C, -880, H, 'panel');
+  for (const [x, y] of [[-300, -650], [300, -650], [-300, -1200], [300, -1200], [0, -1400]]) { box(x - 60, y - 30, 0, x + 60, y + 30, 36, 'wood'); box(x - 90, y + 50, 0, x - 60, y + 80, 90, 'metal'); }
+  // west wing: the kitchen and the boiler room
+  box(-1100, -300, 0, -800, -220, 44, 'metal'); box(-1100, 220, 0, -800, 300, 44, 'metal');
+  box(-1450, -120, 0, -1250, 120, 160, 'metal'); deco(-1440, -110, 160, -1260, 110, 166, 'hazard');
+  for (const y of [-500, 500]) box(-1000, y - 40, 0, -920, y + 40, 70, 'wood');
+  // corner rooms: storage with crates to climb
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+    const cx = sx * 1050, cy = sy * 1050;
+    box(cx - 60, cy - 60, 0, cx + 60, cy + 60, 70, 'wood'); box(cx + sx * 120 - 50, cy - 40, 0, cx + sx * 120 + 50, cy + 40, 40, 'wood');
+    box(cx - 200, cy + sy * 200 - 30, 0, cx - 80, cy + sy * 200 + 30, 110, 'metal');
+  }
+  // flickering ward lights
+  for (const [x, y] of [[0, 700], [0, 1300], [800, 0], [1300, 0], [0, -700], [0, -1300], [-800, 0], [-1300, 0], [1050, 1050], [-1050, -1050], [1050, -1050], [-1050, 1050]]) deco(x - 30, y - 6, H - 8, x + 30, y + 6, H - 4, 'neon');
+  const buys = [
+    { kind: 'box', o: [0, 1300, 1] },
+    { kind: 'perk', what: 'quick', o: [-200, 380, 1] }, { kind: 'wall', what: '357', o: [200, -380, 1] }, { kind: 'wall', what: 'smg1', o: [380, 200, 1] },
+    { kind: 'perk', what: 'jugg', o: [1100, 250, 1] }, { kind: 'wall', what: 'shotgun', o: [700, 300, 1] }, { kind: 'wall', what: 'ar2', o: [1450, -300, 81] },
+    { kind: 'perk', what: 'double', o: [200, -1000, 1] }, { kind: 'wall', what: 'autoshotgun', o: [-200, -1450, 1] },
+    { kind: 'perk', what: 'speed', o: [-1150, 400, 1] }, { kind: 'wall', what: 'crossbow', o: [-700, -350, 1] },
+    { kind: 'perk', what: 'stamina', o: [1050, 1250, 1] }, { kind: 'wall', what: 'lmg', o: [-1250, -1250, 1] }, { kind: 'wall', what: 'sniper', o: [1250, -1250, 1] }, { kind: 'wall', what: 'grenade', o: [-1250, 1250, 1] },
+  ];
+  return autoLayout({ name: 'Asylum', boxes: B, decor: D, sun: [0.3, -0.5, 0.6], bounds: [[-E, -E, -40], [E, E, 500]], killZ: -500, pads: [], doors, buys, zstart: [0, 260, 1] }, { spawns: 16, items: 22, props: 8 });
+})();
+
+// ------------------------------------------------------------------ Harvest (autumn): a farm at harvest time
+// A fenced farmyard round the farmhouse, a two-floor barn with a hayloft, the silo, a tractor, hay bales, the
+// pumpkin patch and a corn maze, all under autumn trees. In zombies you start in the yard; the gates are barricaded.
+const harvest = (() => {
+  const { B, box, stairs } = builder();
+  const D = [];
+  const deco = (x0, y0, z0, x1, y1, z1, mat) => D.push({ mins: [Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)], maxs: [Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)], mat });
+  const E = 2000, YX = 650, YY = 550, FH = 110, GATE = 180;
+  const doors = [];
+  box(-E - 300, -E - 300, -64, E + 300, E + 300, 0, 'leaves');
+  // the cornfield all round the edge: too tall to see over
+  box(-E - 60, -E - 60, 0, E + 60, -E, 320, 'corn'); box(-E - 60, E, 0, E + 60, E + 60, 320, 'corn');
+  box(-E - 60, -E, 0, -E, E, 320, 'corn'); box(E, -E, 0, E + 60, E, 320, 'corn');
+  // tree: a trunk you can hide behind, a canopy of autumn leaves above
+  const tree = (x, y, h = 210) => {
+    box(x - 13, y - 13, 0, x + 13, y + 13, h, 'wood');
+    deco(x - 90, y - 90, h - 30, x + 90, y + 90, h + 40, 'foliage');
+    deco(x - 60, y - 60, h + 40, x + 60, y + 60, h + 90, 'foliage');
+  };
+  // the yard fence, with a barricaded gate on each side
+  const fence = (axis, at, a, b, gap, cost) => {
+    const g0 = gap - GATE / 2, g1 = gap + GATE / 2;
+    if (axis === 'x') { box(a, at - 6, 0, g0, at + 6, FH, 'wood'); box(g1, at - 6, 0, b, at + 6, FH, 'wood'); }
+    else { box(at - 6, a, 0, at + 6, g0, FH, 'wood'); box(at - 6, g1, 0, at + 6, b, FH, 'wood'); }
+    doors.push({ mins: axis === 'x' ? [g0, at - 18, 0] : [at - 18, g0, 0], maxs: axis === 'x' ? [g1, at + 18, FH] : [at + 18, g1, FH], cost, name: 'Gate' });
+  };
+  fence('x', YY, -YX, YX, 0, 750); fence('x', -YY, -YX, YX, 0, 1000);
+  fence('y', YX, -YY, YY, 0, 1000); fence('y', -YX, -YY, YY, 200, 1250);
+  // the farmhouse in the yard: porch, two rooms, a doorway each way
+  const fx = -200, fy = 200;
+  box(fx - 220, fy - 140, 0, fx + 220, fy - 124, 200, 'wood'); box(fx - 220, fy + 124, 0, fx + 220, fy + 140, 200, 'wood');
+  box(fx - 220, fy - 140, 0, fx - 204, fy - 40, 200, 'wood'); box(fx - 220, fy + 40, 0, fx - 204, fy + 140, 200, 'wood'); box(fx - 220, fy - 40, 140, fx - 204, fy + 40, 200, 'wood');
+  box(fx + 204, fy - 140, 0, fx + 220, fy - 40, 200, 'wood'); box(fx + 204, fy + 40, 0, fx + 220, fy + 140, 200, 'wood'); box(fx + 204, fy - 40, 140, fx + 220, fy + 40, 200, 'wood');
+  box(fx - 10, fy - 124, 0, fx + 10, fy - 30, 200, 'wood'); box(fx - 10, fy + 30, 0, fx + 10, fy + 124, 200, 'wood');
+  box(fx - 240, fy - 160, 200, fx + 240, fy + 160, 216, 'roof');
+  box(fx - 300, fy - 140, 0, fx - 220, fy + 140, 12, 'wood'); // porch
+  box(fx + 60, fy - 100, 0, fx + 160, fy - 60, 34, 'wood'); // kitchen table
+  // the yard: hay bales, a well, a scarecrow, trees
+  for (const [x, y, n] of [[250, -250, 2], [350, -180, 1], [-450, -300, 3], [480, 300, 1]]) for (let k = 0; k < n; k++) box(x - 30, y - 20 + k * 42, 0, x + 30, y + 20 + k * 42, 40, 'hay');
+  box(200, 250, 0, 260, 310, 40, 'stone');
+  tree(-500, 420); tree(520, -420); tree(-520, -60, 240);
+  // east: the barn, two floors; stairs up to the hayloft; big doors at both ends
+  const bx = 1250, by = 300, BW = 360, BL = 520, BH = 300;
+  box(bx - BW, by - BL, 0, bx + BW, by - BL + 16, BH, 'barn'); box(bx - BW, by + BL - 16, 0, bx + BW, by + BL, BH, 'barn');
+  box(bx - BW, by - BL, 0, bx - BW + 16, by - 120, BH, 'barn'); box(bx - BW, by + 120, 0, bx - BW + 16, by + BL, BH, 'barn'); box(bx - BW, by - 120, 200, bx - BW + 16, by + 120, BH, 'barn');
+  box(bx + BW - 16, by - BL, 0, bx + BW, by - 120, BH, 'barn'); box(bx + BW - 16, by + 120, 0, bx + BW, by + BL, BH, 'barn'); box(bx + BW - 16, by - 120, 200, bx + BW, by + 120, BH, 'barn');
+  box(bx - BW, by - BL, BH, bx + BW, by + BL, BH + 20, 'roof');
+  box(bx - BW + 16, by + 120, 150, bx + BW - 16, by + BL - 16, 164, 'wood'); // hayloft floor
+  for (let i = 0; i < 9; i++) box(bx + 200 - i * 28 - 28, by + 40, 0, bx + 200 - i * 28, by + 110, (i + 1) * 16 + 6, 'wood');
+  for (const [x, y] of [[bx - 200, by + 300], [bx + 100, by + 380], [bx + 200, by + 220]]) box(x - 30, y - 20, 164, x + 30, y + 20, 204, 'hay');
+  for (const [x, y] of [[bx - 220, by - 300], [bx + 200, by - 380], [bx, by - 200]]) box(x - 40, y - 26, 0, x + 40, y + 26, 52, 'hay');
+  // the silo and the tractor
+  box(1500, -1300, 0, 1700, -1100, 520, 'metal'); deco(1490, -1310, 520, 1710, -1090, 560, 'roof');
+  box(900, -900, 0, 1060, -820, 70, 'tractor'); box(1000, -920, 0, 1060, -800, 130, 'tractor');
+  for (const [x, y] of [[920, -930], [920, -790]]) box(x - 30, y - 12, 0, x + 30, y + 12, 60, 'roof');
+  tree(800, -400); tree(1500, 1100, 240); tree(1700, -500);
+  // west: the pumpkin patch (big ones to hide behind, small ones underfoot), an old cart
+  for (let i = 0; i < 40; i++) {
+    const x = -900 - (i % 8) * 120 - ((i * 37) % 40), y = -900 + Math.floor(i / 8) * 260 + ((i * 53) % 60);
+    if (i % 5 === 0) box(x - 26, y - 26, 0, x + 26, y + 26, 40, 'pumpkin'); else deco(x - 12, y - 12, 0, x + 12, y + 12, 18, 'pumpkin');
+  }
+  box(-1500, 700, 0, -1300, 800, 50, 'wood'); box(-1500, 690, 50, -1300, 700, 90, 'wood');
+  tree(-1300, 1300); tree(-1700, -1500); tree(-800, 1500, 230);
+  // north and south: the corn maze (south) and an orchard (north)
+  const maze = [
+    [-1400, -1700, -200, -1680], [-1400, -1700, -1380, -1100], [-1100, -1500, -1080, -800], [-1100, -1500, -300, -1480],
+    [-800, -1300, -780, -700], [-600, -1700, -580, -1200], [-400, -1300, -100, -1280], [-200, -1100, -180, -700],
+    [100, -1500, 120, -900], [100, -1500, 700, -1480], [400, -1300, 420, -700], [400, -1300, 900, -1280], [700, -1100, 1200, -1080], [1200, -1700, 1220, -1100],
+  ];
+  for (const [x0, y0, x1, y1] of maze) box(x0, y0, 0, x1, y1, 180, 'corn');
+  for (const x of [-500, -150, 200]) for (const y of [900, 1250, 1600]) tree(x, y, 190);
+  const buys = [
+    { kind: 'box', o: [bx, by - 300, 1] },
+    { kind: 'perk', what: 'quick', o: [-400, 420, 1] }, { kind: 'wall', what: '357', o: [380, -420, 1] }, { kind: 'wall', what: 'smg1', o: [-560, -200, 1] },
+    { kind: 'perk', what: 'jugg', o: [bx + 100, by + 300, 165] }, { kind: 'wall', what: 'shotgun', o: [bx - 250, by - 400, 1] }, { kind: 'wall', what: 'ar2', o: [1300, -900, 1] },
+    { kind: 'perk', what: 'speed', o: [0, 900, 1] }, { kind: 'wall', what: 'crossbow', o: [-200, 1400, 1] },
+    { kind: 'perk', what: 'double', o: [-1000, 0, 1] }, { kind: 'wall', what: 'autoshotgun', o: [-1500, 600, 1] },
+    { kind: 'perk', what: 'stamina', o: [0, -1600, 1] }, { kind: 'wall', what: 'lmg', o: [800, -1600, 1] }, { kind: 'wall', what: 'sniper', o: [1600, -1500, 1] }, { kind: 'wall', what: 'grenade', o: [-1600, -1200, 1] },
+  ];
+  return autoLayout({ name: 'Harvest', mood: 'fall', boxes: B, decor: D, sun: [-0.6, -0.5, 0.45], bounds: [[-E, -E, -40], [E, E, 600]], killZ: -500, pads: [], doors, buys, zstart: [0, 0, 1] }, { spawns: 18, items: 24, props: 10 });
+})();
+
+// ------------------------------------------------------------------ Hollow (autumn): a village in the woods
+// A cobbled square with a well, the chapel (climb the bell tower), log cabins, a graveyard, and a creek with a
+// covered bridge. Leaves everywhere.
+const hollow = (() => {
+  const { B, box, stairs } = builder();
+  const D = [];
+  const deco = (x0, y0, z0, x1, y1, z1, mat) => D.push({ mins: [Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)], maxs: [Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)], mat });
+  const E = 1800;
+  // ground in two halves either side of the creek (a channel 48 deep from y -760 to -560)
+  box(-E - 200, -560, -64, E + 200, E + 200, 0, 'leaves');
+  box(-E - 200, -E - 200, -64, E + 200, -760, 0, 'leaves');
+  box(-E - 200, -760, -112, E + 200, -560, -48, 'cobble');
+  deco(-E - 200, -760, -46, E + 200, -560, -44, 'water');
+  // banks: a step down at each end so you can climb out
+  for (const x of [-1500, 600, 1500]) { stairs(x, -644, -48, '+y', 120, 3, 'cobble'); stairs(x, -676, -48, '-y', 120, 3, 'cobble'); }
+  // woods all round: a ring of big trunks against a hedge
+  box(-E - 60, -E - 60, 0, E + 60, -E, 300, 'foliage'); box(-E - 60, E, 0, E + 60, E + 60, 300, 'foliage');
+  box(-E - 60, -E, 0, -E, E, 300, 'foliage'); box(E, -E, 0, E + 60, E, 300, 'foliage');
+  const tree = (x, y, h = 230) => {
+    box(x - 15, y - 15, 0, x + 15, y + 15, h, 'wood');
+    deco(x - 100, y - 100, h - 40, x + 100, y + 100, h + 40, 'foliage');
+    deco(x - 70, y - 70, h + 40, x + 70, y + 70, h + 100, 'foliage');
+  };
+  // the square: cobbles, the well, market stalls
+  deco(-500, -400, 0, 500, 400, 0.5, 'cobble');
+  box(-50, -50, 0, 50, 50, 40, 'stone'); box(-50, -50, 40, -40, 50, 120, 'wood'); box(40, -50, 40, 50, 50, 120, 'wood'); box(-55, -55, 120, 55, 55, 130, 'roof');
+  for (const [x, y] of [[-320, -250], [320, 250], [320, -250]]) { box(x - 70, y - 30, 0, x + 70, y + 30, 40, 'wood'); deco(x - 80, y - 40, 110, x + 80, y + 40, 116, 'awning'); for (const dx of [-70, 70]) box(x + dx - 4, y - 4, 40, x + dx + 4, y + 4, 110, 'wood'); }
+  // the chapel to the north: nave with a doorway, and the bell tower with stairs to the top
+  const cx = 0, cy = 900;
+  box(cx - 260, cy - 300, 0, cx - 60, cy - 284, 260, 'stone'); box(cx + 60, cy - 300, 0, cx + 260, cy - 284, 260, 'stone'); box(cx - 60, cy - 300, 180, cx + 60, cy - 284, 260, 'stone');
+  box(cx - 260, cy + 284, 0, cx + 260, cy + 300, 260, 'stone');
+  box(cx - 260, cy - 300, 0, cx - 244, cy + 300, 260, 'stone'); box(cx + 244, cy - 300, 0, cx + 260, cy + 300, 260, 'stone');
+  box(cx - 280, cy - 320, 260, cx + 280, cy + 320, 280, 'roof');
+  for (const y of [cy - 150, cy - 50, cy + 50]) for (const x of [cx - 150, cx + 70]) box(x, y - 14, 0, x + 80, y + 14, 22, 'wood'); // pews
+  box(cx - 60, cy + 200, 0, cx + 60, cy + 260, 40, 'stone'); // altar
+  const tx = cx + 380, ty = cy + 120;
+  // the bell tower: a doorway on the south side, a stair round the inside walls, the belfry floor on top
+  box(tx - 100, ty + 84, 0, tx + 100, ty + 100, 440, 'stone'); box(tx + 84, ty - 84, 0, tx + 100, ty + 84, 440, 'stone');
+  box(tx - 100, ty - 84, 0, tx - 84, ty + 84, 440, 'stone'); box(tx - 100, ty - 100, 0, tx - 84, ty - 84, 440, 'stone');
+  box(tx - 20, ty - 100, 0, tx + 100, ty - 84, 440, 'stone'); box(tx - 84, ty - 100, 140, tx - 20, ty - 84, 440, 'stone');
+  for (let i = 0; i < 26; i++) {
+    const side = Math.floor(i / 6) % 4, k = i % 6;
+    const [x0, y0] = [[tx - 60 + k * 22, ty - 70], [tx + 50, ty - 60 + k * 22], [tx + 60 - k * 22, ty + 50], [tx - 70, ty + 60 - k * 22]][side];
+    box(x0 - 12, y0 - 14, 0, x0 + 12, y0 + 14, (i + 1) * 16, 'wood');
+  }
+  box(tx - 26, ty - 84, 400, tx + 84, ty + 84, 416, 'wood'); // the belfry floor, past the top of the stair
+  for (const [x, y] of [[tx - 100, ty - 100], [tx + 84, ty - 100], [tx - 100, ty + 84], [tx + 84, ty + 84]]) box(x, y, 440, x + 16, y + 16, 600, 'stone');
+  box(tx - 110, ty - 110, 600, tx + 110, ty + 110, 620, 'roof');
+  // graveyard beside the chapel: a low wall and headstones
+  box(-800, 650, 0, -350, 662, 50, 'stone'); box(-800, 1250, 0, -350, 1262, 50, 'stone'); box(-812, 650, 0, -800, 1262, 50, 'stone');
+  for (let i = 0; i < 12; i++) { const x = -740 + (i % 4) * 110, y = 750 + Math.floor(i / 4) * 160; box(x - 18, y - 5, 0, x + 18, y + 5, 46 + (i % 3) * 8, 'stone'); }
+  // log cabins round the square, each with a doorway and a window
+  const cabin = (x, y, doorEast) => {
+    const w = 170, d = 130, h = 170, t = 7;
+    box(x - w, y - d, 0, x + w, y - d + 14, h, 'logs'); box(x - w, y + d - 14, 0, x + w, y + d, h, 'logs');
+    const dx = doorEast ? x + w : x - w, wx = doorEast ? x - w : x + w;
+    box(dx - t, y - d, 0, dx + t, y - 40, h, 'logs'); box(dx - t, y + 40, 0, dx + t, y + d, h, 'logs'); box(dx - t, y - 40, 130, dx + t, y + 40, h, 'logs');
+    box(wx - t, y - d, 0, wx + t, y + d, 70, 'logs'); box(wx - t, y - d, 130, wx + t, y + d, h, 'logs');
+    box(wx - t, y - d, 70, wx + t, y - 40, 130, 'logs'); box(wx - t, y + 40, 70, wx + t, y + d, 130, 'logs');
+    box(x - w - 20, y - d - 20, h, x + w + 20, y + d + 20, h + 16, 'roof');
+    box(x - 60, y - 40, 0, x + 20, y + 10, 34, 'wood');
+  };
+  cabin(-900, 100, true); cabin(900, 100, false); cabin(-900, -300, true); cabin(900, -350, false); cabin(1300, 900, false);
+  // the covered bridge over the creek
+  box(-80, -800, 0, 80, -520, 12, 'wood');
+  for (const x of [-80, 66]) { box(x, -800, 12, x + 14, -520, 60, 'wood'); for (const y of [-790, -660, -530]) box(x, y, 12, x + 14, y + 12, 180, 'wood'); }
+  box(-100, -820, 180, 100, -500, 196, 'roof');
+  // a footbridge at the east end, logs at the west
+  box(1200, -780, 0, 1260, -540, 10, 'wood');
+  box(-1300, -700, -48, -1240, -620, -10, 'wood');
+  // south bank: a mill and its pond edge, stacked logs
+  box(-200, -1300, 0, 200, -1100, 180, 'stone'); box(-200, -1316, 180, 200, -1084, 196, 'roof'); box(-60, -1100, 0, 60, -1090, 120, 'wood');
+  for (const [x, y] of [[600, -1100], [-700, -1200], [1000, -1400]]) for (let k = 0; k < 3; k++) box(x - 70, y - 14 + k * 30, 0, x + 70, y + 14 + k * 30, 28 - k * 0, 'logs');
+  // trees everywhere outside the square
+  for (const [x, y] of [[-600, -500], [650, 500], [-1400, 600], [1400, -100], [-1200, -1100], [1300, -1300], [-300, -1500], [500, 1500], [-1500, 1500], [1600, 1600], [-1500, -300], [1500, 400], [300, -1500], [-1000, 1400], [800, 1200]]) tree(x, y);
+  return autoLayout({ name: 'Hollow', mood: 'fall', boxes: B, decor: D, sun: [0.6, -0.4, 0.45], bounds: [[-E, -E, -120], [E, E, 700]], killZ: -500, pads: [] }, { spawns: 16, items: 24, props: 10 });
+})();
+
 export const MODE_MAPS = { soccer: 'pitch', parkour: 'course', mugrball: 'court', heist: 'bank' };
 
-export const CODE_MAPS = { foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court, bank };
+export const CODE_MAPS = { foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court, bank, asylum, harvest, hollow };

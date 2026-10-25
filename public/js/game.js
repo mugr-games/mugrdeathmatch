@@ -52,6 +52,27 @@ function angDiff(a, b) {
 const TO_VIEW = new THREE.Matrix4().set(0, -1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, 0, 0, 1);
 const FROM_VIEW = TO_VIEW.clone().invert();
 
+// The look of a match: the sun, sky, fog and fill light. Zombies is always at night; some maps are autumn.
+const MOODS = {
+  day: { sun: 0xfff1dc, sunI: 3.2, sky: 0xbfd6ff, ground: 0x5a4a3a, hemi: 0.55, hemiP: 2.6, top: '#2a64c8', horizon: '#c9d9ee', groundSky: '#4a4a4f', glow: 1, cloud: '#ffffff', fog: null, exposure: 1 },
+  fall: { sun: 0xffc48a, sunI: 2.9, sky: 0xffd9b0, ground: 0x6a4428, hemi: 0.6, hemiP: 2.6, top: '#4f78b4', horizon: '#f0c896', groundSky: '#5a4632', glow: 1.2, cloud: '#ffe6cc', fog: 0xe8c8a0, fogD: 0.00011, exposure: 1.05, leaves: true },
+  night: { sun: 0x8fa8ff, sunI: 0.45, sky: 0x3a4a7a, ground: 0x140f0c, hemi: 0.16, hemiP: 0.9, top: '#020308', horizon: '#121826', groundSky: '#050506', glow: 0.08, cloud: '#1c2230', fog: 0x0b0f17, fogD: 0.00055, exposure: 1.1, flashlight: true },
+};
+
+// a falling leaf for autumn maps
+function leafTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.beginPath(); g.ellipse(16, 16, 13, 7, 0.6, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(6, 23); g.lineTo(26, 9); g.stroke();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 // ------------------------------------------------------------------ small procedural textures for effects
 function canvasTex(size, draw) {
   const c = document.createElement('canvas');
@@ -353,6 +374,8 @@ export class Game {
     this.spawns = map.spawns;
     this.mapName = map.name;
     this.mapId = id;
+    this.mapMood = map.mood;
+    this.mood = null; // set again for the new map
 
     // sun and its shadow box sized to the map
     const [lo, hi] = map.bounds;
@@ -381,6 +404,86 @@ export class Game {
     this.scene.environment = tex;
     this.vmScene.environment = tex;
     progress('');
+  }
+
+  // ---------------------------------------------------------------- atmosphere
+  setMood(mood) {
+    if (this.mood === mood || !this.sky) return;
+    this.mood = mood;
+    const M = MOODS[mood] || MOODS.day;
+    this.sun.color.set(M.sun);
+    this.sun.intensity = M.sunI;
+    this.hemi.color.set(M.sky);
+    this.hemi.groundColor.set(M.ground);
+    this.hemi.intensity = this.q.potato ? M.hemiP : M.hemi;
+    this.scene.fog = M.fog ? new THREE.FogExp2(M.fog, M.fogD) : null;
+    this.renderer.toneMappingExposure = M.exposure;
+    const paint = (sky) => {
+      const u = sky.userData.uniforms;
+      u.uTop.value.set(M.top); u.uHorizon.value.set(M.horizon); u.uGround.value.set(M.groundSky);
+      u.uGlow.value = M.glow; u.uCloud.value.set(M.cloud);
+    };
+    paint(this.sky);
+    // reflections from the same sky (a dark one at night)
+    const env = new THREE.Scene();
+    const sky2 = makeSky(this.sky.userData.uniforms.uSun.value.toArray());
+    paint(sky2);
+    sky2.scale.setScalar(100);
+    env.add(sky2);
+    const pm = new THREE.PMREMGenerator(this.renderer);
+    const old = this.scene.environment;
+    this.scene.environment = this.vmScene.environment = pm.fromScene(env, 0.02, 1, 1000).texture;
+    pm.dispose();
+    old?.dispose?.();
+    // a flashlight for the dark
+    if (M.flashlight && !this.torch) {
+      this.torch = new THREE.SpotLight(0xfff2d8, 1400, 2200, 0.5, 0.7, 1.25);
+      this.scene.add(this.torch, this.torch.target);
+    }
+    if (this.torch) this.torch.visible = !!M.flashlight;
+    // falling leaves
+    if (M.leaves && !this.leaves) {
+      const N = this.q.potato ? 120 : 420;
+      const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+      const palette = [[0.75, 0.2, 0.06], [0.95, 0.45, 0.08], [0.95, 0.72, 0.15], [0.55, 0.32, 0.12]];
+      for (let i = 0; i < N; i++) {
+        pos.set([(Math.random() - 0.5) * 1600, (Math.random() - 0.5) * 1600, Math.random() * 700], i * 3);
+        col.set(palette[i % 4], i * 3);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      this.leaves = new THREE.Points(geo, new THREE.PointsMaterial({ size: 7, map: leafTexture(), vertexColors: true, transparent: true, alphaTest: 0.4, depthWrite: false }));
+      this.leaves.frustumCulled = false;
+      this.leaves.userData.phase = Array.from({ length: N }, () => Math.random() * 6.28);
+      this.scene.add(this.leaves);
+    }
+    if (this.leaves) this.leaves.visible = !!M.leaves;
+  }
+
+  // per frame: the flashlight follows your view; leaves drift down around you
+  updateMood(dt, t, eye, yaw, pitch) {
+    if (this.torch?.visible) {
+      const f = viewDir(yaw, pitch);
+      this.torch.position.set(eye[0] + f[0] * 4, eye[1] + f[1] * 4, eye[2] - 6);
+      this.torch.target.position.set(eye[0] + f[0] * 200, eye[1] + f[1] * 200, eye[2] + f[2] * 200 - 6);
+      this.torch.target.updateMatrixWorld();
+    }
+    if (this.leaves?.visible) {
+      const p = this.leaves.geometry.attributes.position, ph = this.leaves.userData.phase;
+      for (let i = 0; i < p.count; i++) {
+        let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+        z -= dt * (38 + (i % 7) * 4);
+        x += Math.sin(t * 1.3 + ph[i]) * dt * 30 + dt * 18;
+        y += Math.cos(t * 0.9 + ph[i]) * dt * 20;
+        // keep them in a box around the camera
+        if (x - eye[0] > 800) x -= 1600; else if (x - eye[0] < -800) x += 1600;
+        if (y - eye[1] > 800) y -= 1600; else if (y - eye[1] < -800) y += 1600;
+        if (z < eye[2] - 200) z += 900;
+        p.setXYZ(i, x, y, z);
+      }
+      p.needsUpdate = true;
+    }
   }
 
   // ---------------------------------------------------------------- networking
@@ -535,6 +638,7 @@ export class Game {
     this.setupFlags(m.flags);
     this.zv.setup(m.cz);
     this.hv.setup(m.watch ? null : m.heist);
+    this.setMood(m.mode === 'zombies' ? 'night' : this.mapMood || 'day');
     this.clearRagdolls();
     this.voting = null;
     this.hud.vote(null);
@@ -1755,6 +1859,7 @@ export class Game {
       this.setCamera(eye, (Math.atan2(d[1], d[0]) * 180) / Math.PI, (-Math.atan2(d[2], Math.hypot(d[0], d[1])) * 180) / Math.PI, 0);
     } else this.setCamera(eye, yaw, pitch, roll);
     this.sound.listener(eye, viewDir(yaw, pitch), [0, 0, 1]);
+    this.updateMood(dt, t, eye, yaw, pitch);
     this.sky.position.set(eye[0], eye[1], eye[2]);
     this.sky.userData.uniforms.uTime.value = t;
     this.eyePos = eye;
