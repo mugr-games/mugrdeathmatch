@@ -4,7 +4,7 @@
 // HUD: cash, wanted stars, radar, speedometer, prompts, the phone (buy cars and bikes, call your garage, the
 // map) and the gun shop counter.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { G, N, RW, KERB, CHUNK, genCell, district, D, DISTRICT_NAMES, isWater, isUrban, roadH, roadV, hasSignal, signal, exits, DIRS, RIGHT, PLACES, CITIES, TOWNS, AIRFIELDS, hash, cellOf } from './citygen.js';
 import { VEHICLES, PAINTS, PAINT_NAMES, MODS, PAINT_PRICE, unpackMods, seatPos, carBoxes } from './vehicle.js';
 import { CarModel, wheelInfo } from './carmodels.js';
@@ -187,7 +187,7 @@ function parts() {
   const P = isPotato();
   const lam = (c, o = {}) => (P ? new THREE.MeshLambertMaterial({ color: c, ...o }) : new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, ...o }));
   PARTS = {
-    trunk: new THREE.CylinderGeometry(0.6, 1, 1, 6).rotateX(Math.PI / 2).translate(0, 0, 0.5),
+    trunk: trunkGeo(),
     oak: leafy(),
     pine: pine(),
     palm: palmCrown(),
@@ -206,10 +206,15 @@ function parts() {
 }
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _c = new THREE.Color(), _e = new THREE.Euler();
 // tree shapes in a unit box (scaled per tree): lumpy, with shade toward the bottom and the inside (vertex colours)
-function shade(geo, lo = 0.55) {
+// (with a little speckle, so a canopy reads as clumps of leaves rather than one smooth colour)
+function shade(geo, lo = 0.55, speckle = 0.22) {
   geo.computeBoundingBox();
   const b = geo.boundingBox, p = geo.attributes.position, c = new Float32Array(p.count * 3);
-  for (let i = 0; i < p.count; i++) { const k = lo + (1 - lo) * ((p.getZ(i) - b.min.z) / Math.max(1e-6, b.max.z - b.min.z)); c[i * 3] = c[i * 3 + 1] = c[i * 3 + 2] = k; }
+  for (let i = 0; i < p.count; i++) {
+    const n = 1 - speckle / 2 + speckle * (0.5 + 0.5 * Math.sin(p.getX(i) * 23.1 + p.getY(i) * 17.3) * Math.sin(p.getZ(i) * 19.7 + p.getX(i) * 5.3));
+    const k = (lo + (1 - lo) * ((p.getZ(i) - b.min.z) / Math.max(1e-6, b.max.z - b.min.z))) * n;
+    c[i * 3] = k * 0.96; c[i * 3 + 1] = k; c[i * 3 + 2] = k * 0.92;
+  }
   geo.setAttribute('color', new THREE.BufferAttribute(c, 3));
   return geo;
 }
@@ -219,17 +224,43 @@ function lumpy(geo, amt, seed) {
   geo.computeVertexNormals();
   return geo;
 }
-function leafy() {
-  const blobs = [[0, 0, 0, 1], [0.45, 0.2, -0.15, 0.7], [-0.4, 0.3, -0.1, 0.68], [0.1, -0.45, -0.12, 0.7], [-0.15, 0, 0.45, 0.62]];
-  const geos = blobs.map(([x, y, z, r], k) => lumpy(new THREE.IcosahedronGeometry(r, 2), 0.12, k).translate(x, y, z).toNonIndexed());
-  geos.forEach((g) => g.deleteAttribute('uv'));
-  return shade(mergeGeometries(geos), 0.45);
+// a trunk that tapers, with two branches reaching up into the canopy
+function trunkGeo() {
+  const geos = [new THREE.CylinderGeometry(0.5, 1, 1, 8).rotateX(Math.PI / 2).translate(0, 0, 0.5)];
+  for (const [a, h] of [[0.6, 0.72], [2.6, 0.85]]) {
+    const br = new THREE.CylinderGeometry(0.22, 0.38, 0.5, 6).rotateX(Math.PI / 2).translate(0, 0, 0.25);
+    br.rotateY(0.6).rotateZ(a).translate(0, 0, h);
+    geos.push(br);
+  }
+  return mergeGeometries(geos.map((g) => g.toNonIndexed()));
 }
+// a ball with shared vertices, so it shades smoothly once it's been made lumpy
+function smoothBall(r, detail) {
+  const g = new THREE.IcosahedronGeometry(r, detail);
+  g.deleteAttribute('normal');
+  g.deleteAttribute('uv');
+  return mergeVertices(g);
+}
+// a broadleaf canopy: a big middle and clumps round it, each lumpy, so its outline is ragged
+function leafy() {
+  const blobs = [[0, 0, 0, 0.95], [0.5, 0.2, -0.12, 0.62], [-0.45, 0.32, -0.08, 0.6], [0.12, -0.5, -0.1, 0.62], [-0.2, 0.05, 0.45, 0.58],
+    [0.38, -0.3, 0.25, 0.5], [-0.4, -0.35, 0.12, 0.5], [0.2, 0.48, 0.28, 0.48], [-0.55, 0, -0.32, 0.44], [0.55, 0.05, -0.38, 0.42]];
+  const geos = blobs.map(([x, y, z, r], k) => lumpy(smoothBall(r, isPotato() ? 1 : 2), 0.16, k).translate(x, y, z).toNonIndexed());
+  geos.forEach((g) => g.deleteAttribute('uv'));
+  return shade(mergeGeometries(geos), 0.42, 0.3);
+}
+// a pine: six ragged tiers, wide at the bottom
 function pine() {
   const geos = [];
-  for (let k = 0; k < 4; k++) { const g = new THREE.ConeGeometry(1 - k * 0.2, 0.42, 10).rotateX(Math.PI / 2).translate(0, 0, 0.2 + k * 0.22); lumpy(g, 0.06, k); geos.push(g.toNonIndexed()); }
+  for (let k = 0; k < 6; k++) {
+    const g = new THREE.ConeGeometry(1 - k * 0.14, 0.32, 16, 2).rotateX(Math.PI / 2).translate(0, 0, 0.16 + k * 0.15);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) { const a = Math.atan2(p.getY(i), p.getX(i)); const n = 1 + 0.14 * Math.sin(a * 8 + k * 1.7); p.setXY(i, p.getX(i) * n, p.getY(i) * n); }
+    lumpy(g, 0.05, k);
+    geos.push(g.toNonIndexed());
+  }
   geos.forEach((g) => g.deleteAttribute('uv'));
-  return shade(mergeGeometries(geos), 0.5);
+  return shade(mergeGeometries(geos), 0.45, 0.25);
 }
 function palmCrown() {
   const geos = [];
@@ -389,7 +420,7 @@ export class CityView {
       const kinds = { oak: [], pine: [], palm: [], shrub: [], street: [] };
       trees.forEach((t, k) => {
         const th = t.kind === 'shrub' ? 0.01 : t.kind === 'pine' ? t.h * 0.35 : t.kind === 'palm' ? t.h : t.h * 0.5;
-        _m.compose(_p.set(t.x, t.y, t.z), _q.identity(), _s.set(t.kind === 'palm' ? 7 : 10, t.kind === 'palm' ? 7 : 10, th));
+        _m.compose(_p.set(t.x, t.y, t.z), _q.setFromEuler(_e.set(0, 0, hash(t.x | 0, t.y | 0, 7) * 6.28)), _s.set(t.kind === 'palm' ? 7 : 10, t.kind === 'palm' ? 7 : 10, th));
         trunk.setMatrixAt(k, _m);
         kinds[t.kind]?.push(t);
       });
@@ -403,8 +434,10 @@ export class CityView {
         grp.add(im);
       };
       const green = (t) => _c.setHSL(0.24 + hash(t.x | 0, t.y | 0, 4) * 0.1, 0.45, 0.24 + hash(t.y | 0, t.x | 0, 5) * 0.1);
-      leaf([...kinds.oak, ...kinds.street, ...kinds.shrub], P.oak, P.leafM, (t) => _m.compose(_p.set(t.x, t.y, t.z + (t.kind === 'shrub' ? t.h * 0.4 : t.h * 0.62)), _q.identity(), _s.set(t.r, t.r, t.kind === 'shrub' ? t.h * 0.6 : t.h * 0.42)), green);
-      leaf(kinds.pine, P.pine, P.pineM, (t) => _m.compose(_p.set(t.x, t.y, t.z + t.h * 0.18), _q.identity(), _s.set(t.r, t.r, t.h * 0.85)));
+      const turn = (t) => _q.setFromEuler(_e.set(0, 0, hash(t.x | 0, t.y | 0, 7) * 6.28));
+      const vary = (t) => 0.88 + hash(t.y | 0, t.x | 0, 8) * 0.24;
+      leaf([...kinds.oak, ...kinds.street, ...kinds.shrub], P.oak, P.leafM, (t) => _m.compose(_p.set(t.x, t.y, t.z + (t.kind === 'shrub' ? t.h * 0.4 : t.h * 0.62)), turn(t), _s.set(t.r * vary(t), t.r / vary(t), (t.kind === 'shrub' ? t.h * 0.6 : t.h * 0.42) * vary(t))), green);
+      leaf(kinds.pine, P.pine, P.pineM, (t) => _m.compose(_p.set(t.x, t.y, t.z + t.h * 0.18), turn(t), _s.set(t.r * vary(t), t.r * vary(t), t.h * 0.85)));
       leaf(kinds.palm, P.palm, P.palmM, (t) => _m.compose(_p.set(t.x, t.y, t.z + t.h), _q.identity(), _s.set(t.r, t.r, t.r)));
     }
     // street lamps
