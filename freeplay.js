@@ -14,7 +14,7 @@ const START_CASH = 5000;
 const TRAFFIC = { urban: 14, rural: 5 }, PEOPLE = { urban: 18, rural: 2 };
 const SPAWN_MIN = 3200, SPAWN_MAX = 7600, DESPAWN = 10500;
 const PED_MIN = 1600, PED_MAX = 4600, PED_DESPAWN = 6800;
-const SEE_V = 9000, SEE_P = 6000;
+const SEE_V = 8000, SEE_P = 4600; // how far away cars and people are sent (the browser draws people out to 4500)
 const DIR_YAW = [0, 90, 180, 270];
 const COP_LOOK = 1 * 4 + 1; // trooper in blue
 const TRAFFIC_POOL = {
@@ -832,7 +832,13 @@ export function createFreeplay(R, api) {
     n.yaw = n.yaw + angDiff(n.yaw, face) * Math.min(1, dt * 10);
     let fwd = 0, side = 0, buttons = 0;
     if (!n.los) {
-      const g = n.lkp || tp;
+      let g = n.lkp || tp;
+      // you're inside a shop: come in through its door
+      const place = PLACES.find((s) => s.door && dist2(s.door, tp) < 900 * 900);
+      if (place && dist2(ps.origin, tp) > 260 * 260) {
+        const atDoor = dist2(ps.origin, place.door) < 90 * 90;
+        if (!atDoor && !n.inDoor) g = place.door; else n.inDoor = true;
+      } else n.inDoor = false;
       const gy = Math.atan2(g[1] - ps.origin[1], g[0] - ps.origin[0]) * D;
       n.yaw = gy; fwd = 1; buttons = BTN.SPRINT;
     } else {
@@ -1056,6 +1062,11 @@ export function createFreeplay(R, api) {
     const fp = p.fp;
     if (!fp) return;
     const t = now();
+    // police close by still know roughly where you are
+    if (fp.wanted && t - (fp.nearAt || 0) > 0.5) {
+      fp.nearAt = t;
+      for (const n of F.peds.values()) if (n.kind === 'cop' && n.state === 'hunt' && n.target === p.id && dist2(n.ps.origin, p.ps.origin) < 1200 * 1200) { fp.seenAt = Math.max(fp.seenAt, t - 2); break; }
+    }
     if (fp.wanted && t - fp.seenAt > 8 + fp.wanted * 3) { fp.wanted = 0; ev({ e: 'wanted', id: p.id, w: 0 }, p.id); }
     // health comes back slowly when nobody's hurting you
     if (p.ps.alive && t - (p.lastHurt || 0) > 8 && p.ps.hp < 100) p.ps.hp = Math.min(100, p.ps.hp + 4 * dt);

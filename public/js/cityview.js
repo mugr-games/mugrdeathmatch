@@ -26,6 +26,20 @@ const lerp = (a, b, k) => a + (b - a) * k;
 // draw distance in chunks: detailed, then simple shapes
 const RANGE = { potato: [1, 3], low: [2, 5], medium: [2, 7], high: [3, 8] };
 const FOG = { potato: 0.00009, low: 0.00006, medium: 0.000042, high: 0.000036 };
+// full-detail distances: people (beyond: a simple figure), cars (beyond: a box), people sitting in cars
+const DETAIL = { potato: [700, 700, 500], low: [1000, 1000, 700], medium: [1700, 1600, 1100], high: [2400, 2200, 1500] };
+const TILE = 3; // far chunks are merged into tiles this many chunks across (one draw each)
+// each cell is generated once and kept a while (collision, close detail and far shapes all come from it)
+const CELLS = new Map();
+function cell(i, j) {
+  const k = i + ',' + j;
+  let c = CELLS.get(k);
+  if (c) { CELLS.delete(k); CELLS.set(k, c); return c; }
+  c = genCell(i, j, true);
+  CELLS.set(k, c);
+  if (CELLS.size > 500) CELLS.delete(CELLS.keys().next().value);
+  return c;
+}
 
 // ------------------------------------------------------------------ materials
 const VARIANT = {
@@ -204,6 +218,9 @@ export class CityView {
     const q = g.settings.quality in RANGE ? g.settings.quality : 'medium';
     this.range = RANGE[q];
     this.fogD = FOG[q];
+    this.detail = DETAIL[q];
+    this.tiles = new Map();
+    this.dirty = new Set();
     this.firstPerson = !!g.settings.driveFirst;
     this.backdrop();
     $('fp-hud').hidden = false;
@@ -217,6 +234,9 @@ export class CityView {
     const g = this.g;
     for (const c of this.chunks.values()) this.dropChunk(c);
     this.chunks.clear();
+    for (const t of this.tiles.values()) { this.root.remove(t); t.geometry.dispose(); }
+    this.tiles.clear();
+    if (this.farPeds) { this.root.remove(this.farPeds); this.farPeds = null; }
     this.cells.clear();
     for (const id of [...this.cars.keys()]) this.removeCar(id);
     for (const id of [...this.peds.keys()]) this.removePed(id);
@@ -259,7 +279,7 @@ export class CityView {
       const k = i + ',' + j;
       if (this.cells.has(k)) continue;
       this.cells.add(k);
-      for (const b of genCell(i, j, false).boxes) w.addBox(b);
+      for (const b of cell(i, j).boxes) w.addBox(b);
     }
     // a long drive: start again with just what's near
     if (w.boxes.length > 60000) {
@@ -275,7 +295,7 @@ export class CityView {
     const trees = [], lamps = [], signals = [];
     for (let i = ci * CHUNK; i < (ci + 1) * CHUNK; i++) for (let j = cj * CHUNK; j < (cj + 1) * CHUNK; j++) {
       if (i < -N || j < -N || i >= N || j >= N) continue;
-      const c = genCell(i, j, true);
+      const c = cell(i, j);
       for (const b of c.boxes) if (b.mat !== 'clip') add(matKey(b), boxGeo(b));
       for (const b of c.deco) add(matKey(b), boxGeo(b));
       for (const r of c.roofs) add(r.mat, prism(r));
@@ -359,7 +379,7 @@ export class CityView {
     const col = (hex, geo) => { _c.set(hex); const n = geo.attributes.position.count, a = new Float32Array(n * 3); for (let k = 0; k < n; k++) { a[k * 3] = _c.r; a[k * 3 + 1] = _c.g; a[k * 3 + 2] = _c.b; } geo.setAttribute('color', new THREE.BufferAttribute(a, 3)); geo.deleteAttribute('uv'); geo.deleteAttribute('normal'); return geo; };
     for (let i = ci * CHUNK; i < (ci + 1) * CHUNK; i++) for (let j = cj * CHUNK; j < (cj + 1) * CHUNK; j++) {
       if (i < -N || j < -N || i >= N || j >= N) continue;
-      const c = genCell(i, j, false);
+      const c = cell(i, j);
       const dd = district(i, j);
       if (!isWater(dd)) geos.push(col(FLAT[c.ground] || '#4e7a36', boxGeo({ mins: [i * G, j * G, -2], maxs: [(i + 1) * G, (j + 1) * G, 0] })));
       for (const b of c.boxes) if (b.maxs[2] > 180 && b.maxs[2] - b.mins[2] > 120) geos.push(col(FLAT[b.mat] || '#a19d96', boxGeo(b)));
@@ -367,15 +387,36 @@ export class CityView {
     if (!geos.length) return null;
     const geo = mergeGeometries(geos);
     geo.computeVertexNormals();
-    return new THREE.Mesh(geo, FAR_MAT || (FAR_MAT = new THREE.MeshLambertMaterial({ vertexColors: true })));
+    return geo;
   }
 
-  dropChunk(c) {
-    for (const o of [c.near?.grp, c.far]) {
-      if (!o) continue;
-      this.root?.remove(o);
-      o.traverse?.((x) => x.geometry && !Object.values(PARTS || {}).includes(x.geometry) && x.geometry.dispose());
+  // the far chunks of one tile merged into a single mesh (left out: chunks drawn in detail)
+  buildTile(key) {
+    const old = this.tiles.get(key);
+    if (old) { this.root.remove(old); old.geometry.dispose(); this.tiles.delete(key); }
+    const [ta, tb] = key.split(',').map(Number);
+    const geos = [];
+    for (let a = ta * TILE; a < (ta + 1) * TILE; a++) for (let b = tb * TILE; b < (tb + 1) * TILE; b++) {
+      const c = this.chunks.get(a + ',' + b);
+      if (c && c.farGeo && !c.near) geos.push(c.farGeo);
     }
+    if (!geos.length) return;
+    const mesh = new THREE.Mesh(mergeGeometries(geos), FAR_MAT || (FAR_MAT = new THREE.MeshLambertMaterial({ vertexColors: true })));
+    this.root.add(mesh);
+    this.tiles.set(key, mesh);
+  }
+  tileOf(a, b) { return Math.floor(a / TILE) + ',' + Math.floor(b / TILE); }
+
+  dropNear(c) {
+    if (!c.near) return;
+    this.root?.remove(c.near.grp);
+    c.near.grp.traverse((x) => x.geometry && !Object.values(PARTS || {}).includes(x.geometry) && x.geometry.dispose());
+    c.near = null;
+  }
+  dropChunk(c) {
+    this.dropNear(c);
+    c.farGeo?.dispose();
+    c.farGeo = undefined;
   }
 
   stream(eye, budgetMs = 6) {
@@ -385,8 +426,8 @@ export class CityView {
     for (const [k, c] of this.chunks) {
       const [a, b] = k.split(',').map(Number);
       const d = Math.max(Math.abs(a - ci), Math.abs(b - cj));
-      if (d > farR + 1) { this.dropChunk(c); this.chunks.delete(k); }
-      else if (d > nearR + 1 && c.near) { this.root.remove(c.near.grp); c.near.grp.traverse((x) => x.geometry && !Object.values(PARTS).includes(x.geometry) && x.geometry.dispose()); c.near = null; if (c.far) c.far.visible = true; }
+      if (d > farR + 1) { this.dropChunk(c); this.chunks.delete(k); this.dirty.add(this.tileOf(a, b)); }
+      else if (d > nearR + 1 && c.near) { this.dropNear(c); this.dirty.add(this.tileOf(a, b)); }
     }
     // build the nearest missing ones first, a few each frame
     const t0 = performance.now();
@@ -396,18 +437,23 @@ export class CityView {
         if (a * CHUNK >= N || b * CHUNK >= N || (a + 1) * CHUNK <= -N || (b + 1) * CHUNK <= -N) continue;
         const k = a + ',' + b;
         let c = this.chunks.get(k);
-        if (!c) this.chunks.set(k, (c = { near: null, far: undefined }));
+        if (!c) this.chunks.set(k, (c = { near: null, farGeo: undefined }));
         if (r <= nearR && !c.near) {
           c.near = this.buildNear(a, b);
           this.root.add(c.near.grp);
-          if (c.far) c.far.visible = false;
-        } else if (r > nearR && c.far === undefined) {
-          c.far = this.buildFar(a, b);
-          if (c.far) { c.far.visible = !c.near; this.root.add(c.far); }
+          // take it out of its far tile straight away so it isn't drawn twice
+          if (c.farGeo) this.buildTile(this.tileOf(a, b));
+        } else if (r > nearR && c.farGeo === undefined) {
+          c.farGeo = this.buildFar(a, b);
+          this.dirty.add(this.tileOf(a, b));
         } else continue;
-        if (performance.now() - t0 > budgetMs) return;
+        if (performance.now() - t0 > budgetMs) break;
       }
+      if (performance.now() - t0 > budgetMs) break;
     }
+    // rebuild a couple of changed tiles each frame
+    let n = 0;
+    for (const key of this.dirty) { this.dirty.delete(key); this.buildTile(key); if (++n >= 2) break; }
   }
 
   // traffic lights from the shared clock
@@ -465,12 +511,6 @@ export class CityView {
         if (!n) {
           n = { id: r[0], snaps: [], obj: null, look: r[8], kind: r[5] & 3, pos: [r[1], r[2], r[3] + 36] };
           this.peds.set(r[0], n);
-          const model = r[8] & 3, color = r[8] >> 2;
-          this.g.makeCharacter(color, n.kind === 1 ? WEAPON_SLOT.pistol : null, model).then((c) => {
-            if (!this.peds.has(n.id)) { c.dispose(); return; }
-            n.obj = c;
-            this.root.add(c.root);
-          });
         }
         n.flags = r[5];
         n.snaps.push({ t: m.st, o: [r[1], r[2], r[3]], yaw: r[4], v: [r[6], r[7]] });
@@ -492,6 +532,16 @@ export class CityView {
       }
       for (const [id, c] of this.cash) if (!seen.has(id)) { this.root.remove(c.obj); this.cash.delete(id); }
     }
+  }
+
+  makePed(n) {
+    n.making = true;
+    this.g.makeCharacter(n.look >> 2, n.kind === 1 ? WEAPON_SLOT.pistol : null, n.look & 3).then((c) => {
+      n.making = false;
+      if (!this.peds.has(n.id) || !this.root) { c.dispose(); return; }
+      n.obj = c;
+      this.root.add(c.root);
+    });
   }
 
   removeCar(id) {
@@ -602,6 +652,7 @@ export class CityView {
     this.stream(eye);
     this.updateLights(t);
     const rt = g.renderTime;
+    const [pedNear, carNear, occNear] = this.detail;
     const mine = ps.car ? ps.car.id : -1;
     const ride = this.myCar();
     // cars: interpolated, except the one you drive (predicted)
@@ -624,8 +675,8 @@ export class CityView {
       const speed = Math.hypot(v[0], v[1]) * Math.sign(v[0] * Math.cos(yaw * DEG) + v[1] * Math.sin(yaw * DEG) || 1);
       const d = Math.hypot(o[0] - eye[0], o[1] - eye[1]);
       const inside = ride && ride.id === c.id && this.firstPerson;
-      c.model.setOccupants(c.occ || [], inside ? ride.seat : -1);
-      c.model.update(dt, t, { dist: d, speed, steer, brake: !!(c.flags & 2), siren: !!(c.flags & 1), wreck: !!(c.flags & 16) });
+      c.model.setOccupants(d < occNear || inside ? c.occ || [] : [], inside ? ride.seat : -1);
+      c.model.update(dt, t, { lod: d > carNear && !inside, dist: d, speed, steer, brake: !!(c.flags & 2), siren: !!(c.flags & 1), wreck: !!(c.flags & 16) });
       c.model.root.matrix.makeRotationZ(yaw * DEG).setPosition(o[0], o[1], o[2]);
       c.model.root.matrixWorldNeedsUpdate = true;
       c.model.root.visible = d < 12000;
@@ -635,10 +686,18 @@ export class CityView {
       if (c.flags & 4 && c.id !== mine && t - (c.hornAt || 0) > 0.45 && d < 3000) { c.hornAt = t; this.horn([o[0], o[1], o[2] + 30], 0.5); }
     }
     this.hands(ride);
-    // people
+    // people: full characters up close, one batch of simple figures further out
+    if (!this.farPeds) {
+      const geo = mergeGeometries([new THREE.CapsuleGeometry(9, 44, 2, 6).rotateX(Math.PI / 2).translate(0, 0, 34), new THREE.SphereGeometry(7, 8, 6).translate(0, 0, 66)].map((x) => x.toNonIndexed()));
+      this.farPeds = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color: 0xffffff }), 96);
+      this.farPeds.count = 0;
+      this.farPeds.frustumCulled = false;
+      this.root.add(this.farPeds);
+    }
+    let far = 0;
     for (const n of this.peds.values()) {
       const S = n.snaps;
-      if (!S.length || !n.obj) continue;
+      if (!S.length) continue;
       let a = S[0], b = S[0];
       for (let i = 0; i < S.length; i++) { if (S[i].t <= rt) a = S[i]; b = S[i]; if (S[i].t >= rt) break; }
       const f = b.t > a.t ? Math.max(0, Math.min(1, (rt - a.t) / (b.t - a.t))) : 1;
@@ -646,12 +705,28 @@ export class CityView {
       const yaw = a.yaw + angDiff(a.yaw, b.yaw) * f, yr = yaw * DEG, v = b.v;
       n.pos = [o[0], o[1], o[2] + 36];
       const d = Math.hypot(o[0] - eye[0], o[1] - eye[1]);
-      n.obj.root.visible = d < 4500;
-      if (!n.obj.root.visible) continue;
+      // characters are made when people come close and dropped when they're well away
+      if (d < pedNear * 1.15 && !n.obj && !n.making) this.makePed(n);
+      else if (d > pedNear * 1.8 && n.obj) { this.root.remove(n.obj.root); n.obj.dispose(); n.obj = null; }
+      if (d > pedNear || !n.obj) {
+        if (n.obj) n.obj.root.visible = false;
+        if (d < 4500 && far < 96) {
+          const suit = SUIT_COLORS[(n.look >> 2) % SUIT_COLORS.length];
+          _m.compose(_p.set(o[0], o[1], o[2]), _q.identity(), _s.set(1, 1, 1));
+          this.farPeds.setMatrixAt(far, _m);
+          this.farPeds.setColorAt(far, n.kind === 1 ? _c.set(0x2a4aa8) : _c.setRGB(...suit.rgb));
+          far++;
+        }
+        continue;
+      }
+      n.obj.root.visible = true;
       n.obj.animate(dt, { speed: Math.hypot(v[0], v[1]), fwdSpeed: v[0] * Math.cos(yr) + v[1] * Math.sin(yr), sideSpeed: v[0] * Math.sin(yr) - v[1] * Math.cos(yr), ground: true, ducked: !!(n.flags & 32), pitch: n.flags & 4 ? -60 : 0, alive: true });
       n.obj.root.matrix.makeRotationZ(yr).setPosition(o[0], o[1], o[2]);
       n.obj.root.matrixWorldNeedsUpdate = true;
     }
+    this.farPeds.count = far;
+    this.farPeds.instanceMatrix.needsUpdate = true;
+    if (this.farPeds.instanceColor) this.farPeds.instanceColor.needsUpdate = true;
     for (const c of this.cash.values()) c.obj.rotation.z = t * 2;
     this.audio(!!ps.car && ps.alive);
     this.updateHud(t);

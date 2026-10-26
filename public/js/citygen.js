@@ -202,6 +202,8 @@ export function genCell(i, j, visual = true) {
   const d = district(i, j);
   const x0 = i * G, y0 = j * G, x1 = x0 + G, y1 = y0 + G;
   const R = rng(hash(i, j, 77));
+  // details that are only drawn take their own random numbers, so walls come out the same with or without them
+  const RV = rng(hash(i, j, 78));
   const box = (ax, ay, az, bx, by, bz, mat) => out.boxes.push({ mins: [Math.min(ax, bx), Math.min(ay, by), Math.min(az, bz)], maxs: [Math.max(ax, bx), Math.max(ay, by), Math.max(az, bz)], mat });
   const deco = visual ? (ax, ay, az, bx, by, bz, mat) => out.deco.push({ mins: [Math.min(ax, bx), Math.min(ay, by), Math.min(az, bz)], maxs: [Math.max(ax, bx), Math.max(ay, by), Math.max(az, bz)], mat }) : () => {};
   const tree = visual ? (x, y, z, h, r, kind) => out.trees.push({ x, y, z, h, r, kind }) : () => {};
@@ -291,7 +293,7 @@ export function genCell(i, j, visual = true) {
         for (let k = 0; k < n; k++) {
           const f = (k + 0.5) / n, x = ax + (bx - ax) * f, y = ay + (by - ay) * f;
           if (k % 2 === 0) out.lamps.push({ x, y, z: KERB, yaw });
-          else if (d !== D.CITY || R() < 0.5) tree(x, y, KERB, 190 + R() * 60, 60 + R() * 20, 'street');
+          else if (d !== D.CITY || RV() < 0.5) tree(x, y, KERB, 190 + RV() * 60, 60 + RV() * 20, 'street');
         }
       };
       if (L) along(px0 + 22, py0 + 200, px0 + 22, py1 - 200, 180);
@@ -303,7 +305,7 @@ export function genCell(i, j, visual = true) {
     lot = [x0 + (L ? RW + 60 : 0), y0 + (B ? RW + 60 : 0), x1 - (Rr ? RW + 60 : 0), y1 - (T ? RW + 60 : 0)];
   }
   const base = urban ? KERB : 0;
-  const ctx = { out, box, deco, tree, R, lot, base, i, j, d, visual, edges: { L, R: Rr, B, T } };
+  const ctx = { out, box, deco, tree, R, RV, lot, base, i, j, d, visual, edges: { L, R: Rr, B, T } };
 
   const place = placeAt(i, j);
   if (place) buildPlace(ctx, place);
@@ -414,7 +416,7 @@ function shopFront(ctx, side, u0, u1, depth, h, mat) {
   const a = f.rect(u0 + 30, -70, u1 - 30, 0);
   deco(a[0], a[1], base + 150, a[2], a[3], base + 160, 'awning');
   const s = f.rect(u0 + 60, -6, u1 - 60, 0);
-  if (R() < 0.7) deco(s[0], s[1], base + 172, s[2], s[3], base + 200, 'neon');
+  if (ctx.RV() < 0.7) deco(s[0], s[1], base + 172, s[2], s[3], base + 200, 'neon');
   // roof edge
   deco(r[0] - 4, r[1] - 4, base + h, r[2] + 4, r[3] + 4, base + h + 16, 'concrete');
 }
@@ -446,7 +448,7 @@ function midrise(ctx, rho) {
   // the courtyard: parking or a garden
   if (ctx.visual) {
     const c = [lx0 + depth, ly0 + depth, lx1 - depth, ly1 - depth];
-    if (c[2] - c[0] > 200 && c[3] - c[1] > 200) deco(c[0], c[1], ctx.base, c[2], c[3], ctx.base + 0.5, R() < 0.5 ? 'lawn' : 'concrete');
+    if (c[2] - c[0] > 200 && c[3] - c[1] > 200) deco(c[0], c[1], ctx.base, c[2], c[3], ctx.base + 0.5, ctx.RV() < 0.5 ? 'lawn' : 'concrete');
   }
 }
 
@@ -520,7 +522,7 @@ function house(ctx, side, u0, v0, u1, v1) {
   if (!ctx.visual) return;
   // the roof ridge runs along the front
   const along = side === 'B' || side === 'T' ? 'x' : 'y';
-  out.roofs.push({ mins: [r[0] - 18, r[1] - 18, base + h], maxs: [r[2] + 18, r[3] + 18, base + h + 90 + R() * 30], axis: along, mat: R() < 0.5 ? 'roof' : 'roof2' });
+  out.roofs.push({ mins: [r[0] - 18, r[1] - 18, base + h], maxs: [r[2] + 18, r[3] + 18, base + h + 90 + ctx.RV() * 30], axis: along, mat: ctx.RV() < 0.5 ? 'roof' : 'roof2' });
   // garden, driveway, front door, a window either side
   const g = f.rect(u0 + 10, v0, u1 - 10, v1 - 10);
   deco(g[0], g[1], base, g[2], g[3], base + 0.5, 'lawn');
@@ -533,7 +535,7 @@ function house(ctx, side, u0, v0, u1, v1) {
     const wr = f.rect(c - 34, hv0 - 2, c + 34, hv0);
     deco(wr[0], wr[1], base + 90, wr[2], wr[3], base + 160, 'glass');
   }
-  if (R() < 0.5) { const p = f.pt(u0 + w * 0.12, v0 + dpt * 0.15); ctx.tree(p[0], p[1], base, 260 + R() * 80, 100, 'oak'); }
+  if (ctx.RV() < 0.5) { const p = f.pt(u0 + w * 0.12, v0 + dpt * 0.15); ctx.tree(p[0], p[1], base, 260 + ctx.RV() * 80, 100, 'oak'); }
   // fence along the back
   const fe = f.rect(u0, v1 - 6, u1, v1);
   deco(fe[0], fe[1], base, fe[2], fe[3], base + 50, 'fence');
@@ -569,7 +571,7 @@ function farm(ctx) {
   const crop = ['corn', 'wheat', 'soil'][(R() * 3) | 0];
   if (ctx.visual) {
     // crop rows (drawn only: you can push through a corn field)
-    if (crop === 'corn') for (let y = ly0 + 40; y < ly1 - 40; y += 70) deco(lx0 + 40, y, 0, lx1 - 40, y + 26, 70 + R() * 10, 'corn');
+    if (crop === 'corn') for (let y = ly0 + 40; y < ly1 - 40; y += 70) deco(lx0 + 40, y, 0, lx1 - 40, y + 26, 70 + ctx.RV() * 10, 'corn');
     else if (crop === 'wheat') deco(lx0 + 40, ly0 + 40, 0, lx1 - 40, ly1 - 40, 26, 'wheat');
     else for (let y = ly0 + 40; y < ly1 - 40; y += 60) deco(lx0 + 40, y, 0, lx1 - 40, y + 30, 6, 'dirt');
   }
@@ -584,7 +586,7 @@ function farm(ctx) {
     if (ctx.visual) out.roofs.push({ mins: [cx - 278, cy + 282, 230], maxs: [cx + 58, cy + 538, 330], axis: 'x', mat: 'roof2' });
     if (ctx.visual) for (let k = 0; k < 6; k++) deco(cx - 400 + k * 140, cy - 300, 0, cx - 380 + k * 140, cy - 290, 60, 'fence');
   }
-  if (ctx.visual) for (let k = 0; k < 6; k++) { const x = lx0 + 30, y = ly0 + 100 + k * 260; ctx.tree(x, y, 0, 320 + R() * 120, 120, 'oak'); }
+  if (ctx.visual) for (let k = 0; k < 6; k++) { const x = lx0 + 30, y = ly0 + 100 + k * 260; ctx.tree(x, y, 0, 320 + ctx.RV() * 120, 120, 'oak'); }
 }
 
 function forest(ctx) {
@@ -632,7 +634,8 @@ function desert(ctx) {
       box(x - s, y - s * 0.8, 0, x + s, y + s * 0.8, s * (0.5 + R() * 0.5), 'rock');
     }
   }
-  if (ctx.visual) for (let k = 0; k < 10; k++) { const x = lx0 + R() * (lx1 - lx0), y = ly0 + R() * (ly1 - ly0); if (clearOfRoads(ctx, x, y)) ctx.tree(x, y, 0, 40 + R() * 30, 40 + R() * 20, 'shrub'); }
+  const RV = ctx.RV;
+  if (ctx.visual) for (let k = 0; k < 10; k++) { const x = lx0 + RV() * (lx1 - lx0), y = ly0 + RV() * (ly1 - ly0); if (clearOfRoads(ctx, x, y)) ctx.tree(x, y, 0, 40 + RV() * 30, 40 + RV() * 20, 'shrub'); }
 }
 
 function field(ctx) {
@@ -645,7 +648,8 @@ function field(ctx) {
     box(x - 11, y - 11, 0, x + 11, y + 11, 150, 'bark');
     ctx.tree(x, y, 0, 320 + R() * 160, 150 + R() * 50, 'oak');
   }
-  if (ctx.visual) for (let k = 0; k < 14; k++) { const x = lx0 + R() * (lx1 - lx0), y = ly0 + R() * (ly1 - ly0); if (clearOfRoads(ctx, x, y)) ctx.tree(x, y, 0, 50 + R() * 30, 50 + R() * 30, 'shrub'); }
+  const RV = ctx.RV;
+  if (ctx.visual) for (let k = 0; k < 14; k++) { const x = lx0 + RV() * (lx1 - lx0), y = ly0 + RV() * (ly1 - ly0); if (clearOfRoads(ctx, x, y)) ctx.tree(x, y, 0, 50 + RV() * 30, 50 + RV() * 30, 'shrub'); }
   // a billboard by the highway
   if (R() < 0.12 && ctx.edges.B) {
     const x = (lx0 + lx1) / 2, y = ly0 + 40;
@@ -670,7 +674,8 @@ function beach(ctx) {
     box(x - 70, y - 70, 120, x + 70, y + 70, 130, 'wood');
     box(x - 60, y - 60, 130, x + 60, y + 60, 220, 'siding2');
   }
-  if (ctx.visual) for (let k = 0; k < 6; k++) { const x = lx0 + R() * (lx1 - lx0), y = ly0 + R() * (ly1 - ly0); if (clearOfRoads(ctx, x, y)) { deco(x - 2, y - 2, 0, x + 2, y + 2, 90, 'metal'); deco(x - 50, y - 50, 90, x + 50, y + 50, 96, 'awning'); } }
+  const RV = ctx.RV;
+  if (ctx.visual) for (let k = 0; k < 6; k++) { const x = lx0 + RV() * (lx1 - lx0), y = ly0 + RV() * (ly1 - ly0); if (clearOfRoads(ctx, x, y)) { deco(x - 2, y - 2, 0, x + 2, y + 2, 90, 'metal'); deco(x - 50, y - 50, 90, x + 50, y + 50, 96, 'awning'); } }
 }
 
 function mountain(ctx) {

@@ -29,8 +29,9 @@ function mats() {
   if (MAT.ready) return MAT;
   const P = isPotato();
   const std = (o) => (P ? new THREE.MeshLambertMaterial(o) : new THREE.MeshStandardMaterial(o));
-  MAT.glass = P ? new THREE.MeshLambertMaterial({ color: 0x1c2a36, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false })
-    : new THREE.MeshPhysicalMaterial({ color: 0x223442, metalness: 0.2, roughness: 0.04, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 1.6 });
+  // one-sided: tinted from outside, clear from the driver's seat
+  MAT.glass = P ? new THREE.MeshLambertMaterial({ color: 0x1c2a36, transparent: true, opacity: 0.5, depthWrite: false })
+    : new THREE.MeshPhysicalMaterial({ color: 0x223442, metalness: 0.2, roughness: 0.04, transparent: true, opacity: 0.42, depthWrite: false, envMapIntensity: 1.6 });
   MAT.trim = std({ color: 0x1a1b1d, roughness: 0.6, metalness: 0.2 });
   MAT.inside = std({ color: 0x2a2b2e, roughness: 0.9 });
   MAT.seat = std({ color: 0x3a342e, roughness: 0.85 });
@@ -40,7 +41,7 @@ function mats() {
   MAT.head = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff4dc, emissiveIntensity: 1.6 });
   MAT.tailOff = new THREE.MeshStandardMaterial({ color: 0x5a0d0d, emissive: 0x5a0606, emissiveIntensity: 1 });
   MAT.tailOn = new THREE.MeshStandardMaterial({ color: 0xff2a2a, emissive: 0xff1010, emissiveIntensity: 4, toneMapped: false });
-  MAT.dial = new THREE.MeshBasicMaterial({ color: 0x7fd8ff });
+  MAT.dial = new THREE.MeshBasicMaterial({ color: 0x2a5878 });
   MAT.red = new THREE.MeshBasicMaterial({ color: 0xff2020, toneMapped: false });
   MAT.blue = new THREE.MeshBasicMaterial({ color: 0x2050ff, toneMapped: false });
   MAT.dark = std({ color: 0x0c0c0e, roughness: 0.5 });
@@ -150,7 +151,7 @@ function buildCar(V) {
     seat.push(strut([x - 13, sz + 4], [x - 17, sz + 30], y, hy * 0.6, 6));
     seat.push(box(5, hy * 0.36, 7, x - 17, y, sz + 33));
   }
-  const dials = box(0.5, 9, 4, xd - 10.5, V.seat[0][1], zb - 1);
+  const dials = box(0.4, 7, 2.6, xd - 10.3, V.seat[0][1], zb - 2.5);
   if (S.bar) { trim.push(box(8, hy * 1.3, 4, (xf + xr) / 2, 0, H + 1)); }
   if (S.sign) trim.push(box(8, 20, 3, (xf + xr) / 2, 0, H + 1));
   if (S.wing) { paint.push(box(6, hy * 1.8, 2, -hx + 8, 0, zt + 8)); for (const s of [-1, 1]) trim.push(box(3, 2, 8, -hx + 8, s * hy * 0.7, zt + 4)); }
@@ -325,7 +326,7 @@ export class CarModel {
   // flags from the server: siren, brake, burning, wrecked
   update(dt, t, st) {
     const S = this.S, V = this.V;
-    const lod = st.dist > 2600;
+    const lod = st.lod ?? st.dist > 2600;
     this.near.visible = !lod;
     this.far.visible = lod;
     if (st.wreck && !this.burnt) {
