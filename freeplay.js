@@ -116,6 +116,14 @@ export function createFreeplay(R, api) {
   }
 
   F.join = (p) => { load(p); state(p); };
+  // the owner's gift (or fine)
+  F.giveCash = (p, n) => {
+    if (!p.fp) return;
+    p.fp.data.cash = Math.max(0, p.fp.data.cash + n);
+    save(p);
+    state(p);
+    note(p, n >= 0 ? `The owner gave you $${n.toLocaleString()}!` : `The owner took $${(-n).toLocaleString()}.`);
+  };
   // the profile arrives a moment after joining: switch to its money and garage, and hand over its guns
   F.profile = (p) => {
     if (!p.fp || !p.profile) return;

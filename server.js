@@ -1450,11 +1450,19 @@ async function command(ws, text) {
   const c = (cmd || '').toLowerCase();
   if (!isOwner(ws)) return sys(ws, 'Commands are for the owner.');
   if (c === 'kick' || c === 'ban' || c === 'unban') return modAction(ws, c, name, reason);
+  // free roam money: /givecash name amount (a negative amount takes it away)
+  if (c === 'givecash') {
+    const amount = Math.round(Number(rest[0]));
+    if (!name || !Number.isFinite(amount) || Math.abs(amount) > 1e9) return sys(ws, 'Use: /givecash name amount');
+    let n = 0;
+    for (const R of rooms.values()) for (const p of R.players.values()) if (!p.bot && p.name.toLowerCase() === name.toLowerCase() && R.fp) { R.fp.giveCash(p, amount); n++; }
+    return sys(ws, n ? `Gave $${amount.toLocaleString()} to ${name}.` : `${name} isn't in free roam right now.`);
+  }
   if (c === 'bans') {
     const list = await profiles.listBans();
     return sys(ws, list.length ? 'Banned: ' + list.map((b) => b.name).join(', ') : 'Nobody is banned.');
   }
-  sys(ws, 'Commands: /kick name [reason], /ban name [reason], /unban name, /bans');
+  sys(ws, 'Commands: /kick name [reason], /ban name [reason], /unban name, /bans, /givecash name amount');
 }
 
 // mutes, by account and address, until a time (kept in memory: a restart lifts them)
