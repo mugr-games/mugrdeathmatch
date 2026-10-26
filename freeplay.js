@@ -1015,13 +1015,16 @@ export function createFreeplay(R, api) {
     }
     if (VEHICLES[car.k].air) {
       // planes are only ever brought to the airport
-      const stand = AIRPORT.stands.find((s) => ![...F.vehicles.values()].some((v) => dist2(v.s.o, s) < 500 * 500));
-      if (!stand) return note(p, 'Every stand at the airport is taken. Try again soon.');
+      // the nearest airport with a free stand
+      const port = AIRFIELDS.filter((a) => !a.military).sort((a, b) => dist2(a.center, p.ps.origin) - dist2(b.center, p.ps.origin))
+        .find((a) => a.stands.some((s) => ![...F.vehicles.values()].some((v) => dist2(v.s.o, s) < 500 * 500)));
+      const stand = port && port.stands.find((s) => ![...F.vehicles.values()].some((v) => dist2(v.s.o, s) < 500 * 500));
+      if (!stand) return note(p, 'Every stand at the airports is taken. Try again soon.');
       ensureAround(stand[0], stand[1], 1);
       const v = addVehicle(car.k, stand, stand[3], 'mine', car.c);
       v.owner = p.id;
       p.fp.mine = v.id;
-      return note(p, `Your ${VEHICLES[car.k].name} is waiting on the apron at ${AIRPORT.name} (the airport).`);
+      return note(p, `Your ${VEHICLES[car.k].name} is waiting on the apron at ${port.name}.`);
     }
     const o = p.ps.origin;
     let lane = null;

@@ -37,6 +37,8 @@ const PEAK = [-20, -24], PEAK_R2 = 14; // Mount Mugr
 export const AIRFIELDS = [
   { id: 'airport', name: 'Mugr International', rect: [4, 3, 13, 8], runwayJ: 5, apronJ: 6, hangarJ: 7, military: false },
   { id: 'airbase', name: 'Fort Talon Air Base', rect: [-11, 9, -3, 14], runwayJ: 11, apronJ: 12, hangarJ: 13, military: true, gateI: -7 },
+  // the city airport: on the south side of Port Halcyon, by the sea
+  { id: 'cityport', name: 'Halcyon City Airport', rect: [19, -34, 29, -30], runwayJ: -32, apronJ: -31, hangarJ: -30, military: false },
 ];
 export const airfieldAt = (i, j) => AIRFIELDS.find((a) => i >= a.rect[0] && i <= a.rect[2] && j >= a.rect[1] && j <= a.rect[3]) || null;
 for (const a of AIRFIELDS) {
@@ -97,9 +99,9 @@ function biome(i, j) {
 const DIST = new Uint8Array(W * W);
 for (let i = -N; i < N; i++) for (let j = -N; j < N; j++) {
   let d;
-  if (cityAt(i, j)) d = D.CITY;
+  if (airfieldAt(i, j)) d = airfieldAt(i, j).military ? D.AIRBASE : D.AIRPORT;
+  else if (cityAt(i, j)) d = D.CITY;
   else if (townAt(i, j)) d = D.TOWN;
-  else if (airfieldAt(i, j)) d = airfieldAt(i, j).military ? D.AIRBASE : D.AIRPORT;
   else if (!coast(i, j) && !cityAt(i, j, 1)) d = D.OCEAN;
   else if (isLake(i, j)) d = D.LAKE;
   else if (cityAt(i, j, 3)) d = D.SUBURB;
@@ -135,7 +137,7 @@ const mod8 = (n) => ((n % 8) + 8) % 8;
 function roadKind(a, b, line) {
   if (a === D.OCEAN && b === D.OCEAN) return 0;
   if (isAir(a) && isAir(b)) return 0; // nothing crosses a runway
-  if (isAir(a) || isAir(b)) return mod8(line) === 0 ? 2 : 0;
+  if (isAir(a) || isAir(b)) return isUrban(a) || isUrban(b) ? 1 : mod8(line) === 0 ? 2 : 0; // city streets run round the city airport
   const urban = isUrban(a) || isUrban(b);
   if (a === D.OCEAN || b === D.OCEAN) return urban ? 1 : 0; // seafront avenues
   if (urban) return 1;
