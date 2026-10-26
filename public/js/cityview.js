@@ -1059,26 +1059,38 @@ export class CityView {
       const v = car.state.v;
       sp.hidden = false;
       const V = VEHICLES[car.k];
-      if (V.air) sp.innerHTML = `<b>${Math.round(Math.hypot(v[0], v[1], v[2] || 0) * 0.0494)}</b><small>KT</small><span>ALT ${Math.max(0, Math.round(car.state.o[2] / 12)).toLocaleString()} FT · THROTTLE ${Math.round((car.state.thr || 0) * 100)}%</span><span>${esc(V.name)}</span>`;
-      else sp.innerHTML = `<b>${mph(Math.hypot(v[0], v[1]))}</b><small>MPH</small><span>${esc(V.name)}</span>`;
+      const fast = Math.hypot(v[0], v[1], V.air ? v[2] || 0 : 0) / (V.top * 1.1);
+      const c = car.state.limp ? '#ff6a3a' : fast > 0.85 ? '#ffcf3a' : '#7dff9a';
+      if (V.air) sp.innerHTML = `<div class="dial" style="--p:${Math.min(1, fast).toFixed(3)};--c:${c}"><b>${Math.round(Math.hypot(v[0], v[1], v[2] || 0) * 0.0494)}</b><small>KNOTS</small></div><span>ALT ${Math.max(0, Math.round(car.state.o[2] / 12)).toLocaleString()} FT · THR ${Math.round((car.state.thr || 0) * 100)}%</span><span>${esc(V.name)}</span>`;
+      else sp.innerHTML = `<div class="dial" style="--p:${Math.min(1, fast).toFixed(3)};--c:${c}"><b>${mph(Math.hypot(v[0], v[1]))}</b><small>MPH</small></div><span>${car.state.limp ? 'ENGINE FAILING · ' : ''}${esc(V.name)}</span>`;
     } else sp.hidden = true;
     // the weapon HUD steps aside at the wheel
     document.body.classList.toggle('fp-driving', !!this.g.ps.car);
+    // health and armour under the radar
+    const hp = Math.max(0, Math.min(100, this.g.ps.hp | 0)), ar = Math.max(0, Math.min(100, this.g.ps.armor | 0));
+    const hk = hp + '|' + ar;
+    if (this.barKey !== hk) {
+      this.barKey = hk;
+      $('fp-hp').firstChild.style.width = hp + '%';
+      $('fp-hp').classList.toggle('low', hp < 30);
+      $('fp-ar').firstChild.style.width = ar + '%';
+    }
   }
 
   // ---------------------------------------------------------------- radar: the streets around you, turning with you
   drawRadar(eye) {
     const ctx = this.radarCtx;
     if (!ctx) return;
-    const W = ctx.canvas.width, R = W / 2, range = 3600, s = R / range;
+    const W = ctx.canvas.width, H = ctx.canvas.height, R = W / 2, cy = H * 0.6, range = 3600, s = R / range;
+    const edge = Math.min(R, cy, H - cy) / s; // blips further than this sit on the rim
     const yaw = (this.myCar() && !this.firstPerson ? this.myCar().state.yaw : this.g.yaw) * DEG;
     const sn = Math.sin(yaw), cs = Math.cos(yaw);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, W, W);
+    ctx.clearRect(0, 0, W, H);
     ctx.save();
-    ctx.beginPath(); ctx.arc(R, R, R - 2, 0, Math.PI * 2); ctx.clip();
-    ctx.fillStyle = '#2b3a2c'; ctx.fillRect(0, 0, W, W);
-    ctx.setTransform(sn * s, -cs * s, -cs * s, -sn * s, R, R);
+    ctx.beginPath(); ctx.roundRect(0, 0, W, H, 10); ctx.clip();
+    ctx.fillStyle = '#2b3a2c'; ctx.fillRect(0, 0, W, H);
+    ctx.setTransform(sn * s, -cs * s, -cs * s, -sn * s, R, cy);
     const ci = cellOf(eye[0]), cj = cellOf(eye[1]);
     const COL = MAP_COL;
     for (let i = ci - 3; i <= ci + 3; i++) for (let j = cj - 3; j <= cj + 3; j++) { ctx.fillStyle = COL[district(i, j)]; ctx.fillRect(i * G - eye[0] - 2, j * G - eye[1] - 2, G + 4, G + 4); }
@@ -1092,7 +1104,7 @@ export class CityView {
     const blip = (x, y, color, r = 70, shape = 'dot') => {
       let dx = x - eye[0], dy = y - eye[1];
       const d = Math.hypot(dx, dy);
-      if (d > range * 0.92) { dx *= (range * 0.92) / d; dy *= (range * 0.92) / d; }
+      if (d > edge * 0.92) { dx *= (edge * 0.92) / d; dy *= (edge * 0.92) / d; }
       ctx.fillStyle = color;
       ctx.beginPath();
       if (shape === 'sq') ctx.rect(dx - r, dy - r, r * 2, r * 2); else ctx.arc(dx, dy, r, 0, Math.PI * 2);
@@ -1122,15 +1134,17 @@ export class CityView {
     for (const pl of this.g.players.values()) if (pl.pos) blip(pl.pos[0], pl.pos[1], '#ff9a3a', 70);
     for (const n of this.peds.values()) if (n.kind === 1 && n.flags & 16) blip(n.pos[0], n.pos[1], '#3a7aff', 55);
     ctx.restore();
-    // you: an arrow in the middle, pointing up
-    ctx.setTransform(1, 0, 0, 1, R, R);
+    // you: an arrow a little below the middle, pointing up
+    ctx.setTransform(1, 0, 0, 1, R, cy);
     const look = this.myCar() && !this.firstPerson ? angDiff(this.myCar().state.yaw, this.g.yaw) * DEG : 0;
     ctx.rotate(-look);
     ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(6, 7); ctx.lineTo(0, 3); ctx.lineTo(-6, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(R, R, R - 2, 0, Math.PI * 2); ctx.stroke();
+    // north on the rim
+    const nx = R - cs * edge * s * 0.92, ny = cy - sn * edge * s * 0.92;
+    ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.beginPath(); ctx.arc(nx, ny, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = '800 11px Inter, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('N', nx, ny + 0.5);
     // where you are
     const d = district(ci, cj), c = CITIES.find((x) => ci >= x.rect[0] && ci <= x.rect[2] && cj >= x.rect[1] && cj <= x.rect[3]) || TOWNS.find((x) => ci >= x.rect[0] && ci <= x.rect[2] && cj >= x.rect[1] && cj <= x.rect[3]);
     const name = c ? c.name : DISTRICT_NAMES[d];
@@ -1164,7 +1178,7 @@ export class CityView {
   }
   phoneItems() {
     const P = this.phone;
-    if (P.screen === 'home') return [{ k: 'cars', label: 'Motors', icon: '🚗', sub: 'Buy a car' }, { k: 'bikes', label: 'Moto', icon: '🏍️', sub: 'Bikes & BMX' }, { k: 'planes', label: 'Aero', icon: '✈️', sub: 'Buy a plane' }, { k: 'garage', label: 'Garage', icon: '🔑', sub: `${this.state.cars.length} owned` }, { k: 'contacts', label: 'Contacts', icon: '📞', sub: 'Jamal · Towing' }, { k: 'map', label: 'Map', icon: '🗺️', sub: 'M for the big map' }];
+    if (P.screen === 'home') return [{ k: 'cars', label: 'Motors', icon: '🚗', sub: 'Buy a car', c: '#2a7cf0' }, { k: 'bikes', label: 'Moto', icon: '🏍️', sub: 'Bikes & BMX', c: '#f0702a' }, { k: 'planes', label: 'Aero', icon: '✈️', sub: 'Planes & helis', c: '#1fb0c8' }, { k: 'garage', label: 'Garage', icon: '🔑', sub: `${this.state.cars.length} owned`, c: '#8a5cf0' }, { k: 'contacts', label: 'Contacts', icon: '📞', sub: 'Jamal · Towing', c: '#2fbf5a' }, { k: 'map', label: 'Map', icon: '🗺️', sub: 'M for the big map', c: '#e8a020' }];
     if (P.screen === 'contacts') return [{ k: 'jamal', label: 'Jamal', sub: 'Lose your wanted level · $1,000' }, { k: 'tow', label: 'Hook & Haul Towing', sub: 'Your car towed to a mechanic, fixed and brought back · $300 + repairs' }];
     if (P.screen === 'garage' && this.g.ps.car && !(this.cars.get(this.g.ps.car.id)?.flags & 64)) return [{ save: true }, ...this.state.cars.map((c, n) => ({ n, V: VEHICLES[c.k], c: c.c }))];
     if (P.screen === 'cars' || P.screen === 'bikes' || P.screen === 'planes') return VEHICLES.map((V, i) => ({ V, i })).filter(({ V }) => V.shop === P.screen).sort((a, b) => a.V.price - b.V.price);
@@ -1179,7 +1193,7 @@ export class CityView {
     P.sel = Math.max(0, Math.min(items.length - 1, P.sel));
     let body = '';
     const title = { home: 'Mugr OS', cars: 'Motors', bikes: 'Moto', planes: 'Aero', garage: 'Garage', contacts: 'Contacts', map: 'Map', paint: 'Pick a colour' }[P.screen];
-    if (P.screen === 'home') body = `<div class="apps">${items.map((it, k) => `<div class="app${k === P.sel ? ' on' : ''}" data-k="${k}"><span class="ic">${it.icon}</span><b>${it.label}</b><small>${esc(it.sub)}</small></div>`).join('')}</div>`;
+    if (P.screen === 'home') body = `<div class="apps">${items.map((it, k) => `<div class="app${k === P.sel ? ' on' : ''}" data-k="${k}" style="--c:${it.c}"><span class="ic">${it.icon}</span><b>${it.label}</b><small>${esc(it.sub)}</small></div>`).join('')}</div>`;
     else if (P.screen === 'cars' || P.screen === 'bikes' || P.screen === 'planes') body = `<ul class="list">${items.map(({ V }, k) => `<li class="${k === P.sel ? 'on' : ''}${V.price > this.state.cash ? ' dim' : ''}" data-k="${k}"><b>${esc(V.name)}</b><span class="price">${money(V.price)}</span><small>${esc(V.blurb || '')}${V.air ? ' Delivered to the airport.' : ''}</small><span class="meter"><i style="width:${Math.round((V.top / (V.air ? 4300 : 2800)) * 100)}%"></i></span></li>`).join('')}</ul>`;
     else if (P.screen === 'garage') body = items.length ? `<ul class="list">${items.map((it, k) => it.save ? `<li class="${k === P.sel ? 'on' : ''} save" data-k="${k}"><b>Save this vehicle</b><small>Keep the one you're driving: call it any time</small></li>` : `<li class="${k === P.sel ? 'on' : ''}" data-k="${k}"><b>${esc(it.V.name)}</b><span class="price"><i class="sw" style="background:${PAINTS[it.c]}"></i></span><small>${it.V.air ? 'Enter: have it waiting at the airport' : 'Enter: bring it to me'}</small></li>`).join('')}</ul>` : '<p class="empty">No vehicles yet. Buy one, or drive something and save it here.</p>';
     else if (P.screen === 'contacts') body = `<ul class="list">${items.map((it, k) => `<li class="${k === P.sel ? 'on' : ''}" data-k="${k}"><b>📞 ${esc(it.label)}</b><small>${esc(it.sub)}</small></li>`).join('')}</ul>`;

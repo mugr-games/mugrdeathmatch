@@ -351,18 +351,24 @@ body.touch #netinfo { display: none; }
 @media (max-width: 600px) { #hz-jobs { grid-template-columns: 1fr; } }
 /* free roam */
 #fp-hud { position: absolute; inset: 0; pointer-events: none; font-family: var(--ui); }
-#fp-money { position: absolute; right: 20px; top: 54px; text-align: right; }
-#fp-cash { font: 800 30px var(--num); color: #7dff9a; text-shadow: 0 2px 0 #0b2a12, 0 0 12px rgba(0,0,0,.6); letter-spacing: .02em; }
-#fp-stars { margin-top: 2px; font-size: 22px; letter-spacing: 2px; }
-#fp-stars i { font-style: normal; color: rgba(255,255,255,.22); text-shadow: 0 1px 2px #000; }
-#fp-stars i.on { color: #fff; }
+#fp-money { position: absolute; right: 22px; top: 50px; text-align: right; }
+#fp-cash { font: italic 900 34px var(--num); color: #8fe07a; letter-spacing: .01em; -webkit-text-stroke: 1.5px #0d240f; paint-order: stroke fill; text-shadow: 0 3px 0 rgba(0,0,0,.55), 0 0 14px rgba(0,0,0,.5); }
+#fp-stars { margin-top: 2px; font-size: 26px; letter-spacing: 1px; }
+#fp-stars i { font-style: normal; color: transparent; -webkit-text-stroke: 1.5px rgba(255,255,255,.55); text-shadow: none; }
+#fp-stars i.on { color: #fff; -webkit-text-stroke: 1.5px #111; text-shadow: 0 2px 4px rgba(0,0,0,.6); }
 #fp-stars.flash i.on { animation: fpflash .5s steps(2) infinite; }
 @keyframes fpflash { 50% { color: rgba(255,255,255,.25); } }
-#fp-radar-box { position: absolute; left: 22px; bottom: 92px; width: 180px; }
-body.fp-on #timer { display: none; }
-#fp-radar { width: 180px; height: 180px; display: block; border-radius: 50%; box-shadow: 0 4px 18px rgba(0,0,0,.5); }
-#fp-gps { margin-top: 3px; text-align: center; font: 800 12px var(--num); color: #e0a8ff; text-shadow: 0 1px 3px #000; }
-#fp-zone { margin-top: 6px; text-align: center; font: 700 12px var(--ui); letter-spacing: .12em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 3px #000; }
+#fp-radar-box { position: absolute; left: 22px; bottom: 24px; width: 260px; }
+body.fp-on #timer, body.fp-on #hp-box, body.fp-on #ar-box { display: none; }
+#fp-radar { width: 260px; height: 165px; display: block; border-radius: 12px; border: 3px solid rgba(0,0,0,.75); box-shadow: 0 6px 20px rgba(0,0,0,.45); }
+.fp-bars { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; }
+.fp-bars i { display: block; height: 8px; border-radius: 2px; background: rgba(0,0,0,.6); overflow: hidden; border: 1px solid rgba(0,0,0,.7); }
+.fp-bars b { display: block; height: 100%; width: 100%; transition: width .2s; }
+#fp-hp b { background: linear-gradient(#6fe06a, #3a9a3a); } #fp-hp.low b { background: linear-gradient(#ff6a5a, #b8261e); animation: fpflash .6s steps(2) infinite; }
+#fp-ar b { background: linear-gradient(#7ac8ff, #2a7ad8); }
+.fp-where { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 5px; padding: 3px 8px; border-radius: 4px; background: linear-gradient(90deg, rgba(0,0,0,.7), rgba(0,0,0,0)); }
+#fp-zone { font: italic 800 14px var(--ui); letter-spacing: .04em; color: #fff; text-shadow: 0 1px 3px #000; }
+#fp-gps { font: 800 12px var(--num); color: #e0a8ff; text-shadow: 0 1px 3px #000; }
 body.fp-on #voice-hud { bottom: 310px; }
 #fp-prompt { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); padding: 8px 16px; border-radius: 6px; background: rgba(0,0,0,.62); color: #fff; font: 14px var(--ui); text-align: center; white-space: nowrap; }
 #fp-prompt b { display: inline-block; min-width: 20px; padding: 1px 6px; margin-right: 6px; border-radius: 4px; background: #fff; color: #111; }
@@ -373,19 +379,24 @@ body.fp-on #voice-hud { bottom: 310px; }
 @keyframes fpin { from { opacity: 0; transform: translateY(-6px); } }
 .fp-toast { position: absolute; right: 22px; top: 130px; font: 800 22px var(--num); color: #7dff9a; text-shadow: 0 2px 4px #000; animation: fptoast 1.6s ease-out forwards; }
 @keyframes fptoast { to { opacity: 0; transform: translateY(-40px); } }
-#fp-speed { position: absolute; right: 26px; bottom: 26px; text-align: right; color: #fff; text-shadow: 0 2px 4px #000; }
-#fp-speed b { font: 800 54px/1 var(--num); } #fp-speed small { font: 700 13px var(--ui); margin-left: 6px; color: #ccc; } #fp-speed span { display: block; font: 600 13px var(--ui); color: #ddd; letter-spacing: .08em; text-transform: uppercase; }
+#fp-speed { position: absolute; right: 26px; bottom: 22px; display: grid; justify-items: center; gap: 4px; color: #fff; text-shadow: 0 2px 4px #000; }
+#fp-speed .dial { position: relative; width: 132px; height: 132px; display: grid; place-items: center; align-content: center; border-radius: 50%; background: radial-gradient(rgba(10,12,16,.75) 60%, rgba(10,12,16,.35) 61%); }
+#fp-speed .dial::before { content: ''; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 225deg, var(--c, #7dff9a) calc(var(--p) * 270deg), rgba(255,255,255,.14) 0 270deg, transparent 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px)); mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px)); }
+#fp-speed .dial b { font: italic 900 42px/1 var(--num); } #fp-speed .dial small { font: 700 11px var(--ui); color: #bbb; letter-spacing: .12em; }
+#fp-speed span { font: 700 12px var(--ui); color: #ddd; letter-spacing: .08em; text-transform: uppercase; }
 body.fp-driving #ammo-box, body.fp-driving #crosshair { display: none; }
 #fp-help { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); font: 12px var(--ui); color: rgba(255,255,255,.75); text-shadow: 0 1px 2px #000; }
 #fp-help b { padding: 0 5px; border-radius: 3px; background: rgba(255,255,255,.85); color: #111; }
-#fp-phone { position: absolute; z-index: 5; right: 30px; bottom: 30px; width: 300px; height: 520px; overflow: auto; padding: 10px 14px 12px; border-radius: 30px; border: 8px solid #111; background: linear-gradient(180deg, #1e2a3a, #0e141c); color: #fff; box-shadow: 0 20px 50px rgba(0,0,0,.6); animation: fpphone .2s ease-out; }
+#fp-phone { position: absolute; z-index: 5; right: 30px; bottom: 30px; width: 300px; height: 540px; overflow: auto; padding: 12px 14px 12px; border-radius: 38px; border: 9px solid #0c0c0e; outline: 2px solid #3a3d44; background: radial-gradient(120% 60% at 20% 0%, #31406a, transparent 60%), radial-gradient(120% 70% at 100% 100%, #5a2a6a, transparent 60%), #0e1220; color: #fff; box-shadow: 0 24px 60px rgba(0,0,0,.65); animation: fpphone .2s ease-out; scrollbar-width: none; }
+#fp-phone::-webkit-scrollbar { display: none; }
 @keyframes fpphone { from { transform: translateY(40px); opacity: 0; } }
 #fp-phone .bar { display: flex; justify-content: space-between; font: 600 11px var(--ui); color: #ccc; padding: 2px 6px 8px; } #fp-phone .bar span:last-child { color: #7dff9a; }
 #fp-phone h3 { margin: 4px 0 10px; font: 800 18px var(--ui); }
 #fp-phone .apps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-#fp-phone .app { padding: 14px 8px; border-radius: 16px; background: rgba(255,255,255,.07); text-align: center; border: 2px solid transparent; }
-#fp-phone .app.on { border-color: var(--accent); background: rgba(255,176,0,.14); }
-#fp-phone .app .ic { display: block; font-size: 30px; } #fp-phone .app b { display: block; margin-top: 4px; font-size: 14px; } #fp-phone .app small { color: #aab; font-size: 11px; }
+#fp-phone .app { padding: 10px 6px; border-radius: 18px; text-align: center; border: 2px solid transparent; transition: transform .1s; }
+#fp-phone .app.on { border-color: rgba(255,255,255,.7); background: rgba(255,255,255,.08); transform: scale(1.03); }
+#fp-phone .app .ic { display: grid; place-items: center; width: 56px; height: 56px; margin: 0 auto; border-radius: 16px; font-size: 28px; background: linear-gradient(160deg, color-mix(in srgb, var(--c) 80%, #fff), var(--c)); box-shadow: 0 6px 14px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.35); }
+#fp-phone .app b { display: block; margin-top: 6px; font-size: 13px; } #fp-phone .app small { display: block; color: #aab; font-size: 10px; }
 #fp-phone .list, #fp-shop .list { list-style: none; margin: 0; padding: 0; }
 #fp-phone .list li, #fp-shop .list li { position: relative; padding: 9px 10px; margin-bottom: 6px; border-radius: 10px; background: rgba(255,255,255,.06); border: 2px solid transparent; }
 #fp-phone .list li.on, #fp-shop .list li.on { border-color: var(--accent); background: rgba(255,176,0,.12); }
@@ -672,7 +683,7 @@ html, body { font: 14px/1.45 var(--ui); }
   <div id="voice-hud" hidden></div>
   <div id="fp-hud" hidden>
     <div id="fp-money"><div id="fp-cash">$0</div><div id="fp-stars" hidden></div></div>
-    <div id="fp-radar-box"><canvas id="fp-radar" width="200" height="200"></canvas><div id="fp-zone"></div><div id="fp-gps" hidden></div></div>
+    <div id="fp-radar-box"><canvas id="fp-radar" width="300" height="190"></canvas><div class="fp-bars"><i id="fp-hp"><b></b></i><i id="fp-ar"><b></b></i></div><div class="fp-where"><span id="fp-zone"></span><span id="fp-gps" hidden></span></div></div>
     <div id="fp-prompt" hidden></div>
     <div id="fp-note" hidden></div>
     <div id="fp-speed" hidden></div>
