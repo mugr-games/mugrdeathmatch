@@ -127,6 +127,17 @@ const DESIGNS = {
       hiss(c, out, at, 'bandpass', rnd(1500, 5000), 3, [[0, 0.001], [0.001, rnd(0.05, 0.2) * (1.7 - at)], [0.02, 0.001]]);
     }
   },
+  // thunder: a crack, then a long low roll with a few rumbles in it
+  thunder(c, out) {
+    const dr = drive(c, out, 2);
+    hiss(c, out, 0, 'highpass', 2500, 0.4, [[0, 0.001], [0.01, 0.5], [0.3, 0.001]]);
+    hiss(c, dr, 0.05, 'lowpass', [900, 90], 0.7, [[0, 0.001], [0.08, 0.9], [1, 0.5], [3.5, 0.001]]);
+    tone(c, dr, 0.05, 'sine', 70, 28, [[0, 0.001], [0.1, 0.7], [1.2, 0.4], [3.4, 0.001]]);
+    for (let i = 0; i < 5; i++) {
+      const at = rnd(0.3, 2.4);
+      hiss(c, out, at, 'lowpass', [600, 150], 0.6, [[0, 0.001], [0.06, rnd(0.2, 0.45)], [0.8, 0.001]]);
+    }
+  },
   step(c, out, surface) {
     // heel then toe
     for (const [at, v] of [[0, 1], [rnd(0.025, 0.04), 0.6]]) {
@@ -279,7 +290,7 @@ const DESIGNS = {
 // [name, seconds, design, argument, variations]
 const BAKE = [
   ...Object.entries(GUNS).map(([id, P]) => ['gun:' + id, 0.25 + P.tail + P.len, 'gun', P, VARIANTS]),
-  ['explosion', 3, 'explosion', null, 2],
+  ['explosion', 3, 'explosion', null, 2], ['thunder', 4, 'thunder', null, 2],
   ...SURFACES.map((s) => ['step:' + s, 0.3, 'step', s, 4]),
   ['land', 0.3, 'land', null, 2], ['impact', 0.2, 'impact', null, 4], ['ricochet', 0.5, 'ricochet', null, 3],
   ['flesh', 0.2, 'flesh', null, 3], ['clang', 1, 'clang', null, 3], ['thunk', 0.2, 'thunk', null, 2], ['swing', 0.25, 'swing', null, 2],
@@ -468,6 +479,31 @@ export class Synth {
 
   explosion(pos) {
     if (this.ctx) this.play('explosion', pos, 1.5, 0.08, 0.3);
+  }
+
+  thunder() {
+    if (this.ctx) this.play('thunder', null, 1.1, 0.15, 0.4);
+  }
+
+  // a steady hiss of rain while a stormy map is up (quieter below decks)
+  rain(on, muffled = false) {
+    if (!this.ctx) return;
+    if (on && !this.rainSrc) {
+      const s = this.ctx.createBufferSource();
+      s.buffer = this.noise;
+      s.loop = true;
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = 2200; f.Q.value = 0.5;
+      this.rainGain = this.ctx.createGain();
+      this.rainGain.gain.value = 0.06;
+      s.connect(f).connect(this.rainGain).connect(this.master);
+      s.start();
+      this.rainSrc = s;
+    } else if (!on && this.rainSrc) {
+      this.rainSrc.stop();
+      this.rainSrc = null;
+    }
+    if (this.rainGain) this.rainGain.gain.value = muffled ? 0.02 : 0.06;
   }
 
   swing(pos) {

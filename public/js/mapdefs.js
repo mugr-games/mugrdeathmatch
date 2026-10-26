@@ -1454,4 +1454,184 @@ const county = {
 
 // the jobs you can pick in the Heist menu (each map carries its own heist data)
 export const HEIST_MAPS = ['bank', 'arthouse', 'mansion'];
-export const CODE_MAPS = { county, arthouse, mansion, foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court, bank, asylum, harvest, hollow };
+// ------------------------------------------------------------------ Titanic (zombies): the great liner on a stormy night
+// You start on the Boat Deck by the Grand Staircase, between the funnels, with lifeboats along the rails. Crew gates
+// open the bridge, the bow, the aft deck and the stern; the staircase goes down to the dining saloon, and from there
+// to the staterooms forward and the engine room aft. Rain, lightning, and an iceberg off the starboard bow.
+const titanic = (() => {
+  const { B, box, stairs } = builder();
+  const D = [];
+  const deco = (x0, y0, z0, x1, y1, z1, mat) => D.push({ mins: [Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)], maxs: [Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)], mat });
+  const doors = [];
+  const L0 = -2300, L1 = 2300, W = 300, T = 20, SEA = -600, IN = -240, ENG = -432, DOOR = 170;
+  // half the beam at x: full amidships, narrowing to a point at the bow and rounding off at the stern
+  const beam = (x) => (x > 1700 ? Math.max(40, W * (1 - Math.pow((x - 1700) / 620, 1.6))) : x < -1950 ? W * (1 - 0.45 * Math.pow((-1950 - x) / 350, 2)) : W);
+  // the sea far below, and the iceberg looming off the starboard bow
+  deco(-14000, -14000, SEA - 4, 14000, 14000, SEA, 'sea');
+  for (const [x, y, w, h] of [[1900, 1500, 420, 520], [2250, 1650, 300, 380], [1600, 1750, 360, 300], [2050, 1300, 200, 220], [2400, 1950, 260, 180]]) {
+    deco(x - w, y - w * 0.7, SEA, x + w, y + w * 0.7, h, 'ice');
+    deco(x - w * 0.55, y - w * 0.4, h, x + w * 0.45, y + w * 0.35, h + w * 0.45, 'ice');
+  }
+  // the hull and the Boat Deck, in slices so the bow can taper; a hole in the deck for the Grand Staircase
+  const HX0 = -200, HX1 = 300, HY = 70;
+  for (let x = L0; x < L1; x += 100) {
+    const w = beam(x + 50);
+    if (x >= HX0 && x < HX1) { box(x, -w, -24, x + 100, -HY, 0, 'deck'); box(x, HY, -24, x + 100, w, 0, 'deck'); }
+    else box(x, -w, -24, x + 100, w, 0, 'deck');
+    box(x, -w - T, SEA - 40, x + 100, -w, 0, 'hull');
+    box(x, w, SEA - 40, x + 100, w + T, 0, 'hull');
+    deco(x, -w - T - 1, -110, x + 100, -w - T, -12, 'hullwhite');
+    deco(x, w + T, -110, x + 100, w + T + 1, -12, 'hullwhite');
+    // the rail, with an invisible wall above it so nobody goes overboard
+    box(x, -w - T, 0, x + 100, -w - T + 6, 44, 'rail'); box(x, w + T - 6, 0, x + 100, w + T, 44, 'rail');
+    box(x, -w - T, 44, x + 100, -w - T + 6, 260, 'clip'); box(x, w + T - 6, 44, x + 100, w + T, 260, 'clip');
+    // rows of lit portholes
+    if (x > -1900 && x < 1600) for (const z of [-200, -360]) for (const dx of [20, 70]) {
+      deco(x + dx, -w - T - 2, z, x + dx + 12, -w - T, z + 12, 'porthole');
+      deco(x + dx, w + T, z, x + dx + 12, w + T + 2, z + 12, 'porthole');
+    }
+  }
+  box(L0 - 20, -beam(L0 + 50) - T, SEA - 40, L0, beam(L0 + 50) + T, 44, 'hull'); // the stern's flat end
+  box(L1 - 30, -40, SEA - 40, L1 + 10, 40, 60, 'hull'); // the stem
+
+  // a wall across the ship at x (from y0 to y1, z0 to z1) with a barricaded doorway in the middle
+  const bulkhead = (x, y0, y1, z0, z1, cost, name, mat = 'panel') => {
+    box(x, y0, z0, x + 20, -DOOR / 2, z1, mat); box(x, DOOR / 2, z0, x + 20, y1, z1, mat);
+    box(x, -DOOR / 2, z0 + 160, x + 20, DOOR / 2, z1, mat);
+    doors.push({ mins: [x, -DOOR / 2, z0], maxs: [x + 20, DOOR / 2, z0 + 160], cost, name });
+  };
+  // a deckhouse: walls, a roof, an open doorway at one end
+  const house = (x0, x1, w, h, doorEnd, glassFront = false) => {
+    box(x0, -w, 0, x1, -w + 16, h, 'panel'); box(x0, w - 16, 0, x1, w, h, 'panel');
+    for (const [x, open] of [[x0, doorEnd === 'aft'], [x1 - 16, doorEnd === 'fwd']]) {
+      if (open) { box(x, -w, 0, x + 16, -60, h, 'panel'); box(x, 60, 0, x + 16, w, h, 'panel'); box(x, -60, 150, x + 16, 60, h, 'panel'); }
+      else if (glassFront && x > x0) { box(x, -w, 0, x + 16, w, 90, 'panel'); box(x, -w, 90, x + 16, w, 170, 'glass'); box(x, -w, 170, x + 16, w, h, 'panel'); }
+      else box(x, -w, 0, x + 16, w, h, 'panel');
+    }
+    box(x0 - 10, -w - 10, h, x1 + 10, w + 10, h + 16, 'deck');
+    for (let x = x0 + 60; x < x1 - 40; x += 120) for (const s of [-1, 1]) deco(x, s * w - 1, 70, x + 50, s * w + 1, 150, 'porthole');
+  };
+  // a funnel: buff with a black top, on a casing or a roof
+  const funnel = (x, z0) => {
+    box(x - 75, -55, z0, x + 75, 55, 640, 'funnel');
+    box(x - 75, -55, 640, x + 75, 55, 760, 'funnelblack');
+  };
+  // a lifeboat on its chocks, with the davits that would lower it
+  const lifeboat = (x, s) => {
+    const y = s * (W - 60);
+    box(x - 110, y - 32, 0, x + 110, y + 32, 28, 'wood');
+    box(x - 110, y - 35, 28, x + 110, y + 35, 92, 'lifeboat');
+    deco(x - 96, y - 28, 92, x + 96, y + 28, 96, 'canvas');
+    for (const dx of [-125, 125]) { box(x + dx - 5, s * (W - 8) - 5, 0, x + dx + 5, s * (W - 8) + 5, 170, 'rail'); deco(x + dx - 4, y - 4, 160, x + dx + 4, s * (W - 8), 168, 'rail'); }
+  };
+
+  // ---- the Boat Deck amidships (the start): the Grand Staircase house, two funnels, lifeboats
+  box(-230, -110, 0, -200, 110, 200, 'panel');
+  box(-230, -110, 0, 330, -HY, 200, 'panel'); box(-230, HY, 0, 330, 110, 200, 'panel');
+  box(300, -HY, 160, 330, HY, 200, 'panel');
+  doors.push({ mins: [300, -HY, 0], maxs: [330, HY, 160], cost: 1000, name: 'Grand Staircase' });
+  box(-240, -120, 200, 340, 120, 214, 'deck');
+  deco(-160, -80, 214, 260, 80, 262, 'glass'); // the glass dome
+  stairs(-120, 0, IN, '+x', 2 * HY, 15, 'wood');
+  for (let i = 0; i < 15; i++) for (const s of [-1, 1]) deco(-120 + i * 28, s * HY - 3, IN + (i + 1) * 16, -92 + i * 28, s * HY + 3, IN + (i + 1) * 16 + 40, 'brass'); // banisters
+  deco(-20, -30, -90, 60, 30, -60, 'chandelier');
+  box(480, -70, 0, 640, 70, 200, 'panel'); funnel(560, 200);
+  box(-560, -70, 0, -400, 70, 200, 'panel'); funnel(-480, 200);
+  for (const x of [-600, -330, -60, 210, 470]) for (const s of [-1, 1]) lifeboat(x, s);
+  for (const [x, y] of [[-330, 150], [-330, -150]]) box(x - 50, y - 12, 0, x + 50, y + 12, 22, 'wood'); // benches
+  for (const x of [-650, 420, 650]) for (const s of [-1, 1]) { deco(x - 2, s * 130 - 2, 0, x + 2, s * 130 + 2, 150, 'rail'); deco(x - 6, s * 130 - 6, 150, x + 6, s * 130 + 6, 166, 'lamp'); }
+
+  // ---- forward Boat Deck: the bridge and officers' quarters, a funnel on its roof
+  bulkhead(760, -W, W, 0, 200, 750, 'Crew gate');
+  house(900, 1500, 150, 200, 'aft', true); // the bridge windows across the front
+  funnel(1180, 216);
+  box(1400, -20, 0, 1440, 20, 60, 'wood'); deco(1438, -18, 50, 1442, 18, 86, 'brass'); // the wheel
+  for (const s of [-1, 1]) box(1430, s * 70 - 12, 0, 1454, s * 70 + 12, 70, 'brass'); // engine telegraphs
+  box(1230, -40, 0, 1320, 40, 40, 'wood'); deco(1230, -40, 40, 1320, 40, 42, 'linen'); // the chart table
+  for (const x of [960, 1060]) for (const s of [-1, 1]) { box(x, s * 134, 0, x + 80, s * 70, 30, 'wood'); deco(x, s * 134, 30, x + 80, s * 70, 36, 'linen'); } // bunks
+  lifeboat(900, 1); lifeboat(900, -1);
+  for (const x of [950, 1250, 1450]) for (const s of [-1, 1]) deco(x - 4, s * 154 - 4, 150, x + 4, s * 154 + 4, 170, 'lamp');
+
+  // ---- the bow (forecastle): the foremast with the crow's nest, capstans, anchor cranes, and the very tip
+  bulkhead(1700, -W, W, 0, 200, 1000, 'Forecastle gate');
+  box(1940, -14, 0, 1968, 14, 980, 'funnelblack');
+  deco(1925, -30, 560, 1985, 30, 600, 'wood'); // crow's nest
+  for (const [x, y] of [[1850, -120], [1850, 120], [2080, 0]]) { box(x - 26, y - 26, 0, x + 26, y + 26, 44, 'metal'); deco(x - 30, y - 30, 44, x + 30, y + 30, 50, 'brass'); }
+  for (const s of [-1, 1]) box(2000, s * 110 - 10, 0, 2040, s * 110 + 10, 150, 'metal'); // anchor cranes
+  box(1780, -180, 0, 1880, -130, 60, 'wood'); box(1780, 130, 0, 1880, 180, 60, 'wood'); // hatch covers
+
+  // ---- aft Boat Deck: the first-class smoking room (a fire, leather chairs), the last funnel
+  bulkhead(-720, -W, W, 0, 200, 1000, 'Crew gate');
+  house(-1350, -850, 150, 200, 'fwd');
+  funnel(-1180, 216);
+  deco(-1340, -60, 10, -1330, 60, 70, 'furnace'); box(-1334, -70, 0, -1320, 70, 90, 'stone'); // the fireplace
+  for (const [x, y] of [[-1200, 70], [-1200, -70], [-1050, 80], [-1050, -80]]) { box(x - 22, y - 22, 0, x + 22, y + 22, 30, 'leather'); box(x - 22, y + (y >= 0 ? 16 : -22), 30, x + 22, y + (y >= 0 ? 22 : -16), 60, 'leather'); }
+  box(-1130, -30, 0, -1070, 30, 32, 'wood');
+  for (const x of [-1560, -840]) for (const s of [-1, 1]) lifeboat(x, s);
+  for (const x of [-1500, -900]) for (const s of [-1, 1]) deco(x - 4, s * 154 - 4, 150, x + 4, s * 154 + 4, 170, 'lamp');
+
+  // ---- the stern (poop deck): the docking bridge, the flagpole, bollards
+  bulkhead(-1720, -W, W, 0, 200, 1250, 'Poop deck gate');
+  box(-2120, -220, 120, -2080, 220, 136, 'deck'); // the docking bridge, up on legs
+  for (const y of [-200, 200]) box(-2110, y - 10, 0, -2090, y + 10, 120, 'rail');
+  stairs(-1866, 0, 0, '-x', 80, 8, 'wood');
+  box(-2270, -6, 0, -2258, 6, 520, 'rail');
+  for (const [x, y] of [[-1900, -170], [-1900, 170], [-2200, -120], [-2200, 120]]) box(x - 16, y - 16, 0, x + 16, y + 16, 40, 'metal');
+
+  // ---- below: the first-class dining saloon round the foot of the staircase
+  box(-720, -W, IN - 24, 620, W, IN, 'carpet');
+  for (const x of [-560, -400, -240, 380, 520]) for (const y of [-200, -60, 60, 200]) {
+    if (Math.abs(y) < 100 && x > -200) continue;
+    box(x - 40, y - 40, IN, x + 40, y + 40, IN + 30, 'wood'); deco(x - 42, y - 42, IN + 30, x + 42, y + 42, IN + 32, 'linen');
+    for (const [dx, dy] of [[-56, 0], [56, 0], [0, -56], [0, 56]]) box(x + dx - 12, y + dy - 12, IN, x + dx + 12, y + dy + 12, IN + 20, 'leather');
+  }
+  for (const x of [-480, -160, 160, 460]) for (const s of [-1, 1]) box(x - 14, s * 140 - 14, IN, x + 14, s * 140 + 14, -24, 'panel'); // pillars
+  for (const [x, y] of [[-480, 0], [-320, -200], [-320, 200], [450, -200], [450, 200]]) deco(x - 30, y - 30, -60, x + 30, y + 30, -34, 'chandelier');
+
+  // ---- forward below: the staterooms either side of a long corridor
+  bulkhead(600, -W, W, IN, -24, 1250, 'Stateroom corridor');
+  box(620, -W, IN - 24, 1620, W, IN, 'carpet');
+  box(1600, -W, IN, 1620, W, -24, 'panel');
+  const cabins = [620, 820, 1020, 1220, 1420, 1600];
+  for (let k = 0; k < 5; k++) {
+    const a = cabins[k], b = cabins[k + 1], c = (a + b) / 2;
+    for (const s of [-1, 1]) {
+      box(a + 10, s * 60, IN, c - 45, s * 72, -24, 'panel'); box(c + 45, s * 60, IN, b, s * 72, -24, 'panel');
+      box(c - 45, s * 60, IN + 150, c + 45, s * 72, -24, 'panel');
+      if (k) box(a, s * 72, IN, a + 12, s * W, -24, 'panel');
+      box(c - 70, s * (W - 90), IN, c + 30, s * (W - 10), IN + 26, 'wood'); deco(c - 66, s * (W - 86), IN + 26, c + 26, s * (W - 14), IN + 32, 'linen');
+      box(c + 50, s * 76, IN, c + 88, s * 116, IN + 150, 'wood');
+      deco(c - 10, s * (W - 1), IN + 110, c + 10, s * W, IN + 130, 'porthole');
+    }
+    deco(c - 20, -10, -40, c + 20, 10, -26, 'lamp');
+  }
+
+  // ---- aft below: the engine room, down a flight of stairs; two great engines, boilers glowing
+  bulkhead(-720, -W, W, IN, -24, 1500, 'Engine room');
+  box(-820, -100, ENG, -720, 100, IN, 'plate'); // the landing
+  stairs(-1156, 0, ENG, '+x', 200, 12, 'plate');
+  box(-1950, -W, ENG - 24, -720, W, ENG, 'plate');
+  box(-1970, -W, ENG, -1950, W, -24, 'plate');
+  for (const s of [-1, 1]) {
+    box(-1520, s * 70, ENG, -1220, s * 210, ENG + 250, 'engine');
+    for (const x of [-1490, -1410, -1330, -1250]) box(x, s * 90, ENG + 250, x + 50, s * 190, ENG + 320, 'engine');
+    for (const y of [100, 180]) box(-1900, s * y - 36, ENG, -1680, s * y + 36, ENG + 220, 'engine'); // boilers
+    for (const y of [100, 180]) deco(-1680, s * y - 20, ENG + 20, -1676, s * y + 20, ENG + 70, 'furnace');
+  }
+  for (const x of [-1800, -1500, -1200, -900]) deco(x - 30, -10, -40, x + 30, 10, -26, 'lamp');
+
+  const buys = [
+    { kind: 'box', o: [420, -150, 1] },
+    { kind: 'perk', what: 'quick', o: [-330, 230 - 160, 1] }, { kind: 'wall', what: '357', o: [660, 150, 1] }, { kind: 'wall', what: 'smg1', o: [-660, -150, 1] },
+    { kind: 'perk', what: 'jugg', o: [1340, 100, 1] }, { kind: 'wall', what: 'shotgun', o: [800, 150, 1] },
+    { kind: 'perk', what: 'stamina', o: [1820, 0, 1] }, { kind: 'wall', what: 'sniper', o: [2100, 60, 1] },
+    { kind: 'perk', what: 'speed', o: [-1000, -100, 1] }, { kind: 'wall', what: 'crossbow', o: [-800, -150, 1] },
+    { kind: 'wall', what: 'lmg', o: [-1960, 160, 1] },
+    { kind: 'perk', what: 'double', o: [300, 110, IN + 1] }, { kind: 'wall', what: 'autoshotgun', o: [-650, -270, IN + 1] },
+    { kind: 'wall', what: 'grenade', o: [1300, 0, IN + 1] },
+    { kind: 'wall', what: 'ar2', o: [-1100, 260, ENG + 1] },
+  ];
+  return autoLayout({ name: 'Titanic', mood: 'storm', boxes: B, decor: D, sun: [0.25, -0.45, 0.55], bounds: [[-2400, -420, -480], [2400, 420, 820]], killZ: -560, pads: [], doors, buys, zstart: [420, 0, 1] }, { spawns: 18, items: 24, props: 8 });
+})();
+
+export const CODE_MAPS = { county, arthouse, mansion, foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court, bank, asylum, harvest, hollow, titanic };

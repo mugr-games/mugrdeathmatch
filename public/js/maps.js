@@ -31,6 +31,7 @@ const PALETTES = {
   asylum: { concrete: '#8f8c84', plate: '#4a4c4e', metal: '#7a8088', panel: ['#b8c0a8', '#8e9680'], hazard: '#b89a40', neon: '#d8f0ff', stone: ['#8a8478', '#6a6458'], wood: ['#6a5038', '#463424'], tile: ['#c8ccc0', '#a8ae9e'], grass: ['#4a5a32', '#3a3424'] },
   harvest: { concrete: '#a8a090', plate: '#5a5048', metal: '#8a8e90', panel: ['#b89a70', '#8a7050'], hazard: '#d8a040', neon: '#ffd890', stone: ['#9a9284', '#7a7264'], wood: ['#8a6440', '#5a4028'], grass: ['#8a8a3a', '#6a4a2c'], corn: ['#c8b058', '#8a7a34'], foliage: ['#d06a1e', '#8a2e10'] },
   hollow: { concrete: '#9a948a', plate: '#4a4440', metal: '#7a7a7a', panel: ['#b0a080', '#8a7a5a'], hazard: '#c84a2a', neon: '#ffcf80', stone: ['#9a948a', '#6e685e'], wood: ['#7a5636', '#503622'], grass: ['#7a7a34', '#5a4028'], cobble: ['#8e887c', '#4a4238'], foliage: ['#e0821e', '#9a3812'] },
+  titanic: { concrete: '#8a8e94', plate: '#3a3d42', metal: '#5a5f66', panel: ['#ece6d8', '#d2c8b2'], hazard: '#c8a040', neon: '#ffe0a0', stone: ['#c8c2b8', '#a8a294'], wood: ['#6a4428', '#4a2c18'] },
   course: { concrete: '#c8c2b8', plate: '#4f5a6e', metal: '#9aa4b0', panel: ['#8a92a8', '#6a7288'], hazard: '#ffcf1a', neon: '#ff4fd8' },
 };
 // goal nets: a white grid you can see through
@@ -110,6 +111,23 @@ function surf(mat, pal) {
   if (mat === 'leather') return surfaceMaterial('clay', { color: '#5a3424' });
   if (mat === 'gold') return new THREE.MeshStandardMaterial({ color: 0xe8b830, metalness: 1, roughness: 0.25 });
   if (mat === 'painting') return paintingWall();
+  // the liner
+  if (mat === 'deck') return surfaceMaterial('wood', { color: '#a8865a', color2: '#7a5c3a', bump: 1 });
+  if (mat === 'hull') return surfaceMaterial('metal', { color: '#16171a' });
+  if (mat === 'hullwhite') return surfaceMaterial('panel', { color: '#e8e6e0', color2: '#cfccc4' });
+  if (mat === 'rail' || mat === 'lifeboat') return surfaceMaterial('metal', { color: '#e6e4de' });
+  if (mat === 'funnel') return surfaceMaterial('metal', { color: '#c8903c' });
+  if (mat === 'funnelblack') return surfaceMaterial('metal', { color: '#121212' });
+  if (mat === 'canvas') return surfaceMaterial('clay', { color: '#c8c0a8' });
+  if (mat === 'linen') return surfaceMaterial('clay', { color: '#f2f0ea' });
+  if (mat === 'carpet') return surfaceMaterial('clay', { color: '#7a1a1e' });
+  if (mat === 'engine') return surfaceMaterial('metal', { color: '#34373c' });
+  if (mat === 'brass') return new THREE.MeshStandardMaterial({ color: 0xc8a050, metalness: 1, roughness: 0.3 });
+  if (mat === 'furnace') return neonMaterial('#ff6a1a');
+  if (mat === 'porthole' || mat === 'lamp') return neonMaterial('#ffd890');
+  if (mat === 'chandelier') return neonMaterial('#fff0c8');
+  if (mat === 'ice') return new THREE.MeshStandardMaterial({ color: 0xdfeef8, roughness: 0.4, metalness: 0.05 });
+  if (mat === 'sea') return new THREE.MeshStandardMaterial({ color: 0x08141c, metalness: 0.5, roughness: 0.12 });
   if (mat === 'grass') return surfaceMaterial('grass', { color: (pal.grass || ['#4e7a36'])[0], color2: (pal.grass || [0, '#3a5a28'])[1] });
   if (mat === 'panel') return surfaceMaterial('panel', { color: pal.panel[0], color2: pal.panel[1] });
   if (mat === 'hazard') return surfaceMaterial('hazard', { color: pal.hazard });

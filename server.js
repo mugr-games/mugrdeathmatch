@@ -48,7 +48,7 @@ const SNAP_EVERY = 2; // 30 snapshots/s
 const MAX_ROOMS = 30;
 const NUM_COLORS = 8; // suit colours; the client owns the palette
 const NUM_MODELS = 4; // player characters, also drawn by the client
-const MAP_IDS = ['csdm', 'foundry', 'courtyard', 'skyline', 'warehouse', 'rooftops', 'bunker', 'ziggurat', 'docks', 'canyon', 'office', 'station', 'city', 'asylum', 'harvest', 'hollow'];
+const MAP_IDS = ['csdm', 'foundry', 'courtyard', 'skyline', 'warehouse', 'rooftops', 'bunker', 'ziggurat', 'docks', 'canyon', 'office', 'station', 'city', 'asylum', 'harvest', 'hollow', 'titanic'];
 const MODES = { dm: 'Deathmatch', tdm: 'Team deathmatch', ctf: 'Capture the flag', zombies: 'Zombies (rounds, co-op)', infection: 'Infection', soccer: 'Soccer', parkour: 'Parkour', mugrball: 'Mugrball', heist: 'Heist', freeplay: 'Free roam (Mugr County)' };
 // modes without weapons or damage
 const PEACEFUL = new Set(['soccer', 'parkour']);
@@ -1785,6 +1785,7 @@ for (const m of [
   { name: 'Main · Zombies', mode: 'zombies', map: 'city' },
   { name: 'Main · Zombies: Asylum', mode: 'zombies', map: 'asylum' },
   { name: 'Main · Zombies: Harvest', mode: 'zombies', map: 'harvest' },
+  { name: 'Main · Zombies: Titanic', mode: 'zombies', map: 'titanic' },
   { name: 'Main · Soccer', mode: 'soccer', caplimit: 5, timelimit: 10 },
   { name: 'Main · Mugrball', mode: 'mugrball', caplimit: 10, timelimit: 10 },
   { name: 'Main · Parkour', mode: 'parkour' },

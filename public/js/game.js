@@ -60,6 +60,8 @@ const MOODS = {
   fall: { sun: 0xffc48a, sunI: 2.9, sky: 0xffd9b0, ground: 0x6a4428, hemi: 0.6, hemiP: 2.6, top: '#4f78b4', horizon: '#f0c896', groundSky: '#5a4632', glow: 1.2, cloud: '#ffe6cc', fog: 0xe8c8a0, fogD: 0.00011, exposure: 1.05, leaves: true },
   // free roam: a clear day with haze on the horizon (the county goes on further than you can see)
   city: { sun: 0xfff1dc, sunI: 3.2, sky: 0xbfd6ff, ground: 0x5a4a3a, hemi: 0.6, hemiP: 2.6, top: '#2a64c8', horizon: '#c9d9ee', groundSky: '#8a98a8', glow: 1, cloud: '#ffffff', fog: 0xc4d4e6, fogD: 0.00004, exposure: 1 },
+  // a stormy night at sea: darker and bluer, rain (not below decks), lightning and thunder
+  storm: { sun: 0x8fa0d0, sunI: 0.35, sky: 0x2a3450, ground: 0x0c0d10, hemi: 0.15, hemiP: 0.85, top: '#020306', horizon: '#0e1420', groundSky: '#040506', glow: 0.05, cloud: '#161c28', fog: 0x0a0e16, fogD: 0.0005, exposure: 1.1, flashlight: true, rain: true, lightning: true, dryBelow: -40 },
   night: { sun: 0x8fa8ff, sunI: 0.45, sky: 0x3a4a7a, ground: 0x140f0c, hemi: 0.16, hemiP: 0.9, top: '#020308', horizon: '#121826', groundSky: '#050506', glow: 0.08, cloud: '#1c2230', fog: 0x0b0f17, fogD: 0.00055, exposure: 1.1, flashlight: true },
 };
 
@@ -466,6 +468,23 @@ export class Game {
       this.scene.add(this.leaves);
     }
     if (this.leaves) this.leaves.visible = !!M.leaves;
+    // rain: streaks in a box that follows the camera
+    if (M.rain && !this.rain) {
+      const N = this.q.potato ? 500 : 1600;
+      const pos = new Float32Array(N * 6);
+      for (let i = 0; i < N; i++) {
+        const x = (Math.random() - 0.5) * 1400, y = (Math.random() - 0.5) * 1400, z = Math.random() * 900;
+        pos.set([x, y, z, x + 4, y + 1, z + 28], i * 6);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      this.rain = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x9fb4c8, transparent: true, opacity: 0.32, depthWrite: false }));
+      this.rain.frustumCulled = false;
+      this.scene.add(this.rain);
+    }
+    if (this.rain) this.rain.visible = !!M.rain;
+    this.storm = M.lightning ? { next: 3 + Math.random() * 5, flash: 0, boom: 0, base: this.hemi.intensity, sun: M.sunI } : null;
+    this.sound?.rain?.(!!M.rain);
   }
 
   // per frame: the flashlight follows your view; leaves drift down around you
@@ -475,6 +494,34 @@ export class Game {
       this.torch.position.set(eye[0] + f[0] * 4, eye[1] + f[1] * 4, eye[2] - 6);
       this.torch.target.position.set(eye[0] + f[0] * 200, eye[1] + f[1] * 200, eye[2] + f[2] * 200 - 6);
       this.torch.target.updateMatrixWorld();
+    }
+    const M = MOODS[this.mood];
+    if (this.rain && M?.rain) {
+      const dry = eye[2] < (M.dryBelow ?? -1e9);
+      this.rain.visible = !dry;
+      this.sound?.rain?.(true, dry);
+      if (!dry) {
+        const p = this.rain.geometry.attributes.position, a = p.array, fall = dt * 1100, drift = dt * 160;
+        for (let i = 0; i < a.length; i += 6) {
+          let x = a[i] + drift, y = a[i + 1], z = a[i + 2] - fall;
+          if (x - eye[0] > 700) x -= 1400; else if (x - eye[0] < -700) x += 1400;
+          if (y - eye[1] > 700) y -= 1400; else if (y - eye[1] < -700) y += 1400;
+          if (z < eye[2] - 150) z += 900; else if (z > eye[2] + 750) z -= 900;
+          a[i] = x; a[i + 1] = y; a[i + 2] = z; a[i + 3] = x + 4; a[i + 4] = y + 1; a[i + 5] = z + 28;
+        }
+        p.needsUpdate = true;
+      }
+    }
+    // lightning: a double flash that lights everything up, then the thunder rolls in
+    if (this.storm) {
+      const S = this.storm;
+      S.next -= dt;
+      if (S.next <= 0) { S.next = 7 + Math.random() * 12; S.flash = 0.5; S.boom = 0.5 + Math.random() * 1.8; }
+      let k = 1;
+      if (S.flash > 0) { S.flash -= dt; k = S.flash > 0.38 || (S.flash > 0.12 && S.flash < 0.24) ? 12 : 2; }
+      this.hemi.intensity = S.base * k;
+      this.sun.intensity = S.sun * (k > 1 ? 5 : 1);
+      if (S.boom > 0) { S.boom -= dt; if (S.boom <= 0) this.sound?.thunder?.(); }
     }
     if (this.leaves?.visible) {
       const p = this.leaves.geometry.attributes.position, ph = this.leaves.userData.phase;
@@ -617,6 +664,7 @@ export class Game {
     this.hud.powers([]);
     this.hud.vote(null);
     this.fv.clear();
+    this.sound?.rain?.(false);
     this.ps.alive = true;
   }
 
@@ -647,7 +695,7 @@ export class Game {
     this.zv.setup(m.cz);
     this.hv.setup(m.watch ? null : m.heist);
     this.fv.setup(m.watch ? null : m.fp);
-    this.setMood(m.mode === 'zombies' ? 'night' : this.mapMood || 'day');
+    this.setMood(m.mode === 'zombies' && this.mapMood !== 'storm' ? 'night' : this.mapMood || 'day');
     this.clearRagdolls();
     this.voting = null;
     this.hud.vote(null);

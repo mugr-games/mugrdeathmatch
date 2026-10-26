@@ -4,7 +4,7 @@ import WebSocket from 'ws';
 const port = process.argv[2] || 8027;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = {};
-for (const map of ['asylum', 'harvest']) {
+for (const map of ['asylum', 'harvest', 'titanic']) {
   const ws = new WebSocket(`ws://localhost:${port}`);
   const c = { welcome: null, snap: null, hurt: 0, maxZ: 0 };
   ws.on('message', (d) => {

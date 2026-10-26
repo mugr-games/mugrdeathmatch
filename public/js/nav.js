@@ -53,6 +53,8 @@ export function floorGraph(world, bounds, pads = [], { cell = 32, skipPads = fal
         if (b.z - a.z > MV.step) continue;
         const h = Math.max(a.z, b.z) + 2;
         if (world.trace([a.x, a.y, h], [b.x, b.y, h], HMIN, HMAX).fraction < 1) continue;
+        // a drop only if you'd really fall all the way down to b (not land on a floor in between, like a deck)
+        if (a.z - b.z > MV.step && world.trace([b.x, b.y, h], [b.x, b.y, b.z - 4], HMIN, HMAX).endpos[2] > b.z + MV.step) continue;
         a.n.push(b.i);
       }
     }
