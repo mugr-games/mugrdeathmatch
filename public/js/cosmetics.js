@@ -24,6 +24,9 @@ export const COSMETICS = [
   { id: 'banner', slot: 'back', name: 'Back banner', price: 300 },
   { id: 'jetpack', slot: 'back', name: 'Jetpack', price: 450 },
   { id: 'wings', slot: 'back', name: 'Wings', price: 800 },
+  // your own picture (checked automatically, then approved by a moderator before anyone else sees it)
+  { id: 'image_cape', slot: 'back', name: 'Custom image cape', price: 1500, custom: true },
+  { id: 'image_flag', slot: 'back', name: 'Custom image flag', price: 1200, custom: true },
   { id: 'glow_red', slot: 'glow', name: 'Red', price: 60, color: '#ff2e2e' },
   { id: 'glow_green', slot: 'glow', name: 'Green', price: 60, color: '#3dff6a' },
   { id: 'glow_pink', slot: 'glow', name: 'Pink', price: 90, color: '#ff4fd8' },

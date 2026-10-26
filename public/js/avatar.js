@@ -7,6 +7,20 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { isPotato } from './shaders.js';
 import { COSMETIC } from './cosmetics.js';
+import { api } from './net.js';
+
+// the picture on an image cape or flag: the approved upload, a local preview (a data URL), or a sign while it
+// waits for a moderator
+const IMAGE_MATS = new Map();
+function imageMat(img, w, h) {
+  if (!img || img === 'p' || img === 'x') return textMat(img === 'x' ? 'NO PICTURE' : 'IN REVIEW', '#1b1b1f', '#ffd23a', w, h, 0.4);
+  if (!IMAGE_MATS.has(img)) {
+    const t = new THREE.TextureLoader().load(img.startsWith('data:') ? img : api('/img/' + img));
+    t.colorSpace = THREE.SRGBColorSpace;
+    IMAGE_MATS.set(img, new THREE.MeshStandardMaterial({ map: t, roughness: 0.8, side: THREE.DoubleSide }));
+  }
+  return IMAGE_MATS.get(img);
+}
 
 export const SUIT_COLORS = [
   { name: 'Signal orange', rgb: [0.93, 0.45, 0.12] },
@@ -469,7 +483,7 @@ function buildHat(id, ht, g, mats) {
 }
 
 // a back item on the torso group (origin at the waist, bx = just behind the back)
-function buildBack(id, bx, g) {
+function buildBack(id, bx, g, img) {
   const add = (geo, mat, parent = g) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; parent.add(m); return m; };
   const group = (x, y, z) => { const p = new THREE.Group(); p.position.set(x, y, z); g.add(p); return p; };
   const anim = {};
@@ -495,6 +509,20 @@ function buildBack(id, bx, g) {
     add(at(rbox(1.1, 22, 1.4, 0.4), -0.5, 0, -36.6), cmat('#ffcc33', 0.25, 1, 0.9), pivot);
     add(at(new THREE.PlaneGeometry(19, 6).rotateY(-Math.PI / 2).rotateX(-Math.PI / 2).rotateX(Math.PI / 2), -1.05, 0, -14), textMat('GOATED', '#111111', '#ffcc33', 512, 160, 0.8), pivot);
     anim.cape = pivot;
+  } else if (id === 'image_cape') {
+    // a dark cape with the picture on its back
+    const pivot = group(bx + 1, 0, 21);
+    add(at(rbox(0.8, 20, 35, 0.35), -0.5, 0, -16.5), cmat('#1b1b1f', 0.85), pivot);
+    add(at(rbox(1, 21, 2, 0.4), -0.5, 0, -0.5), cmat('#c8ccd2', 0.35, 0.8), pivot);
+    add(at(new THREE.PlaneGeometry(18, 30).rotateX(Math.PI / 2).rotateZ(-Math.PI / 2), -1.05, 0, -17), imageMat(img, 256, 420), pivot);
+    anim.cape = pivot;
+  } else if (id === 'image_flag') {
+    // a pole on the back flying the picture
+    add(at(cyl(0.5, 0.5, 46, 8), bx - 1, 3, 28), cmat('#2b2b2e', 0.4, 0.6));
+    add(at(sph(1, 8, 6), bx - 1, 3, 51.5), cmat('#d8b030', 0.3, 1));
+    const flag = group(bx - 1, 3, 50);
+    add(at(new THREE.PlaneGeometry(20, 13).rotateX(Math.PI / 2).rotateZ(-Math.PI / 2), 0, 10.5, -7), imageMat(img, 300, 196), flag);
+    anim.flag = flag;
   } else if (id === 'banner') {
     add(at(cyl(0.5, 0.5, 42, 8), bx - 1, 3, 26), cmat('#2b2b2e', 0.4, 0.6));
     const flag = group(bx - 1, 3, 44);
@@ -623,7 +651,7 @@ export class Avatar {
     this.cos = {};
     const ok = (slot) => (COSMETIC[cos?.[slot]]?.slot === slot ? cos[slot] : null);
     if (ok('hat')) Object.assign(this.cos, buildHat(cos.hat, HEAD_TOP[this.model] ?? 14, this.head, this.matSet));
-    if (ok('back')) Object.assign(this.cos, buildBack(cos.back, BACK_X[this.model] ?? -12, this.torso));
+    if (ok('back')) Object.assign(this.cos, buildBack(cos.back, BACK_X[this.model] ?? -12, this.torso, cos.img));
     const glow = ok('glow') && COSMETIC[cos.glow].color;
     if (glow === 'rainbow') this.cos.rainbow = true;
     else if (glow) this.matSet.visor.emissive.set(glow);

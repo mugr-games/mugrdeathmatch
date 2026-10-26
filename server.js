@@ -317,8 +317,17 @@ function unwatch(ws) {
   for (const R of rooms.values()) R.watchers.delete(ws);
 }
 
+// what a player wears; an image cape or flag carries its picture: the approved one's id, or p (waiting for a
+// moderator) or x (turned down)
+function cosOf(pr) {
+  if (!pr) return {};
+  const c = { ...pr.eq };
+  if (COSMETIC[c.back]?.custom) c.img = pr.img && pr.imgSt === 'ok' ? pr.img : pr.imgSt === 'rejected' ? 'x' : 'p';
+  return c;
+}
+
 function info(p) {
-  return { id: p.id, name: p.name, color: p.color, model: p.model | 0, cos: p.profile ? p.profile.eq : {}, team: p.team || null, frags: p.frags, deaths: p.deaths, caps: p.caps || 0, ping: p.ping, bot: p.bot ? 1 : 0, points: p.points | 0 };
+  return { id: p.id, name: p.name, color: p.color, model: p.model | 0, cos: cosOf(p.profile), team: p.team || null, frags: p.frags, deaths: p.deaths, caps: p.caps || 0, ping: p.ping, bot: p.bot ? 1 : 0, points: p.points | 0 };
 }
 
 // ------------------------------------------------------------------ players
@@ -1182,7 +1191,7 @@ const loginTries = new Map();
 setInterval(() => { const now = Date.now(); for (const [ip, t] of loginTries) if (t.every((x) => now - x > 60000)) loginTries.delete(ip); }, 60000);
 function profileApi(req, res, route) {
   let body = '';
-  req.on('data', (d) => { body += d; if (body.length > 4096) req.destroy(); });
+  req.on('data', (d) => { body += d; if (body.length > (route === 'image' ? 80000 : 4096)) req.destroy(); });
   req.on('end', async () => {
     let m;
     try { m = JSON.parse(body || '{}'); } catch { return json(res, { error: 'Bad request.' }); }
@@ -1203,6 +1212,11 @@ function profileApi(req, res, route) {
     let error = null;
     if (route === 'buy') error = profiles.buy(pr, String(m.item || ''));
     else if (route === 'equip') error = profiles.equip(pr, String(m.slot || ''), m.item === null ? null : String(m.item || ''));
+    else if (route === 'image') {
+      error = await profiles.setImage(pr, m.data);
+      // let the staff online know there's a picture to look at
+      if (!error && pr.imgSt === 'pending') for (const socks of online.values()) for (const s of socks) if (roleOf(s)) sys(s, 'A new custom picture is waiting for review. Type /images to see it.');
+    }
     // show the change on anyone playing with this profile right now
     if (!error && route !== 'profile') {
       for (const R of rooms.values()) for (const p of R.players.values()) if (p.profile === pr) broadcast(R, { t: 'info', p: info(p) });
@@ -1276,7 +1290,18 @@ const server = http.createServer((req, res) => {
     });
   }
   if (req.method === 'OPTIONS' && p.startsWith('/api/')) { res.writeHead(204, CORS); return res.end(); }
-  if (req.method === 'POST' && /^\/api\/(profile|buy|equip|register|login)$/.test(p)) return profileApi(req, res, p.slice(5));
+  if (req.method === 'POST' && /^\/api\/(profile|buy|equip|image|register|login)$/.test(p)) return profileApi(req, res, p.slice(5));
+  // approved pictures for image capes and flags
+  if (p.startsWith('/img/')) {
+    const id = p.slice(5);
+    if (!/^[a-f0-9]{24}$/.test(id)) { res.writeHead(404); return res.end(); }
+    return void profiles.imageData(id).then((data) => {
+      const m = data && /^data:(image\/[a-z]+);base64,(.*)$/.exec(data);
+      if (!m) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'content-type': m[1], 'cache-control': 'public, max-age=86400', 'access-control-allow-origin': '*' });
+      res.end(Buffer.from(m[2], 'base64'));
+    }).catch(() => { res.writeHead(500); res.end(); });
+  }
   if (p === '/api/leaderboard') return void profiles.leaderboard().then((b) => json(res, b)).catch((e) => json(res, { error: e.message }));
   if (p === '/api/rooms') return json(res, [...rooms.values()].filter((r) => !r.settings.private && !r.heist).map(roomInfo));
   if (p === '/') p = '/index.html';
@@ -1447,10 +1472,10 @@ async function modAction(ws, action, name, reason) {
 // staff ranks: the owner, then the co-owner, admins and mods (set by the owner with /role)
 const roleOf = (ws) => (isOwner(ws) ? 'owner' : ws.profile?.role || null);
 const CAN = {
-  owner: ['kick', 'ban', 'unban', 'bans', 'givecash', 'role', 'coowner'],
-  coowner: ['kick', 'ban', 'unban', 'bans', 'givecash', 'role'],
-  admin: ['kick', 'ban', 'unban', 'bans', 'givecash'],
-  mod: ['kick', 'bans'],
+  owner: ['kick', 'ban', 'unban', 'bans', 'givecash', 'role', 'coowner', 'images'],
+  coowner: ['kick', 'ban', 'unban', 'bans', 'givecash', 'role', 'images'],
+  admin: ['kick', 'ban', 'unban', 'bans', 'givecash', 'images'],
+  mod: ['kick', 'bans', 'images'],
 };
 async function command(ws, text) {
   const [cmd, name, ...rest] = text.slice(1).split(/\s+/);
@@ -1482,6 +1507,12 @@ async function command(ws, text) {
     let n = 0;
     for (const R of rooms.values()) for (const p of R.players.values()) if (!p.bot && p.name.toLowerCase() === name.toLowerCase() && R.fp) { R.fp.giveCash(p, amount); n++; }
     return sys(ws, n ? `Gave $${amount.toLocaleString()} to ${name}.` : `${name} isn't in free roam right now.`);
+  }
+  // /images: the custom pictures waiting for review (approve or turn down in the panel that opens)
+  if (c === 'images') {
+    const items = await profiles.pendingImages();
+    if (!items.length) return sys(ws, 'No pictures are waiting for review.');
+    return wsSend(ws, { t: 'review', items });
   }
   if (c === 'bans') {
     const list = await profiles.listBans();
@@ -1643,6 +1674,18 @@ async function social(ws, m) {
     return wsSend(ws, { t: 'dms', with: other.name, msgs: await profiles.dmHistory(ws.acct, other.name.toLowerCase()) });
   }
   if (m.t === 'voice') return voice.handle(ws, m);
+  // a moderator's decision on a custom picture
+  if (m.t === 'review') {
+    if (!roleOf(ws) || !CAN[roleOf(ws)].includes('images')) return sys(ws, 'Only staff can review pictures.');
+    const tokens = await profiles.judgeImage(String(m.id || ''), !!m.ok, ws.profile?.name || roleOf(ws));
+    if (!tokens) return sys(ws, 'That picture was already reviewed.');
+    for (const R of rooms.values()) for (const p of R.players.values()) if (p.profile && tokens.includes(p.profile._token)) {
+      broadcast(R, { t: 'info', p: info(p) });
+      if (p.ws) { wsSend(p.ws, { t: 'refresh' }); sys(p.ws, m.ok ? 'Your custom picture was approved! Everyone can see it now.' : 'A moderator turned your custom picture down. Try a different one.'); }
+    }
+    const items = await profiles.pendingImages();
+    return wsSend(ws, { t: 'review', items });
+  }
   if (m.t === 'mod') {
     if (m.action === 'list') return modList(ws);
     if (['kick', 'ban', 'unban'].includes(m.action)) await modAction(ws, m.action, m.name, m.reason);
@@ -1650,7 +1693,7 @@ async function social(ws, m) {
     return modList(ws);
   }
 }
-const SOCIAL = new Set(['friends', 'friend', 'dm', 'dms', 'mod', 'voice']);
+const SOCIAL = new Set(['friends', 'friend', 'dm', 'dms', 'mod', 'voice', 'review']);
 
 // voice chat channels: signed-in, not muted by the owner, and a clean channel name
 const voice = createVoice({

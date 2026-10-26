@@ -197,9 +197,11 @@ export function createProfiles(file) {
   const dms = cachedStore(mk(path.join(path.dirname(file), 'messages.json'), 'mugr:d:'), 'messages', storage);
   const bans = cachedStore(mk(path.join(path.dirname(file), 'bans.json'), 'mugr:b:'), 'bans', storage);
   const boards = cachedStore(mk(path.join(path.dirname(file), 'leaderboard.json'), 'mugr:l:'), 'leaderboard', storage);
+  // uploaded pictures for image capes and flags, by hash: { data, status: pending|ok|rejected, by, at, tokens }
+  const images = cachedStore(mk(path.join(path.dirname(file), 'images.json'), 'mugr:i:'), 'images', storage);
   console.log(`[profiles] saving coins, cosmetics and accounts to ${profiles.name}`);
   if (profiles.kind === 'file' && process.env.RENDER) console.warn('[profiles] WARNING: Render forgets files when it restarts. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to keep accounts.');
-  const stores = [profiles, accounts, dms, bans, boards];
+  const stores = [profiles, accounts, dms, bans, boards, images];
 
   // the leaderboard: the top 100 signed-in players in each category, kept as one saved document
   let board = null;
@@ -244,7 +246,7 @@ export function createProfiles(file) {
     return pr;
   }
 
-  const view = (pr) => ({ coins: pr.coins, owned: pr.owned, eq: pr.eq, name: pr.name || null, stats: pr.stats || {}, role: pr.role || null });
+  const view = (pr) => ({ coins: pr.coins, owned: pr.owned, eq: pr.eq, name: pr.name || null, stats: pr.stats || {}, role: pr.role || null, img: pr.img || null, imgSt: pr.imgSt || null });
   const newToken = () => crypto.randomBytes(16).toString('hex');
 
   // give the owner their coins (once) and items
@@ -515,6 +517,53 @@ export function createProfiles(file) {
       return gone.length;
     },
     listBans: async () => ((await bans.get('_index')) || []).map(({ name, by, reason, at }) => ({ name, by, reason, at })),
+    // a picture for the image cape or flag: a small JPEG/PNG data URL. It waits for a moderator before anyone
+    // else sees it (a picture turned down once can't be sent again).
+    async setImage(pr, data) {
+      if (!pr.owned.some((id) => COSMETIC[id]?.custom)) return 'Buy the image cape or the image flag first.';
+      const m = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(data || ''));
+      if (!m || m[2].length > 60000) return 'That picture is too big, or not a picture.';
+      const id = crypto.createHash('sha256').update(m[2]).digest('hex').slice(0, 24);
+      let rec = await images.get(id);
+      if (rec?.status === 'rejected') return 'A moderator already turned that picture down.';
+      if (!rec) rec = { data: String(data), status: 'pending', by: pr.name || 'a guest', at: Date.now(), tokens: [] };
+      if (!rec.tokens.includes(tokenOf(pr))) rec.tokens.push(tokenOf(pr));
+      images.save(id, rec);
+      pr.img = id;
+      pr.imgSt = rec.status;
+      touch(pr);
+      if (rec.status === 'pending') {
+        const idx = (await images.get('_pending')) || [];
+        if (!idx.includes(id)) { idx.push(id); images.save('_pending', idx.slice(-200)); }
+      }
+      return null;
+    },
+    // what's waiting for a moderator (oldest first)
+    async pendingImages() {
+      const idx = (await images.get('_pending')) || [];
+      const recs = await images.getMany(idx);
+      return idx.map((id, i) => (recs[i]?.status === 'pending' ? { id, by: recs[i].by, at: recs[i].at, data: recs[i].data } : null)).filter(Boolean).slice(0, 12);
+    },
+    // a moderator's decision; returns the tokens of the profiles wearing it so their looks can be redrawn
+    async judgeImage(id, ok, by) {
+      const rec = await images.get(String(id));
+      if (!rec || rec.status !== 'pending') return null;
+      rec.status = ok ? 'ok' : 'rejected';
+      rec.judged = { by, at: Date.now() };
+      images.save(String(id), rec);
+      const idx = (await images.get('_pending')) || [];
+      images.save('_pending', idx.filter((x) => x !== id));
+      for (const t of rec.tokens || []) {
+        const pr = await profiles.get(t);
+        if (pr && pr.img === id) { pr.imgSt = rec.status; profiles.save(t, pr); }
+      }
+      return rec.tokens || [];
+    },
+    // the picture itself, only once approved
+    async imageData(id) {
+      const rec = await images.get(String(id));
+      return rec?.status === 'ok' ? rec.data : null;
+    },
     buy(pr, id) {
       const item = COSMETIC[id];
       if (!item || item.hidden) return 'There is no such item.';

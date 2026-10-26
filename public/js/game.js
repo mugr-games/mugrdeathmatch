@@ -29,7 +29,7 @@ import { moveAny, VEHICLES, seatPos } from './vehicle.js';
 const DEG = Math.PI / 180;
 const MUZZLE = new THREE.Vector3();
 // friends, messages, notices and moderation: handled by the page (social.js) whether or not we're in a match
-const SOCIAL = new Set(['friends', 'friend-error', 'dm', 'dms', 'sys', 'mod', 'mod-accounts', 'mod-account', 'banned', 'announce', 'refresh']);
+const SOCIAL = new Set(['friends', 'friend-error', 'dm', 'dms', 'sys', 'mod', 'mod-accounts', 'mod-account', 'banned', 'announce', 'refresh', 'review']);
 const INTERP = 0.1; // seconds behind the server for remote players
 const TEAM_COLOR = { red: 3, blue: 1 }; // suit colour index for each team
 const TEAM_RGB = { red: '#e0473a', blue: '#3a7fe0' };

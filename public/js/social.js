@@ -71,6 +71,23 @@ export class Social {
     else if (m.t === 'announce') this.announce(m.text);
     else if (m.t === 'refresh') this.opts.refresh?.();
     else if (m.t === 'banned') this.banned(m);
+    else if (m.t === 'review') this.review(m.items);
+  }
+
+  // staff: custom pictures waiting for review, each with Approve and Turn down
+  review(items) {
+    let el = $('dlg-review');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'dlg-review';
+      el.className = 'review';
+      document.body.appendChild(el);
+    }
+    if (!items.length) { el.hidden = true; this.notice('All pictures reviewed.'); return; }
+    el.hidden = false;
+    el.innerHTML = `<div class="rv-box"><h3>Pictures to review</h3><p>Approve only pictures that are fine for everyone. Anything rude, violent or with nudity: turn it down.</p><div class="rv-list">${items.map((it) => `<div class="rv-item"><img src="${esc(it.data)}" alt=""><small>by ${esc(it.by)}</small><span><button type="button" class="btn primary" data-ok="${esc(it.id)}">Approve</button><button type="button" class="btn" data-no="${esc(it.id)}">Turn down</button></span></div>`).join('')}</div><button type="button" class="btn" id="rv-close">Close</button></div>`;
+    $('rv-close').onclick = () => { el.hidden = true; };
+    for (const b of el.querySelectorAll('[data-ok], [data-no]')) b.onclick = () => this.send({ t: 'review', id: b.dataset.ok || b.dataset.no, ok: !!b.dataset.ok });
   }
 
   onDm(m) {

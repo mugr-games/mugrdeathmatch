@@ -77,6 +77,19 @@ class Preview {
   }
 }
 
+// the automatic filter: blocks pictures that are mostly skin (a common sign of nudity). A moderator still
+// approves every picture before other players see it.
+function looksUnsafe(px) {
+  let skin = 0, n = 0;
+  for (let i = 0; i < px.length; i += 8) {
+    const r = px[i], g = px[i + 1], b = px[i + 2];
+    n++;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (r > 95 && g > 40 && b > 20 && mx - mn > 15 && Math.abs(r - g) > 15 && r > g && r > b) skin++;
+  }
+  return skin / n > 0.45;
+}
+
 // switch this browser to another save code (after logging in or registering)
 export function setSaveToken(t) {
   try { localStorage.setItem('arena.token', t); } catch {}
@@ -159,11 +172,43 @@ export class Locker {
     this.preview?.stop();
   }
 
+  // the picture for an image cape or flag: once you own one, upload it here
+  pictureCard() {
+    const P = this.profile;
+    if (this.slot !== 'back' || !P.owned.some((id) => COSMETIC[id]?.custom)) return '';
+    const st = { pending: 'Waiting for a moderator to approve it.', ok: 'Approved: everyone can see it.', rejected: 'Turned down by a moderator. Try another picture.' }[P.imgSt] || 'No picture yet.';
+    return `<div class="lk-card lk-pic"><b>Your picture</b><span class="lk-price">${esc(st)}</span><label class="btn primary">Upload a picture<input type="file" id="lk-upload" accept="image/png,image/jpeg,image/webp" hidden></label><small>Keep it clean: pictures are checked, then approved by a moderator.</small></div>`;
+  }
+
+  // shrink the picture to 128 pixels square, check it, and send it
+  async upload(file) {
+    const msg = (t) => { $('lk-msg').textContent = t; };
+    if (file.size > 8e6) return msg('That file is too big.');
+    let bmp;
+    try { bmp = await createImageBitmap(file); } catch { return msg('That isn\'t a picture we can read.'); }
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const s = Math.min(bmp.width, bmp.height);
+    g.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, 128, 128);
+    if (looksUnsafe(g.getImageData(0, 0, 128, 128).data)) return msg('That picture was blocked by the filter. Try a different one.');
+    const data = c.toDataURL('image/jpeg', 0.82);
+    msg('Sending…');
+    const r = await this.api('image', { data });
+    if (r.error) return msg(r.error);
+    this.localImg = data;
+    this.opts.sound?.pickup('battery');
+    msg(r.imgSt === 'ok' ? 'Picture set.' : 'Sent! A moderator will check it soon. Until then, others see "In review".');
+    this.refreshPreview();
+  }
+
   // what the preview wears: equipped items, or the one being looked at in the shop
   refreshPreview(trying) {
     if (!this.preview) return;
     const cos = { ...this.profile.eq };
     if (trying) cos[COSMETIC[trying].slot] = trying;
+    // your own picture shows in the preview straight away (others see it once it's approved)
+    cos.img = this.profile.imgSt === 'ok' ? this.profile.img : this.localImg || (this.profile.imgSt === 'rejected' ? 'x' : 'p');
     this.preview.show(this.opts.settings.color | 0, this.opts.settings.model | 0, cos);
   }
 
@@ -184,7 +229,7 @@ export class Locker {
       else action = worn ? `<button type="button" class="btn" data-off="${c.slot}">Take off</button>` : `<button type="button" class="btn primary" data-wear="${c.id}">Wear</button>`;
       return `<div class="lk-card${worn ? ' worn' : ''}" data-id="${c.id}">${swatch}<b>${esc(c.name)}</b><span class="lk-price">${this.tab === 'shop' && !owned ? (c.price ? `${c.price} coins` : 'Free') : worn ? 'Wearing' : ''}</span>${action}</div>`;
     });
-    $('lk-items').innerHTML = cards.join('') || `<p class="lk-empty">${this.tab === 'wardrobe' ? 'Nothing here yet. Buy something in the shop.' : ''}</p>`;
+    $('lk-items').innerHTML = (cards.join('') || `<p class="lk-empty">${this.tab === 'wardrobe' ? 'Nothing here yet. Buy something in the shop.' : ''}</p>`) + this.pictureCard();
     $('lk-msg').textContent = '';
     for (const card of $('lk-items').querySelectorAll('.lk-card')) {
       card.onmouseenter = () => this.refreshPreview(card.dataset.id);
@@ -195,6 +240,8 @@ export class Locker {
       if (r.error) $('lk-msg').textContent = r.error;
       else { this.opts.sound?.pickup('battery'); $('lk-msg').textContent = `Bought ${COSMETIC[b.dataset.buy].name}. You're wearing it now.`; this.refreshPreview(); }
     };
+    const up = $('lk-upload');
+    if (up) up.onchange = () => { if (up.files[0]) this.upload(up.files[0]); up.value = ''; };
     for (const b of $('lk-items').querySelectorAll('[data-wear]')) b.onclick = async () => { await this.api('equip', { slot: this.slot, item: b.dataset.wear }); this.opts.sound?.ui(1000); this.refreshPreview(); };
     for (const b of $('lk-items').querySelectorAll('[data-off]')) b.onclick = async () => { await this.api('equip', { slot: b.dataset.off, item: null }); this.opts.sound?.ui(700); this.refreshPreview(); };
   }
