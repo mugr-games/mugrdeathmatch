@@ -12,7 +12,7 @@ const ROLES = {
   infiltrator: ['Infiltrator', 'Hard to spot, silenced pistol, quick ties and takedowns'],
   lookout: ['Lookout', 'Sees guards and cameras through walls; sniper'],
 };
-const DIFFS = [['easy', 'Easy', '×1 pay · slow guards, police wait 45s'], ['normal', 'Normal', '×1.6 pay · more guards and cameras'], ['hard', 'Hard', '×2.5 pay · sharp guards, SWAT, no respawns']];
+const DIFFS = [['easy', 'Easy', '×1 pay · slow guards, police wait 55s'], ['normal', 'Normal', '×1.6 pay · more guards and cameras'], ['hard', 'Hard', '×2.5 pay · sharp guards, SWAT, no respawns']];
 const APPROACHES = [['stealth', 'Stealth', 'Walk in unmasked. Nobody has to know (×1.5 pay if the alarm never goes).'], ['loud', 'Loud', 'Masks on, alarm in 25 seconds, fight the police while the drill runs.']];
 
 // opts: { game() -> Game, play(action, errEl, code), pause(), resume(), leave(), status(text), name() }
@@ -107,7 +107,7 @@ export class HeistMenu {
     const r = p.result;
     $('pl-result').className = r ? (r.success ? 'win' : 'lose') : '';
     $('pl-result').innerHTML = r ? `<b>Last job: ${r.success ? 'success' : 'failed'}</b> (${esc(r.difficulty)}) · ${esc(r.why)}<br>`
-      + `${r.bags} bag${r.bags === 1 ? '' : 's'}, ${r.boxes} deposit box${r.boxes === 1 ? '' : 'es'} · $${r.total.toLocaleString()} (${r.coins} coins each)${r.stealth ? ' · stealth bonus' : ''}<br>`
+      + `${r.bags} bag${r.bags === 1 ? '' : 's'}, ${r.boxes} box${r.boxes === 1 ? '' : 'es'} · <b>$${(r.reward || 0).toLocaleString()} each</b> in Free Roam cash (${r.coins} coins)${r.stealth ? ' · stealth bonus' : ''}<br>`
       + `${r.kills} down · ${r.civs} civilian${r.civs === 1 ? '' : 's'} hurt · ${Math.floor(r.time / 60)}:${String(r.time % 60).padStart(2, '0')}` : '';
     if (p.phase === 'planning') {
       $('pl-go').hidden = true;

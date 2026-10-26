@@ -346,7 +346,7 @@ export class HeistView {
       case 'msg': say('', ev.text, 3); break;
       case 'over':
         this.siren(false);
-        say(ev.success ? 'HEIST COMPLETE' : 'HEIST FAILED', ev.success ? `${money(ev.total)} · ${ev.coins} coins each${ev.stealth ? ' · stealth bonus' : ''}` : ev.why, 10);
+        say(ev.success ? 'HEIST COMPLETE' : 'HEIST FAILED', ev.success ? `${money(ev.reward)} each to spend in Free Roam · ${ev.coins} coins${ev.stealth ? ' · stealth bonus' : ''}` : ev.why, 10);
         if (ev.success) g.sound.roundEnd();
         break;
       case 'door': g.sound.ui(ev.open ? 520 : 380); break;

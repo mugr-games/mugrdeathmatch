@@ -41,17 +41,17 @@ export const LABELS = {
 
 // per difficulty: [easy, normal, hard]
 const DIFF = {
-  detect: [0.55, 1, 1.55], // how fast meters fill
-  react: [0.9, 0.55, 0.3], // seconds from spotting to first shot
-  spread: [11, 8, 6], // aim error, degrees
-  dmg: [0.55, 0.9, 1.25],
+  detect: [0.45, 0.8, 1.25], // how fast meters fill
+  react: [1.1, 0.7, 0.4], // seconds from spotting to first shot
+  spread: [13, 10, 8], // aim error, degrees
+  dmg: [0.45, 0.7, 1.0],
   radioTime: [4.5, 3, 1.8], // seconds to radio the alarm in
-  police: [45, 32, 22], // seconds from the alarm to the first assault
-  hack: [20, 26, 32], drill: [50, 65, 80],
+  police: [55, 40, 28], // seconds from the alarm to the first assault
+  hack: [16, 20, 26], drill: [40, 52, 65],
   bleed: [45, 30, 20], custody: [15, 35, Infinity],
   maxPolice: [4, 6, 8], perPlayer: [1.5, 2, 2.5],
   hide: [1.7, 1.25, 0.85], peek: [1.1, 1.6, 2.2], // seconds behind cover / out shooting
-  guardHp: [90, 110, 140], policeHp: [70, 110, 150], swatHp: [0, 0, 240],
+  guardHp: [55, 70, 90], policeHp: [45, 65, 95], swatHp: [0, 0, 150],
   payout: [1, 1.6, 2.5],
 };
 // what the AI carries: weapon index for effects; damage per bullet; seconds between shots; clip; reload; burst
@@ -195,11 +195,14 @@ export function createHeist(R, def, nav, doorBoxes, api) {
     total = Math.max(0, Math.round(total * DIFF.payout[d] * (stealth ? 1.5 : 1)));
     const each = crew().length ? Math.round(total / crew().length) : 0;
     const coins = Math.round(each / 1000);
+    // the real pay: free roam cash for everyone in the crew (the job decides how much)
+    const reward = success ? Math.round((HD.reward || 20000) * (stealth ? 1.25 : 1)) : 0;
     for (const p of crew()) {
       if (coins > 0) api.award(p, coins, 'heist');
+      if (reward) api.cash?.(p, reward);
       api.stat(p, { heists: success ? 1 : 0, matches: 1, wins: success ? 1 : 0 });
     }
-    H.result = { success, why, total, each, coins, stealth: stealth && success, bags: H.secured, boxes: H.boxes.filter((b) => b.taken).length, kills: H.kills, civs: H.civKills, time: Math.round(R.time - H.startAt), difficulty: H.difficulty };
+    H.result = { success, why, total, each, coins, reward, stealth: stealth && success, bags: H.secured, boxes: H.boxes.filter((b) => b.taken).length, kills: H.kills, civs: H.civKills, time: Math.round(R.time - H.startAt), difficulty: H.difficulty };
     ev({ e: 'hk', k: 'over', ...H.result });
     H.sendPlan();
   }

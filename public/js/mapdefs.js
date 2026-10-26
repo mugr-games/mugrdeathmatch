@@ -859,7 +859,7 @@ const bank = (() => {
       { mins: [622, 40, 0], maxs: [638, 120, 140], name: 'back' },
     ],
     heist: {
-      title: 'The Bank Job', loot: 'cash', boxLoot: 'deposit', escape: 'van', cartDraw: [0, 52],
+      title: 'The Bank Job', reward: 20000, loot: 'cash', boxLoot: 'deposit', escape: 'van', cartDraw: [0, 52],
       inside: [[-620, -500, 0], [620, 500, H]],
       restricted: [[-620, -125, 0], [620, 500, H]], // behind the counter and everything past it
       van: { o: [-1050, -690, 0], r: 170 },
@@ -1275,7 +1275,7 @@ const arthouse = (() => {
         cams: 'Loop the cameras', camsWhere: 'security room', wires: 'Cut the alarm wiring', vault: 'the strongroom', hack: 'Hack the strongroom lock', drill: 'Set up the thermal drill',
         cart: 'Cut the painting from its frame', carts: 'the paintings', box: 'Smash the display case', boxes: 'jewel cases', escape: 'Get in the van and go', ride: 'the van', bagFull: 'Get it to the van (G throws it)', opened: 'THE STRONGROOM IS OPEN',
       },
-      loot: 'painting', boxLoot: 'case', escape: 'van', bagCash: 42000, boxCash: 4500, cartDraw: [0, 16],
+      reward: 50000, loot: 'painting', boxLoot: 'case', escape: 'van', bagCash: 42000, boxCash: 4500, cartDraw: [0, 16],
       board: { lo: [-1250, -1000], hi: [900, 660], rooms: [['LOBBY', -80, -420], ['WEST GALLERY', -560, 250], ['GRAND GALLERY', -110, 250], ['EAST GALLERY', 300, 250], ['CORRIDOR', -80, 400], ['SECURITY', -620, 590], ['CURATOR', -200, 590], ['STRONGROOM', 300, 590], ['STREET', -300, -820], ['ALLEY', 760, 300]] },
       inside: [[-680, -520, 0], [680, 600, H]],
       restricted: [[-680, 300, 0], [680, 600, H]],
@@ -1401,7 +1401,7 @@ const mansion = (() => {
         cams: 'Loop the cameras', camsWhere: 'security room', wires: 'Cut the alarm wiring', vault: 'the vault', hack: 'Crack the vault', drill: 'Set up the drill',
         cart: 'Bag the gold', carts: 'the gold', box: 'Crack the safe', boxes: 'safes', escape: 'Get on the boat and go', ride: 'the boat', bagFull: 'Get it to the boat (G throws it)', opened: 'THE VAULT IS OPEN',
       },
-      loot: 'gold', boxLoot: 'safe', escape: 'boat', bagCash: 52000, boxCash: 9000, cartDraw: [0, 55], backNeed: 4,
+      reward: 80000, loot: 'gold', boxLoot: 'safe', escape: 'boat', bagCash: 52000, boxCash: 9000, cartDraw: [0, 55], backNeed: 4,
       board: { lo: [-1450, -760], hi: [1000, 940], rooms: [['DOCK', -1340, 300], ['GROUNDS', -700, 0], ['GATE', -60, -600], ['FOYER', -80, 220], ['CORRIDOR', -80, 360], ['SECURITY', -470, 590], ['STUDY', -140, 590], ['VAULT', 240, 590], ['POOL', 620, -180]] },
       inside: [[-900, -500, 0], [900, 880, 400]],
       restricted: [[-900, -500, 0], [900, 880, 400]],

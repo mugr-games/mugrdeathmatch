@@ -231,6 +231,8 @@ function heistApi(R) {
     pushEvent: (ev, only) => pushEvent(R, ev, only),
     award: (p, n, why) => award(p, n, why),
     stat: (p, change) => profiles.stat(p.profile, change),
+    // heist pay goes into your free roam cash
+    cash: (p, n) => { if (!p.profile) return; const c = (p.profile.city ||= { cash: 5000, cars: [], guns: 0 }); c.cash += n; profiles.save(p.profile); },
     damage: (p, dmg, dir, kind, head) => damage(R, p, null, dmg, kind, head, dir),
     kill: (p, why) => kill(R, p, null, why, false),
     respawn: (p) => respawn(R, p),
