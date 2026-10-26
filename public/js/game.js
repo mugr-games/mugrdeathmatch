@@ -18,6 +18,8 @@ import { loadSlot, instance, WEAPON_SLOT, ITEM_SLOT } from './assets.js';
 import { Synth } from './synth.js';
 import { Hud } from './hud.js';
 import { Avatar, ZOMBIE_SKIN, MODELS, HOLDS, holdPoints, reachArm, avatarMaterials } from './avatar.js';
+import { EMOTE, COSMETIC } from './cosmetics.js';
+import { applyGunSkin, addCharm, swingCharm, finishMaterial } from './skins.js';
 import { Ragdoll } from './ragdoll.js';
 import { ZombiesView } from './zview.js';
 import { socketUrl } from './net.js';
@@ -162,6 +164,7 @@ class Character {
     }
     this.weapon = null;
     this.wslot = null;
+    this.cos = cos || {};
   }
 
   // one-off motions from game events (the built-in characters only)
@@ -204,6 +207,7 @@ class Character {
     this.weapon = instance(proto);
     this.weapon.position.x = 4;
     this.weapon.rotation.x = HOLDS[slot]?.spin || 0;
+    gunLook(this.weapon, this.cos, proto.object?.userData.size || proto.userData?.size);
     this.mount.add(this.weapon);
     this.avatar?.setHold(slot, proto.object?.userData.size || proto.userData?.size, 4);
     if (this.root.userData.drawn === false) this.weapon.traverse((o) => o.layers.set(HIDDEN_LAYER));
@@ -211,6 +215,7 @@ class Character {
 
   // st: { speed, fwdSpeed, sideSpeed, ground, ducked, pitch, alive }
   animate(dt, st) {
+    if (this.weapon) swingCharm(this.weapon, performance.now() / 1000, (st.speed || 0) * 0.0008);
     if (this.avatar) return this.avatar.animate(dt, st);
     let want = 'idle';
     if (!st.alive) want = 'death';
@@ -230,6 +235,13 @@ class Character {
     this.root.traverse((o) => { if (o.geometry && !o.isSkinnedMesh && !o.geometry.userData.keep) o.geometry.dispose?.(); });
     this.avatar?.dispose();
   }
+}
+
+// a gun in its owner's gun skin, with their charm hanging off it
+function gunLook(gun, cos, size) {
+  const sk = COSMETIC[cos?.wskin], ch = COSMETIC[cos?.charm];
+  if (sk?.slot === 'wskin') applyGunSkin(gun, sk.finish);
+  if (ch?.slot === 'charm') addCharm(gun, ch.charm, size);
 }
 
 // ------------------------------------------------------------------ game
@@ -650,6 +662,7 @@ export class Game {
   }
 
   leave() {
+    this.emote(null);
     this.send({ t: 'leave' });
     this.connected = false;
     for (const pl of [...this.players.values()]) this.removePlayer(pl.id);
@@ -721,6 +734,18 @@ export class Game {
       case 'fp': this.fv.message(m); break;
       case 'info': this.info.set(m.p.id, { ...this.info.get(m.p.id), ...m.p }); this.removePlayer(m.p.id); break;
       case 'chat': { const i = this.info.get(m.id); this.hud.say(i ? i.name : '?', m.text); this.sound.chat(); break; }
+      case 'emote': {
+        const pl = m.id !== this.myId && this.players.get(m.id);
+        if (!pl) break;
+        this.endEmote(pl);
+        if (EMOTE[m.e]) {
+          pl.emote = m.e;
+          pl.emoteYaw = m.yaw;
+          pl.emoteAt = performance.now();
+          pl.emoteMusic = this.sound.emote(m.e, pl.pos);
+        }
+        break;
+      }
       case 'votes': if (this.voting) { this.voting.counts = m.c; this.hud.vote(this.voting); } break;
       case 'score': for (const [id, f, d, ping, points] of m.s) { const i = this.info.get(id); if (i) Object.assign(i, { frags: f, deaths: d, ping, points }); } break;
       case 'pong': { const rtt = performance.now() - m.c; this.ping = rtt; this.send({ t: 'rtt', v: Math.round(rtt) }); break; }
@@ -905,7 +930,7 @@ export class Game {
     this.playerProto.then((proto) => {
       if (!this.players.has(id) || pl.obj) return;
       const info = this.info.get(id);
-      pl.obj = new Character(this, this.colorFor(info), proto, this.modelFor(info), info?.team === 'zombie' ? {} : info?.cos);
+      pl.obj = new Character(this, this.colorFor(info), proto, this.modelFor(info), this.cosFor(info));
       this.scene.add(pl.obj.root);
     });
     return pl;
@@ -914,6 +939,7 @@ export class Game {
   removePlayer(id) {
     const pl = this.players.get(id);
     if (!pl) return;
+    this.endEmote(pl);
     if (pl.obj) { this.scene.remove(pl.obj.root); pl.obj.dispose(); }
     this.players.delete(id);
   }
@@ -944,11 +970,16 @@ export class Game {
       }
       if (!pl.obj) continue;
       if (b.w !== pl.wi) { pl.wi = b.w; pl.obj.setWeapon(this.noWeapons ? null : WEAPON_SLOT[WEAPONS[b.w].id]); }
-      const yr = yaw * DEG;
+      if (pl.emote && performance.now() - pl.emoteAt > 300 && (!alive || speed > 40 || !(flags & 2) || flags & 128)) this.endEmote(pl);
+      const av = pl.obj.avatar;
+      if (av && pl.emoteSet !== pl.emote) { pl.emoteSet = pl.emote; av.setEmote(pl.emote); }
+      const yr = (pl.emote ? pl.emoteYaw : yaw) * DEG;
       pl.obj.animate(dt, {
         speed, fwdSpeed: vel[0] * Math.cos(yr) + vel[1] * Math.sin(yr), sideSpeed: vel[0] * Math.sin(yr) - vel[1] * Math.cos(yr),
         ground: !!(flags & 2), ducked: !!(flags & 1), pitch, alive, vz: vel[2],
       });
+      if (pl.emote && av && !av.emote) this.endEmote(pl); // a one-off has finished
+      pl.emoteMusic?.move(pl.pos);
       pl.obj.root.matrix.makeRotationZ(yr).setPosition(o[0], o[1], o[2]);
       pl.obj.root.matrixWorldNeedsUpdate = true;
       pl.obj.root.visible = alive && !(flags & 128); // dead bodies are ragdolls; people in cars are drawn by the car
@@ -988,6 +1019,13 @@ export class Game {
     if (info?.team === 'zombie') return ZOMBIE_SKIN;
     if (TEAM_COLOR[info?.team] !== undefined) return TEAM_COLOR[info.team];
     return (info?.color | 0) || 0;
+  }
+
+  // what someone wears: nothing on zombies, and no suit skin in team games (the team colour has to show)
+  cosFor(info) {
+    if (info?.team === 'zombie') return {};
+    const cos = info?.cos || {};
+    return TEAM_COLOR[info?.team] !== undefined && cos.skin ? { ...cos, skin: undefined } : cos;
   }
 
   modelFor(info) {
@@ -1250,6 +1288,9 @@ export class Game {
     model.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
     const size = proto.object.userData.size || new THREE.Vector3(20, 3, 6);
     model.rotation.x = HOLDS[slot]?.spin || 0;
+    vm.sight = size.z * 0.42; // from the gun's middle up to its sights
+    vm.cosKey = this.gunCosKey();
+    gunLook(model, this.cosFor(this.info.get(this.myId)), size);
     vm.model = model;
     vm.len = size.x;
     vm.hold = holdPoints(slot, size);
@@ -1264,15 +1305,23 @@ export class Game {
     this.buildVmArms();
   }
 
-  // your arms, in your suit colour (rebuilt when it changes)
+  // what your own gun looks like (its skin and charm), to notice when it changes
+  gunCosKey() {
+    const c = this.cosFor(this.info.get(this.myId));
+    return `${c.wskin || ''}|${c.charm || ''}`;
+  }
+
+  // your arms, in your suit colour or suit skin (rebuilt when it changes)
   buildVmArms() {
     const vm = this.vm;
     const info = this.info.get(this.myId);
     const color = this.colorFor(info);
-    if (vm.arms && vm.armsColor === color) return;
+    const skin = COSMETIC[this.cosFor(info).skin]?.finish;
+    if (vm.arms && vm.armsColor === color + '|' + skin) return;
     if (vm.arms) { this.vmScene.remove(vm.arms.root); vm.arms.root.traverse((o) => o.geometry?.dispose()); }
-    vm.armsColor = color;
+    vm.armsColor = color + '|' + skin;
     const M = avatarMaterials(color);
+    if (skin) { M.suit = finishMaterial(skin, 0.45); M.pad = finishMaterial(skin, 0.45, 0.62); }
     for (const m of Object.values(M)) if (m) { m.fog = false; }
     const root = new THREE.Group();
     root.matrixAutoUpdate = false;
@@ -1318,7 +1367,8 @@ export class Game {
   updateViewmodel(dt) {
     const vm = this.vm;
     if (vm.wi !== this.ps.cur) this.setupViewmodel();
-    const show = this.ps.alive && this.connected && !this.zoomed && !this.unarmed() && !this.thirdPerson && !this.fv.phoneOpen() && !this.ps.seat;
+    else if (vm.model && vm.cosKey !== this.gunCosKey()) this.setupViewmodel(true);
+    const show = this.ps.alive && this.connected && !this.zoomed && !this.unarmed() && !this.thirdPerson && !this.myEmote && !this.fv.phoneOpen() && !this.ps.seat;
     vm.holder.visible = show;
     if (vm.arms) vm.arms.root.visible = show && !!vm.model;
     if (!vm.model) return;
@@ -1360,6 +1410,17 @@ export class Game {
     let rz = rl * (vm.shell ? 0.25 : 0.55) + vm.roll + sp * 0.3;
     // pistols: held further in and higher, both hands showing
     if (H.short) { x -= 1.6; y += 1.9; z -= 1.5; }
+    // aiming down the sights: the gun comes up to the middle, its sights under the eye, steadier
+    vm.ads = (vm.ads || 0) + ((this.ads ? 1 : 0) - (vm.ads || 0)) * Math.min(1, dt * 14);
+    if (vm.ads > 0.001 && !H.melee) {
+      const a = vm.ads * vm.ads * (3 - 2 * vm.ads);
+      x += (0 - x + vm.swayX * 0.15) * a;
+      y += (-(vm.sight || 2) - 0.5 + vm.swayY * 0.1 - vm.kick * 0.2 - (1 - draw) * 12 - rl * 2 - y) * a;
+      z += (-8 - L * 0.42 + vm.kick * 1.6 - z) * a;
+      rx *= 1 - a * 0.75;
+      ry *= 1 - a;
+      rz *= 1 - a * 0.8;
+    }
     // the crowbar: upright in the right hand; a swing chops down and across
     vm.pivot.rotation.set(0, 0, 0);
     vm.pivot.scale.setScalar(H.melee ? 0.6 : 1); // a long crowbar drawn smaller, so the hand can hold it in view
@@ -1382,6 +1443,7 @@ export class Game {
     m.multiply(new THREE.Matrix4().makeRotationY(ry));
     m.multiply(new THREE.Matrix4().makeRotationZ(rz));
     m.multiply(TO_VIEW);
+    swingCharm(vm.model, t, vm.swayY * 0.12 + vm.kick * 0.3, -vm.swayX * 0.12);
     vm.holder.matrixAutoUpdate = false;
     vm.holder.matrix.copy(m);
     vm.holder.matrixWorldNeedsUpdate = true;
@@ -1425,6 +1487,41 @@ export class Game {
     }
   }
 
+  // ---------------------------------------------------------------- emotes
+  // start one of yours (null, or the same one again, stops it): you dance in third person with your music
+  // playing, everyone in the room sees it and hears it from where you are, and moving or shooting stops it
+  emote(id) {
+    const ps = this.ps;
+    if (id && (!this.connected || !ps.alive || ps.car || ps.seat || !ps.onGround || this.fv.phoneOpen?.())) return;
+    if (id && id === this.myEmote) id = null;
+    if (!id && !this.myEmote) return;
+    this.myEmoteMusic?.stop();
+    this.myEmoteMusic = null;
+    // the camera swings round to watch you from the front, and back again afterwards
+    if (this.myEmote) this.yaw = (this.yaw + 180) % 360;
+    this.myEmote = id || null;
+    if (id) {
+      this.emoteYaw = this.yaw;
+      this.yaw = (this.yaw + 180) % 360;
+      this.myEmoteMusic = this.sound.emote(id, null);
+      this.tpDist = 0;
+    }
+    this.send({ t: 'emote', e: this.myEmote, yaw: Math.round(this.emoteYaw) });
+  }
+
+  // yours stops when you move, jump, shoot, get in a car or die
+  updateEmote() {
+    if (!this.myEmote) return;
+    const ps = this.ps, v = ps.velocity;
+    if (!this.connected || !ps.alive || ps.car || ps.seat || !ps.onGround || Math.hypot(v[0], v[1]) > 30 || this.mouseButtons & 1) this.emote(null);
+  }
+
+  endEmote(pl) {
+    pl.emote = null;
+    pl.emoteMusic?.stop();
+    pl.emoteMusic = null;
+  }
+
   // ---------------------------------------------------------------- your own body (third person)
   setThirdPerson(on) {
     this.thirdPerson = !!on;
@@ -1432,16 +1529,16 @@ export class Game {
   }
 
   updateSelf(dt) {
-    const show = this.thirdPerson && this.connected && this.ps.alive && !this.ps.car && !this.ps.seat;
+    const show = (this.thirdPerson || this.myEmote) && this.connected && this.ps.alive && !this.ps.car && !this.ps.seat;
     if (!show) { if (this.self?.obj) this.self.obj.root.visible = false; return; }
     const info = this.info.get(this.myId);
-    const key = `${this.colorFor(info)}|${this.modelFor(info)}|${JSON.stringify(info?.cos || {})}`;
+    const key = `${this.colorFor(info)}|${this.modelFor(info)}|${JSON.stringify(this.cosFor(info))}`;
     if (!this.self || this.self.key !== key) {
       if (this.self?.loading) return;
       if (this.self?.obj) { this.scene.remove(this.self.obj.root); this.self.obj.dispose(); }
       this.self = { key, loading: true, obj: null, slot: undefined };
       this.playerProto.then((proto) => {
-        const c = new Character(this, this.colorFor(info), proto, this.modelFor(info), info?.cos || {});
+        const c = new Character(this, this.colorFor(info), proto, this.modelFor(info), this.cosFor(info));
         this.scene.add(c.root);
         this.self.obj = c;
         this.self.loading = false;
@@ -1454,8 +1551,10 @@ export class Game {
     const slot = this.unarmed() ? null : WEAPON_SLOT[WEAPONS[ps.cur].id];
     if (slot !== this.self.slot) { this.self.slot = slot; c.setWeapon(slot); }
     const o = [ps.origin[0] + this.smoothErr[0], ps.origin[1] + this.smoothErr[1], ps.origin[2] + this.smoothErr[2]];
-    const v = ps.velocity, speed = Math.hypot(v[0], v[1]), yr = this.yaw * DEG;
+    const v = ps.velocity, speed = Math.hypot(v[0], v[1]), yr = (this.myEmote ? this.emoteYaw : this.yaw) * DEG;
+    if (c.avatar && this.self.emote !== this.myEmote) { this.self.emote = this.myEmote; c.avatar.setEmote(this.myEmote); }
     c.animate(dt, { speed, fwdSpeed: v[0] * Math.cos(yr) + v[1] * Math.sin(yr), sideSpeed: v[0] * Math.sin(yr) - v[1] * Math.cos(yr), ground: ps.onGround, ducked: ps.ducked, pitch: this.pitch, alive: true, vz: v[2] });
+    if (this.myEmote && c.avatar && !c.avatar.emote) this.emote(null); // a one-off has finished
     c.root.matrix.makeRotationZ(yr).setPosition(o[0], o[1], o[2]);
     c.root.matrixWorldNeedsUpdate = true;
     c.root.visible = true;
@@ -1490,7 +1589,7 @@ export class Game {
     if (W.id === 'shotgun') setTimeout(() => { if (this.ps.cur === wi) this.sound.pump(null); }, 350);
     const muzzle = this.muzzleWorld(eye, cmd);
     this.worldFlash(muzzle);
-    for (const d of spreadDirs(W, cmd.yaw, cmd.pitch, seq, !!(cmd.buttons & BTN.ATTACK2) && !!W.zoom)) {
+    for (const d of spreadDirs(W, cmd.yaw, cmd.pitch, seq, !!(cmd.buttons & BTN.ATTACK2) && !W.melee)) {
       const end = eye.map((v, i) => v + d[i] * 8192);
       const tr = this.world.trace(eye, end, [0, 0, 0], [0, 0, 0], MASK_SHOT);
       let frac = tr.fraction, who = 0;
@@ -1771,6 +1870,7 @@ export class Game {
         side += extra.side;
         buttons |= extra.buttons;
       }
+      if (this.ads) { buttons |= BTN.WALK; buttons &= ~BTN.SPRINT; }
     }
     const len = Math.hypot(fwd, side);
     if (len > 1) { fwd /= len; side /= len; }
@@ -1794,8 +1894,9 @@ export class Game {
       const ps = this.ps;
       if (ps.alive && (ps.car || ps.seat)) moveAny(this.world, ps, cmd, d, this.rules);
       else if (ps.alive) {
-        const wasGround = ps.onGround;
+        const wasGround = ps.onGround, wasSliding = ps.slide > 0;
         pmove(this.world, ps, cmd, d, this.rules);
+        if (!wasSliding && ps.slide > 0) this.sound.slide(null);
         if (ps.onGround && !wasGround && ps.landSpeed > 250) this.sound.land(null, Math.min(0.8, ps.landSpeed / 900));
         if (ps.jumped) { ps.jumped = false; this.sound.step(null, 0.3, this.surfaceAt(ps.origin)); }
         const sp = Math.hypot(ps.velocity[0], ps.velocity[1]);
@@ -1871,6 +1972,9 @@ export class Game {
     eye[2] += this.stepSmooth;
     let yaw = this.yaw, pitch = this.pitch - (this.recoil || 0) * 0.5;
     let roll = 0;
+    // a slide tips the view over a little
+    this.slideTilt = (this.slideTilt || 0) + ((ps.slide > 0 && ps.alive ? 1 : 0) - (this.slideTilt || 0)) * Math.min(1, dt * 8);
+    roll += this.slideTilt * 5;
     // head bob: the view rises and falls with each step and sways a little side to side
     {
       const sp = ps.onGround && ps.alive && !ps.car && !ps.seat ? Math.hypot(ps.velocity[0], ps.velocity[1]) : 0;
@@ -1909,19 +2013,25 @@ export class Game {
       if (cam) { eye = cam.eye; lookAt = cam.at; roll = 0; }
     }
     const Wc = WEAPONS[ps.cur];
-    this.zoomed = this.connected && ps.alive && !!Wc.zoom && !!(this.mouseButtons & 2 || (this.touch && this.touch.buttons & BTN.ATTACK2) || (this.pad && this.pad.buttons & BTN.ATTACK2)) && !this.typing;
-    const fov = this.zoomed ? Wc.zoom : this.baseFov;
-    if (this.camera.fov !== fov) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
-    this.zoomScale = this.zoomed ? Wc.zoom / this.baseFov : 1;
+    const aimHeld = !!(this.mouseButtons & 2 || (this.touch && this.touch.buttons & BTN.ATTACK2) || (this.pad && this.pad.buttons & BTN.ATTACK2));
+    this.zoomed = this.connected && ps.alive && !!Wc.zoom && aimHeld && !this.typing;
+    // every other gun aims down its sights: a little zoom, the gun brought up to the eye, a walk
+    this.ads = this.connected && ps.alive && !Wc.zoom && !Wc.melee && aimHeld && !this.typing && !ps.car && !ps.seat && !this.myEmote && !this.fv.phoneOpen() && !this.fv.shop;
+    this.adsK = (this.adsK || 0) + ((this.ads ? 1 : 0) - (this.adsK || 0)) * Math.min(1, dt * 12);
+    const fov = this.zoomed ? Wc.zoom : this.baseFov * (1 - 0.22 * this.adsK);
+    if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
+    this.zoomScale = fov / this.baseFov;
     const scope = document.getElementById('scope');
     if (scope && scope.hidden === this.zoomed) scope.hidden = !this.zoomed;
     // in a car: the seat or the chase camera
     const carCam = this.connected && this.fv.active ? this.fv.camera(dt) : null;
     if (carCam) { eye = carCam.eye; yaw = carCam.yaw; pitch = carCam.pitch; roll = carCam.roll || 0; }
-    if (this.thirdPerson && ps.alive && this.connected && !this.zoomed && !lookAt && !carCam) {
+    this.updateEmote();
+    if ((this.thirdPerson || this.myEmote) && ps.alive && this.connected && !this.zoomed && !lookAt && !carCam) {
       const f = viewDir(yaw, pitch), y = yaw * DEG;
       const right = [Math.sin(y), -Math.cos(y), 0];
-      const want = [eye[0] - f[0] * 88 + right[0] * 24, eye[1] - f[1] * 88 + right[1] * 24, eye[2] - f[2] * 88 + 10];
+      const back = this.myEmote ? 130 : 88, over = this.myEmote ? 0 : 24;
+      const want = [eye[0] - f[0] * back + right[0] * over, eye[1] - f[1] * back + right[1] * over, eye[2] - f[2] * back + 10];
       const tr = this.world.trace(eye, want, [-5, -5, -5], [5, 5, 5]);
       const k = Math.max(0, tr.fraction - 0.04);
       this.tpDist = Math.min(this.tpDist ?? k, k) + Math.min(1, dt * 4) * (k - Math.min(this.tpDist ?? k, k)); // in fast, out slowly

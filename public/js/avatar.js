@@ -8,6 +8,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { isPotato } from './shaders.js';
 import { COSMETIC } from './cosmetics.js';
 import { api } from './net.js';
+import { emotePose, clearPose } from './emotes.js';
+import { finishMaterial } from './skins.js';
 
 // the picture on an image cape or flag: the approved upload, a local preview (a data URL), or a sign while it
 // waits for a moderator
@@ -319,6 +321,11 @@ export function avatarMaterials(colorIndex) {
 // where the magazine comes out for a reload. Weapon models are centred, barrel along +x, grip down.
 export const HOLDS = {
   crowbar: { right: [-0.3, 0, 0], left: null, melee: true, spin: Math.PI }, // spin: turned about its length (claw forward)
+  knife: { right: [-0.3, 0, 0], left: null, melee: true },
+  bat: { right: [-0.36, 0, 0], left: null, melee: true },
+  katana: { right: [-0.36, 0, 0], left: null, melee: true },
+  axe: { right: [-0.3, 0, 0], left: null, melee: true },
+  sledge: { right: [-0.3, 0, 0], left: null, melee: true },
   pistol: { right: [-0.18, 0, -0.42], left: [-0.2, 1.8, -0.48], mag: [-0.2, 0, -0.9], short: true },
   revolver: { right: [-0.22, 0, -0.4], left: [-0.24, 1.8, -0.46], mag: [0.05, 2, 0], short: true },
   smg: { right: [-0.1, 0, -0.42], left: [0.22, 0, -0.32], mag: [0.02, 0, -0.85] },
@@ -578,6 +585,14 @@ export class Avatar {
   constructor(colorIndex, model = 0, cos = {}) {
     this.model = model;
     const mats = (this.matSet = avatarMaterials(colorIndex));
+    // a suit skin from the shop: the suit, padding and armour in its finish (the rest stays as it is)
+    const skin = colorIndex !== ZOMBIE_SKIN && COSMETIC[cos?.skin]?.slot === 'skin' && COSMETIC[cos.skin].finish;
+    if (skin) {
+      for (const [part, dim] of [['suit', 1], ['pad', 0.62], ['armor', 0.45]]) {
+        mats[part].dispose();
+        mats[part] = finishMaterial(skin, 0.45, dim);
+      }
+    }
     this.mats = [mats.suit, ...Object.values(mats).filter((m) => m !== mats.suit)]; // [0] is the suit (powerup glow)
     const T = template(model);
     const fill = (group, part) => {
@@ -673,6 +688,16 @@ export class Avatar {
   // zombies (and fists): a punch with the other arm each time
   punch() { this.punchT = 0.45; this.punchArm = -this.punchArm; }
 
+  // an emote (an id from EMOTES, or null to stop): the dance takes over the whole body and the gun is put away
+  setEmote(id) {
+    id = id || null;
+    if (id === this.emote) return;
+    if (this.emote) clearPose(this);
+    this.emote = id;
+    this.emoteT = 0;
+    this.hand.visible = !id;
+  }
+
   // sitting in a vehicle. st.sit: { wheel (hands on the wheel or bars), steer (-1..1), bike, look (head turn) }
   sitPose(dt, S) {
     this.breath += dt * 1.6;
@@ -705,6 +730,14 @@ export class Avatar {
   // state: { speed, fwdSpeed, sideSpeed, ground, ducked, pitch (deg, + = down), alive, vz }
   animate(dt, st) {
     if (st.sit) return this.sitPose(dt, st.sit);
+    // a slide: crouched and going fast on the ground
+    this.slideK = (this.slideK || 0) + ((st.ducked && st.ground && st.speed > 180 ? 1 : 0) - (this.slideK || 0)) * Math.min(1, dt * 12);
+    if (this.emote) {
+      this.emoteT += dt;
+      this.breath += dt * 1.6;
+      if (emotePose(this, this.emote, this.emoteT)) return this.animCos(dt, st, 0, false);
+      this.setEmote(null); // a one-off has finished
+    }
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const run = Math.min(1, st.speed / 280);
     const moving = st.ground && st.speed > 10;
@@ -785,7 +818,12 @@ export class Avatar {
     if (this.unarmed && !this.zombie) this.fists(st, moving, run);
 
     if (this.zombie) this.shamble(dt, st, moving, run, dirF);
+    if (this.slideK > 0.01) this.slidePose(this.slideK);
+    this.animCos(dt, st, run, moving);
+  }
 
+  // cosmetics that move: capes and flags in the wind, jetpack flames, the halo, wings, the rainbow visor
+  animCos(dt, st, run, moving) {
     const C = this.cos || {};
     if (C.cape) C.cape.rotation.y = 0.12 + run * 0.75 + (moving ? Math.sin(this.phase * 2) * 0.05 : Math.sin(this.breath) * 0.02) + (st.ground ? 0 : 0.5);
     if (C.flag) C.flag.rotation.z = Math.sin(this.breath * 2.2) * 0.15 + run * 0.3;
@@ -793,6 +831,19 @@ export class Avatar {
     if (C.halo) { C.halo.position.z = HEAD_TOP[this.model] + 5 + Math.sin(this.breath * 1.5) * 0.6; C.halo.rotation.z += dt; }
     if (C.wings) for (const { w, s } of C.wings) w.rotation.x = s * (st.ground ? Math.sin(this.breath) * 0.04 : Math.sin(this.breath * 6) * 0.3);
     if (C.rainbow) this.matSet.visor.emissive.setHSL((this.breath * 0.08) % 1, 1, 0.55);
+  }
+
+  // sliding (blended in by k): hips down near the ground, leaning back, the front leg out straight and the
+  // back one folded under
+  slidePose(k) {
+    this.hips.position.z += (14 - this.hips.position.z) * k;
+    this.hips.rotation.y += (-0.35 - this.hips.rotation.y) * k;
+    this.hips.rotation.z *= 1 - k;
+    this.torso.rotation.y += (-0.1 - this.torso.rotation.y) * k * 0.6;
+    const [R, L] = this.legs;
+    const mixTo = (o, x, y, z) => { o.rotation.x += (x - o.rotation.x) * k; o.rotation.y += (y - o.rotation.y) * k; o.rotation.z += (z - o.rotation.z) * k; };
+    mixTo(L.hip, 0.08, -1.2, 0); mixTo(L.knee, 0, 0.15, 0); mixTo(L.foot, 0, 1.0, 0);
+    mixTo(R.hip, -0.25, -0.15, 0); mixTo(R.knee, 0, 2.1, 0); mixTo(R.foot, 0, -1.6, 0);
   }
 
   // the weapon in the hands: where it sits (aimed by the torso, kicked by recoil, lowered when sprinting, tipped

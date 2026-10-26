@@ -27,6 +27,10 @@ export const MV = {
   standEye: 64,
   duckEye: 28,
   maxVel: 3500,
+  slideTime: 0.85, // a slide: how long it lasts (s), the fastest it pushes you, and the wait before another
+  slideMax: 540,
+  slideWait: 0.6,
+  slideMin: 250, // you have to be going at least this fast (sprinting) to slide
 };
 
 export function newPlayerState(origin = [0, 0, 0]) {
@@ -57,6 +61,7 @@ export function pmove(world, ps, cmd, dt, rules = DEFAULT_RULES) {
 
   if (ps.downed) cmd = { ...cmd, buttons: (cmd.buttons | BTN.DUCK) & ~(BTN.JUMP | BTN.SPRINT) };
   duck(world, ps, cmd, dt);
+  slide(ps, cmd, dt);
   waterCheck(world, ps);
 
   let maxspeed = cmd.buttons & BTN.SPRINT ? MV.sprint : cmd.buttons & BTN.WALK ? MV.walk : MV.run;
@@ -83,7 +88,7 @@ export function pmove(world, ps, cmd, dt, rules = DEFAULT_RULES) {
     ps.jumpHeld = true;
   } else ps.jumpHeld = false;
 
-  if (ps.onGround) friction(ps, dt);
+  if (ps.onGround) friction(ps, ps.slide > 0 ? dt * 0.08 : dt); // sliding: hardly any friction
 
   let wx = fx * fmove + rx * smove, wy = fy * fmove + ry * smove;
   let wishspeed = Math.hypot(wx, wy);
@@ -147,6 +152,26 @@ function duck(world, ps, cmd, dt) {
   }
   const target = ps.ducked ? 1 : 0;
   ps.duckAmt += Math.sign(target - ps.duckAmt) * Math.min(Math.abs(target - ps.duckAmt), dt / MV.duckTime);
+}
+
+// Sliding: crouch while sprinting on the ground and you shoot forward low and fast, then slow to a crouch.
+// Let go of crouch (or slow right down) to stop; jumping out of a slide keeps its speed.
+function slide(ps, cmd, dt) {
+  const want = !!(cmd.buttons & BTN.DUCK);
+  const pressed = want && !ps.duckHeld;
+  ps.duckHeld = want;
+  if (ps.slideCd > 0) ps.slideCd = Math.max(0, ps.slideCd - dt);
+  const speed = Math.hypot(ps.velocity[0], ps.velocity[1]);
+  if (pressed && ps.onGround && ps.ducked && speed > MV.slideMin && !(ps.slide > 0) && !(ps.slideCd > 0) && !ps.downed) {
+    const k = Math.max(speed, Math.min(MV.slideMax, speed * 1.3)) / speed;
+    ps.velocity[0] *= k;
+    ps.velocity[1] *= k;
+    ps.slide = MV.slideTime;
+    ps.slideCd = MV.slideTime + MV.slideWait;
+  } else if (ps.slide > 0) {
+    ps.slide = Math.max(0, ps.slide - dt);
+    if (!want || !ps.ducked || speed < 110) ps.slide = 0;
+  }
 }
 
 function waterCheck(world, ps) {

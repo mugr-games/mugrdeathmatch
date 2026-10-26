@@ -9,9 +9,40 @@ import { GamepadInput } from './gamepad.js';
 import { Social } from './social.js';
 import { Voice } from './voice.js';
 import { HeistMenu } from './planning.js';
-import { COSMETICS } from './cosmetics.js';
+import { COSMETICS, COSMETIC } from './cosmetics.js';
+import { EmoteWheel } from './emotewheel.js';
 import { DEVLOG } from './devlog.js';
 import { api, pageUrl, SERVER } from './net.js';
+
+// the emote wheel (0)
+const wheel = new EmoteWheel((id) => game?.emote(id));
+
+// A menu theme from the shop: the orange of the menus and HUD swapped for its colour (null: the orange).
+// Remembered in this browser too, so it's there straight away next time.
+function menuTheme(id, remember = true) {
+  const T = COSMETIC[id]?.slot === 'menu' ? COSMETIC[id] : null;
+  const st = document.documentElement.style;
+  const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const hi = (h) => '#' + rgb(h).map((v) => Math.round(v + (255 - v) * 0.25).toString(16).padStart(2, '0')).join('');
+  if (!T) {
+    for (const k of ['--accent', '--accent-2', '--accent-rgb', '--accent2-rgb', '--accent-hi', '--accent2-hi', '--logo-filter']) st.removeProperty(k);
+  } else {
+    st.setProperty('--accent', T.accent);
+    st.setProperty('--accent-2', T.accent2);
+    st.setProperty('--accent-rgb', rgb(T.accent).join(', '));
+    st.setProperty('--accent2-rgb', rgb(T.accent2).join(', '));
+    st.setProperty('--accent-hi', hi(T.accent));
+    st.setProperty('--accent2-hi', hi(T.accent2));
+    // the logo's orange turned to the theme's hue (or to grey for a grey theme)
+    const [r, g, b] = rgb(T.accent).map((v) => v / 255), mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    let hue = 0;
+    if (mx > mn) hue = 60 * (mx === r ? ((g - b) / (mx - mn)) % 6 : mx === g ? (b - r) / (mx - mn) + 2 : (r - g) / (mx - mn) + 4);
+    st.setProperty('--logo-filter', mx - mn < 0.2 ? 'grayscale(1) brightness(1.25)' : `hue-rotate(${Math.round(hue - 24)}deg) saturate(1.15)`);
+  }
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', T ? T.accent : '#ffb000');
+  if (remember) try { localStorage.setItem('mugr.menu', T ? id : ''); } catch {}
+}
+try { menuTheme(localStorage.getItem('mugr.menu'), false); } catch {}
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('view');
@@ -53,7 +84,7 @@ async function boot() {
   if (!serverInfo) { status('Can\'t reach the game server.'); return; }
   setAvailable(serverInfo.models);
   game = new Game(canvas, settings);
-  locker = new Locker({ settings, save, sound: game.sound, onLook: (color, model) => game.send({ t: 'color', color, model }) });
+  locker = new Locker({ settings, save, sound: game.sound, onLook: (color, model) => game.send({ t: 'color', color, model }), onTheme: menuTheme });
   game.token = locker.token;
   voice = new Voice({ game, account: () => account, signIn: () => $('btn-account').click() });
   game.setThirdPerson(!!settings.thirdPerson);
@@ -84,6 +115,7 @@ async function boot() {
   });
   locker.onChange((p) => {
     $('menu-coins').textContent = p.coins.toLocaleString();
+    if (!p.unloaded) menuTheme(p.eq.menu); // (not the empty profile from before the server answers)
     account = p.name || null;
     $('acct-name').textContent = account || 'Guest';
     $('btn-account').textContent = account ? 'Account' : 'Sign in / Register';
@@ -103,6 +135,9 @@ async function boot() {
       },
       weapon: (dir) => game.cycleWeapon(dir),
       chat: () => openChat(),
+      emote: () => wheel.toggle(),
+      phone: () => game.fv.togglePhone(),
+      tapUI: (el) => game.fv.tap(el),
       menu: () => { playing = false; openMenu(); },
     });
   }
@@ -479,6 +514,7 @@ function resume() {
 }
 
 function openMenu() {
+  wheel.toggle(false);
   show('menu');
   game?.hud.show(false);
   $('scope').hidden = true;
@@ -554,6 +590,7 @@ document.addEventListener('mousemove', (e) => {
   if (skipMouse > 0) { skipMouse--; return; }
   // drop impossible single-event jumps (a real flick is spread over many small events)
   if (Math.abs(e.movementX) > 400 || Math.abs(e.movementY) > 400) return;
+  if (wheel.open) return wheel.mouse(e.movementX, e.movementY);
   if (game.fv.mapMouse(e.movementX, e.movementY)) return; // the big map's cursor
   const k = 0.022 * settings.sens * (game.zoomed ? game.zoomScale : 1);
   game.yaw = (game.yaw - e.movementX * k) % 360;
@@ -561,6 +598,7 @@ document.addEventListener('mousemove', (e) => {
 });
 document.addEventListener('mousedown', (e) => {
   if (!playing || !game) return;
+  if (wheel.open && document.pointerLockElement === canvas) { if (e.button === 0) wheel.click(); else wheel.toggle(false); return; }
   if (game.fv.click(e.button)) return; // the phone and the gun shop take clicks
   game.mouseButtons |= e.button === 0 ? 1 : e.button === 2 ? 2 : 0;
 });
@@ -594,6 +632,13 @@ document.addEventListener('keydown', (e) => {
   if (!game || !playing || chatOpen) return;
   if (e.code === 'Tab' || e.code === 'Space' || e.code === 'AltLeft') e.preventDefault();
   game.keys.add(e.code);
+  // 0 opens the emote wheel; while it's open the number keys pick an emote
+  if (!e.repeat && (e.code === 'Digit0' || e.code === 'Numpad0') && !game.fv.phoneOpen()) { wheel.toggle(); return; }
+  if (wheel.open) {
+    const n = /^(Digit|Numpad)([1-9])$/.exec(e.code);
+    if (n) { wheel.key(+n[2]); return; }
+    if (e.code === 'Escape') wheel.toggle(false);
+  }
   // free roam: P (or the up arrow) for the phone, which then takes the arrows, Enter and Backspace
   if (game.fv.active) {
     if (!e.repeat && (e.code === 'KeyP' || (e.code === 'ArrowUp' && !game.fv.phoneOpen() && !game.fv.shop))) { game.fv.togglePhone(); return; }
@@ -638,6 +683,11 @@ function loop(now) {
     game.pitch = 5;
   }
   pad?.poll(dt, playing && !chatOpen && !!game.connected);
+  // touch: the phone button only in free roam; the other buttons step aside while the phone or a shop is up
+  if (touch) {
+    touch.el.classList.toggle('fp', !!game.fv.active);
+    touch.el.classList.toggle('ui', !!(game.fv.phoneOpen() || game.fv.shop));
+  }
   game.frame(dt, now / 1000);
   fpsAcc += dt; fpsN++;
   if (fpsAcc > 0.5) {

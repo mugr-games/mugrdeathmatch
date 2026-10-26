@@ -15,6 +15,7 @@ import { WEAPON_SLOT } from './assets.js';
 import { BoxWorld } from './collide.js';
 import { viewDir } from './sim.js';
 import { esc } from './hud.js';
+import { isTouch } from './touch.js';
 
 const DEG = Math.PI / 180;
 const CW = G * CHUNK; // chunk width
@@ -274,6 +275,9 @@ function palmCrown() {
 }
 
 // ------------------------------------------------------------------ the view
+// on a touch screen the phone and shops show buttons instead of key hints
+const TOUCH_KEYS = '<div class="keys tkeys"><button type="button" data-act="back">‹ Back</button><button type="button" data-act="close">Close</button></div>';
+
 export class CityView {
   constructor(game) {
     this.g = game;
@@ -1232,7 +1236,7 @@ export class CityView {
     else if (P.screen === 'contacts') body = `<ul class="list">${items.map((it, k) => `<li class="${k === P.sel ? 'on' : ''}" data-k="${k}"><b>📞 ${esc(it.label)}</b><small>${esc(it.sub)}</small></li>`).join('')}</ul>`;
     else if (P.screen === 'paint') body = `<p class="pick">${esc(P.item.V.name)} · ${money(P.item.V.price)}</p><div class="paints">${items.map(({ i }, k) => `<i class="sw${k === P.sel ? ' on' : ''}" data-k="${k}" title="${PAINT_NAMES[i]}" style="background:${PAINTS[i]}"></i>`).join('')}</div><p class="pick">${PAINT_NAMES[P.sel]} · Enter to buy</p>`;
     else if (P.screen === 'map') body = '<canvas id="fp-map" width="300" height="300"></canvas><p class="legend"><i style="background:#ff5a3a"></i>Gas <i style="background:#ffd23a"></i>Guns <i style="background:#fff"></i>Hospital <i style="background:#3adc7a"></i>Your car</p>';
-    $('fp-phone').innerHTML = `<div class="bar"><span>${new Date().toTimeString().slice(0, 5)}</span><span>${money(this.state.cash)}</span></div><h3>${title}</h3>${body}<div class="keys">${P.screen === 'home' ? '<b>↑↓←→</b> move · <b>Enter</b> open · <b>P</b> close' : '<b>↑↓</b> move · <b>Enter</b> choose · <b>Backspace</b> back'}</div>`;
+    $('fp-phone').innerHTML = `<div class="bar"><span>${new Date().toTimeString().slice(0, 5)}</span><span>${money(this.state.cash)}</span></div><h3>${title}</h3>${body}${isTouch() ? TOUCH_KEYS : `<div class="keys">${P.screen === 'home' ? '<b>↑↓←→</b> move · <b>Enter</b> open · <b>P</b> close' : '<b>↑↓</b> move · <b>Enter</b> choose · <b>Backspace</b> back'}</div>`}`;
     $('fp-phone').querySelector('.on')?.scrollIntoView({ block: 'nearest' });
     if (P.screen === 'map') this.drawMap();
   }
@@ -1441,6 +1445,22 @@ export class CityView {
     $('fp-gps').textContent = d > 4000 ? `${(d * 0.0254 / 1000).toFixed(1)} km` : `${Math.round(d * 0.0254)} m`;
   }
 
+  // a tap on the phone or a shop (touch screens): that tile or row is picked, or Back / Close
+  tap(el) {
+    const ui = this.phone ? 'phone' : this.shop ? 'shop' : null;
+    if (!ui) return false;
+    const act = el.closest('[data-act]')?.dataset.act;
+    if (act === 'back') this.key('Backspace');
+    else if (act === 'close') ui === 'phone' ? this.closePhone() : this.closeShop();
+    else {
+      const row = el.closest('[data-k]');
+      if (!row) return true;
+      (ui === 'phone' ? this.phone : this.shop).sel = +row.dataset.k;
+      this.key('Enter');
+    }
+    return true;
+  }
+
   click(button) {
     if (this.mapClick(button)) return true;
     if (!this.phone && !this.shop) return false;
@@ -1499,8 +1519,8 @@ export class CityView {
     const S = this.shop;
     if (!S) return;
     if (S.kind === 'customs') {
-      const rows = S.items.map((it, k) => `<li class="${k === S.sel ? 'on' : ''}${it.on ? ' own' : ''}"><b>${it.sw ? `<i class="sw" style="background:${it.sw}"></i>` : ''}${esc(it.label)}</b><span class="price">${it.on ? 'Fitted' : it.price ? money(it.price) : 'Free'}</span></li>`);
-      $('fp-shop').innerHTML = `<h3>HALCYON CUSTOMS</h3><p class="cash">${esc(S.name)} · ${money(this.state.cash)}</p><ul class="list">${rows.join('')}</ul><div class="keys"><b>↑↓</b> or wheel · <b>Enter</b> fit it · drive out to leave</div>`;
+      const rows = S.items.map((it, k) => `<li data-k="${k}" class="${k === S.sel ? 'on' : ''}${it.on ? ' own' : ''}"><b>${it.sw ? `<i class="sw" style="background:${it.sw}"></i>` : ''}${esc(it.label)}</b><span class="price">${it.on ? 'Fitted' : it.price ? money(it.price) : 'Free'}</span></li>`);
+      $('fp-shop').innerHTML = `<h3>HALCYON CUSTOMS</h3><p class="cash">${esc(S.name)} · ${money(this.state.cash)}</p><ul class="list">${rows.join('')}</ul>${isTouch() ? TOUCH_KEYS : `<div class="keys"><b>↑↓</b> or wheel · <b>Enter</b> fit it · drive out to leave</div>`}`;
       $('fp-shop').querySelector('.on')?.scrollIntoView({ block: 'nearest' });
       return;
     }
@@ -1509,9 +1529,9 @@ export class CityView {
       if (it.armor) return `<li class="${k === S.sel ? 'on' : ''}"><b>Body armour</b><span class="price">${money(it.price)}</span><small>${ps.armor >= 100 ? 'Full' : 'Fills your armour'}</small></li>`;
       const wi = WEAPON_INDEX[it.w], W = WEAPONS[wi];
       const own = (this.state.guns >> wi) & 1 || (ps.owned >> wi) & 1;
-      return `<li class="${k === S.sel ? 'on' : ''}${own ? ' own' : ''}"><b>${esc(W.name)}</b><span class="price">${own ? (W.ammo ? 'Ammo ' + money(it.ammo) : 'Owned') : money(it.price)}</span><small>${own ? 'Yours (kept between visits)' : `${W.damage * (W.pellets || 1)} damage · ${W.clip > 0 ? W.clip + ' rounds' : 'single shot'}`}</small></li>`;
+      return `<li data-k="${k}" class="${k === S.sel ? 'on' : ''}${own ? ' own' : ''}"><b>${esc(W.name)}</b><span class="price">${own ? (W.ammo ? 'Ammo ' + money(it.ammo) : 'Owned') : money(it.price)}</span><small>${own ? 'Yours (kept between visits)' : `${W.damage * (W.pellets || 1)} damage · ${W.melee ? 'melee' : W.clip > 0 ? W.clip + ' rounds' : 'single shot'}`}</small></li>`;
     });
-    $('fp-shop').innerHTML = `<h3>MUGR ARMS</h3><p class="cash">${money(this.state.cash)}</p><ul class="list">${rows.join('')}</ul><div class="keys"><b>↑↓</b> or wheel · <b>Enter</b> buy · <b>Backspace</b> leave</div>`;
+    $('fp-shop').innerHTML = `<h3>MUGR ARMS</h3><p class="cash">${money(this.state.cash)}</p><ul class="list">${rows.join('')}</ul>${isTouch() ? TOUCH_KEYS : `<div class="keys"><b>↑↓</b> or wheel · <b>Enter</b> buy · <b>Backspace</b> leave</div>`}`;
     $('fp-shop').querySelector('.on')?.scrollIntoView({ block: 'nearest' });
   }
   shopChoose() {

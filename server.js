@@ -21,7 +21,7 @@ import { createFreeplay } from './freeplay.js';
 import { createProfiles, OWNER_NAME } from './profiles.js';
 import { checkText, badName } from './filter.js';
 import { createReporter } from './moderation.js';
-import { COIN_KILL, COIN_TEAM_WIN, COSMETIC } from './public/js/cosmetics.js';
+import { COIN_KILL, COIN_TEAM_WIN, COSMETIC, EMOTE } from './public/js/cosmetics.js';
 
 // Packed build (the standalone .exe, see tools/build_exe.mjs): game files are assets inside the executable,
 // keyed by their path from the project root ("public/index.html"). Models still load from a "models" folder beside it.
@@ -326,6 +326,18 @@ function cosOf(pr) {
   return c;
 }
 
+// an emote (m.e: an id, or null to stop) and which way the dancer faces: everyone in the room gets it, and
+// each client plays the dance until that player moves
+function emote(p, m) {
+  const e = m.e === null ? null : EMOTE[m.e] ? m.e : undefined;
+  if (e === undefined) return;
+  // at most 20 every 2 seconds (only spam is cut: normal picking and stopping always goes through)
+  const now = Date.now();
+  if (now - (p.emoteWin || 0) > 2000) { p.emoteWin = now; p.emoteN = 0; }
+  if (++p.emoteN > 20) return;
+  broadcast(p.room, { t: 'emote', id: p.id, e, yaw: Number.isFinite(m.yaw) ? Math.round(m.yaw) % 360 : 0 });
+}
+
 function info(p) {
   return { id: p.id, name: p.name, color: p.color, model: p.model | 0, cos: cosOf(p.profile), team: p.team || null, frags: p.frags, deaths: p.deaths, caps: p.caps || 0, ping: p.ping, bot: p.bot ? 1 : 0, points: p.points | 0 };
 }
@@ -567,7 +579,7 @@ function fire(R, p, wi, cmd, seq) {
   const ps = p.ps;
   const start = eyePos(ps);
   const world = R.map.world;
-  const zoomed = !!(cmd.buttons & BTN.ATTACK2) && !!W.zoom;
+  const zoomed = !!(cmd.buttons & BTN.ATTACK2) && !W.melee; // aiming down the sights (or the scope)
   if (R.heist) R.heist.shot(p, wi, start);
   if (R.fp) R.fp.shot(p, wi, start);
 
@@ -1066,7 +1078,7 @@ function pickup(p, kind) {
   const wi = WEAPON_INDEX[kind];
   if (wi === undefined) return false;
   const W = WEAPONS[wi];
-  if ((ps.owned >> wi) & 1 && ps.ammo[W.ammo] >= W.maxAmmo) return false;
+  if ((ps.owned >> wi) & 1 && (W.melee || ps.ammo[W.ammo] >= W.maxAmmo)) return false;
   giveWeapon(ps, wi);
   return true;
 }
@@ -1230,6 +1242,7 @@ const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png',
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
   '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.bin': 'application/octet-stream', '.fbx': 'application/octet-stream', '.ktx2': 'image/ktx2', '.tga': 'image/x-tga',
+  '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg',
 };
 
 // Which model files exist for each slot: models/<slot>.glb | .gltf | .fbx, or a folder models/<slot>/ holding one.
@@ -1794,6 +1807,7 @@ wss.on('connection', (ws, req) => {
       broadcast(R, { t: 'info', p: info(p) });
     }
     else if (m.t === 'team' && R.pick && typeof m.team === 'string') setTeam(R, p, m.team);
+    else if (m.t === 'emote') emote(p, m);
     else if (m.t === 'heist' && R.heist) R.heist.message(p, m);
     else if (m.t === 'fp' && R.fp) R.fp.message(p, m);
     else if (m.t === 'vote' && R.vote && R.vote.options.includes(m.map)) { R.vote.votes.set(p.id, m.map); broadcast(R, { t: 'votes', c: voteCounts(R) }); }

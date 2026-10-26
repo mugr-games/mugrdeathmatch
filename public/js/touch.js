@@ -18,6 +18,8 @@ const BUTTONS = [
   ['next', '›', 'next'],
   ['scores', 'TAB', 'scores'],
   ['chat', 'SAY', 'chat'],
+  ['emote', 'DANCE', 'emote'],
+  ['phone', 'PHONE', 'phone'],
   ['menu', '❚❚', 'menu'],
 ];
 
@@ -65,6 +67,9 @@ export class TouchControls {
 
   down(e) {
     e.preventDefault();
+    // the phone and the shops sit under this layer: a tap on one goes to it
+    const ui = !e.target.closest('.tb') && document.elementsFromPoint(e.clientX, e.clientY).find((el) => el.closest?.('#fp-phone, #fp-shop'));
+    if (ui) { this.opts.tapUI?.(ui); return; }
     try { this.el.setPointerCapture(e.pointerId); } catch {}
     const b = e.target.closest('.tb');
     if (b) {
@@ -136,6 +141,8 @@ export class TouchControls {
     else if (act === 'prev') this.opts.weapon(-1);
     else if (act === 'next') this.opts.weapon(1);
     else if (act === 'chat') this.opts.chat();
+    else if (act === 'emote') this.opts.emote();
+    else if (act === 'phone') this.opts.phone?.();
     else if (act === 'menu') this.opts.menu();
     this.sync();
   }

@@ -29,6 +29,11 @@ export const SLOTS = {
   autoshotgun: { kind: 'weapon', length: 34 },
   railgun: { kind: 'weapon', length: 40 },
   claws: { kind: 'weapon', length: 20 },
+  knife: { kind: 'weapon', length: 13 },
+  bat: { kind: 'weapon', length: 32 },
+  katana: { kind: 'weapon', length: 38 },
+  axe: { kind: 'weapon', length: 32 },
+  sledge: { kind: 'weapon', length: 34 },
   megahealth: { kind: 'item', size: 22 },
   heavyarmor: { kind: 'item', size: 26 },
   pw_damage: { kind: 'item', size: 18 },
@@ -42,7 +47,7 @@ export const MAP_CREDITS = {
 };
 
 // weapon id -> model slot
-export const WEAPON_SLOT = { crowbar: 'crowbar', pistol: 'pistol', '357': 'revolver', smg1: 'smg', ar2: 'rifle', shotgun: 'shotgun', crossbow: 'crossbow', sniper: 'sniper', rpg: 'rocket', grenade: 'grenade', lmg: 'lmg', autoshotgun: 'autoshotgun', railgun: 'railgun', claws: 'claws' };
+export const WEAPON_SLOT = { crowbar: 'crowbar', pistol: 'pistol', '357': 'revolver', smg1: 'smg', ar2: 'rifle', shotgun: 'shotgun', crossbow: 'crossbow', sniper: 'sniper', rpg: 'rocket', grenade: 'grenade', lmg: 'lmg', autoshotgun: 'autoshotgun', railgun: 'railgun', claws: 'claws', knife: 'knife', bat: 'bat', katana: 'katana', axe: 'axe', sledge: 'sledge' };
 export const ITEM_SLOT = { health: 'medkit', vial: 'medkit', battery: 'armor', ammo: 'ammo', megahealth: 'megahealth', heavyarmor: 'heavyarmor', damage: 'pw_damage', haste: 'pw_haste', boots: 'pw_boots' };
 
 let available = {};
@@ -292,6 +297,54 @@ const BUILD = {
     g.add(part(hex(3), red, -13.4, 0, 0.2, 0, 0.16, 0));
     g.add(part(wedge(3.4, 1.55, 0.22, 1.9), steel, -14.7, 0, 0.42, 0, 0.16, 0));
     g.add(part(new THREE.CylinderGeometry(0.86, 0.86, 3.2, 6).rotateZ(Math.PI / 2), dark, -4.5, 0, 0)); // grip wear: darker steel where it's held
+  },
+  // the melee weapons: each lies along +X with the handle toward -X and the business end at +X
+  // a combat knife: rubber grip, a guard, a clip point blade with a darker spine
+  knife(g) {
+    const steel = M.steel(), dark = M.dark(), grip = M.polymer();
+    g.add(part(rbox(5.4, 1.15, 1.4, 0.5), grip, -3.4, 0, 0)); // grip
+    for (let x = -5.4; x < -1.2; x += 0.9) g.add(part(new THREE.TorusGeometry(0.62, 0.08, 4, 10).rotateY(Math.PI / 2), dark, x, 0, 0)); // grip rings
+    g.add(part(rbox(0.5, 1.5, 2.6, 0.2), dark, -0.5, 0, 0)); // guard
+    g.add(part(rbox(0.7, 1.2, 1.2, 0.3), dark, -6.3, 0, 0)); // pommel
+    const blade = new THREE.Shape([new THREE.Vector2(0, -0.55), new THREE.Vector2(5.2, -0.4), new THREE.Vector2(7, 0.2), new THREE.Vector2(5.6, 0.45), new THREE.Vector2(0, 0.6)]);
+    g.add(part(new THREE.ExtrudeGeometry(blade, { depth: 0.16, bevelEnabled: true, bevelSize: 0.06, bevelThickness: 0.08, bevelSegments: 1 }).translate(0, 0, -0.08).rotateX(Math.PI / 2), steel, -0.2, 0, 0));
+    g.add(part(rbox(4.2, 0.24, 0.22, 0.08), dark, 2, 0, 0.5)); // the spine
+  },
+  // a wooden baseball bat: a thin taped handle swelling to a fat barrel, a knob at the end
+  bat(g) {
+    const wood = M.wood(), tape = M.dark();
+    const pts = [[0, -16], [0.85, -16], [0.9, -15.4], [0.62, -15], [0.6, -7], [0.75, -3], [1.15, 3], [1.35, 9], [1.38, 14.4], [1.2, 15.8], [0, 16]];
+    g.add(part(new THREE.LatheGeometry(pts.map(([r, z]) => new THREE.Vector2(r, z)), 16).rotateZ(-Math.PI / 2), wood));
+    g.add(part(new THREE.CylinderGeometry(0.66, 0.66, 7, 14).rotateZ(Math.PI / 2), tape, -11, 0, 0)); // grip tape
+  },
+  // a katana: a cord-wrapped hilt, a round guard and a long, slightly curved blade
+  katana(g) {
+    const steel = M.steel(), dark = M.dark(), wrap = M.paint(0x1a1a24);
+    g.add(part(rbox(10, 1.2, 1.5, 0.5), wrap, -14, 0, 0)); // hilt
+    for (let x = -18.4; x < -9.6; x += 1.1) g.add(part(rbox(0.5, 1.28, 1.6, 0.2), M.paint(0xc8a24a), x, 0, 0, 0, 0.5, 0)); // the diamond wrap
+    g.add(part(new THREE.CylinderGeometry(1.8, 1.8, 0.35, 20).rotateZ(Math.PI / 2), dark, -8.8, 0, 0)); // the guard
+    g.add(part(rbox(0.9, 1.1, 1.3, 0.2), M.paint(0xc8a24a), -8.2, 0, 0)); // the collar
+    const curve = new THREE.Shape();
+    curve.moveTo(0, -0.55); curve.quadraticCurveTo(14, -0.4, 27, 0.9); curve.lineTo(26.2, 1.45); curve.quadraticCurveTo(13, 0.6, 0, 0.55); curve.closePath();
+    g.add(part(new THREE.ExtrudeGeometry(curve, { depth: 0.14, bevelEnabled: true, bevelSize: 0.05, bevelThickness: 0.06, bevelSegments: 1 }).translate(0, 0, -0.07).rotateX(Math.PI / 2), steel, -8, 0, 0));
+  },
+  // a fire axe: a red handle, a wedge blade one way and a spike the other
+  axe(g) {
+    const red = M.paint(0xb3261e), steel = M.steel(), dark = M.dark();
+    g.add(part(rbox(30, 1.2, 1.6, 0.55), red, -1, 0, 0));
+    g.add(part(rbox(5, 1.3, 1.7, 0.5), dark, -13, 0, 0)); // grip
+    g.add(part(rbox(3, 1.6, 3.2, 0.4), steel, 13, 0, 0)); // the eye
+    const blade = new THREE.Shape([new THREE.Vector2(-1.4, 1.2), new THREE.Vector2(1.4, 1.2), new THREE.Vector2(2.4, 6.6), new THREE.Vector2(-2.6, 6.6)]);
+    g.add(part(new THREE.ExtrudeGeometry(blade, { depth: 0.4, bevelEnabled: true, bevelSize: 0.12, bevelThickness: 0.12, bevelSegments: 1 }).translate(0, 0, -0.2).rotateX(Math.PI / 2), steel, 13, 0, 0));
+    g.add(part(new THREE.ConeGeometry(0.75, 5, 4).rotateX(-Math.PI / 2), dark, 13, 0, -3.8)); // the spike
+  },
+  // a sledgehammer: a long wooden handle and a heavy steel head across the end
+  sledge(g) {
+    const wood = M.wood(), steel = M.dark(), grip = M.polymer();
+    g.add(part(rbox(30, 1.3, 1.5, 0.6), wood, -2, 0, 0));
+    g.add(part(rbox(6, 1.45, 1.65, 0.6), grip, -14, 0, 0));
+    g.add(part(rbox(3.6, 3.6, 9.5, 0.6), steel, 14.6, 0, 0)); // the head
+    for (const z of [-4.9, 4.9]) g.add(part(new THREE.CylinderGeometry(1.85, 1.85, 0.5, 4).rotateY(Math.PI / 4).rotateX(Math.PI / 2), steel, 14.6, 0, z)); // striking faces
   },
   pistol(g) {
     const poly = M.polymer(), steel = M.dark();

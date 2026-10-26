@@ -1,7 +1,9 @@
-// All game sounds are synthesised with Web Audio (no sound files). The detailed ones (guns, explosions,
+// All game sounds are synthesised with Web Audio (the only sound files are songs for emotes). The detailed ones (guns, explosions,
 // footsteps, impacts, voices) are layered designs rendered once into buffers when audio starts, a few
 // variations each, so playing them costs one buffer voice. Every 3D sound is panned, muffled with distance
 // and sent to a room reverb, more so the farther away it is. Positions are in game units.
+import { api } from './net.js';
+import { EMOTE } from './cosmetics.js';
 
 const GUNS = {
   // punch: start of the low thump (Hz), body: blast cutoff (Hz), crack: snap brightness, len: blast seconds,
@@ -314,6 +316,169 @@ async function bakeAll(sampleRate) {
   return out;
 }
 
+// ------------------------------------------------------------------ emote music
+// Original loops, one for each dance, written here as notes and drum hits and rendered into a buffer the
+// first time someone does that emote. Loops are rendered twice over and the second pass kept, so the tails
+// of the last bar ring on into the first and the loop has no seam.
+const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
+function kick(c, out, t, v = 1, low = 42) {
+  tone(c, out, t, 'sine', 165, low, [[0, 0.001], [0.004, v], [0.12, v * 0.5], [0.38, 0.001]]);
+  hiss(c, out, t, 'lowpass', 3500, 0.7, [[0, 0.001], [0.001, v * 0.3], [0.012, 0.001]]);
+}
+function clap(c, out, t, v = 1) {
+  for (const d of [0, 0.011, 0.022]) hiss(c, out, t + d, 'bandpass', 1500, 1.3, [[0, 0.001], [0.002, v * 0.55], [0.08, 0.001]]);
+  hiss(c, out, t + 0.03, 'bandpass', 1250, 0.9, [[0, 0.001], [0.004, v * 0.4], [0.25, 0.001]]);
+}
+function snare(c, out, t, v = 1) {
+  tone(c, out, t, 'triangle', 220, 160, [[0, 0.001], [0.002, v * 0.5], [0.12, 0.001]]);
+  hiss(c, out, t, 'highpass', 1800, 0.7, [[0, 0.001], [0.002, v * 0.6], [0.18, 0.001]]);
+}
+function hat(c, out, t, v = 0.25, open = false) {
+  hiss(c, out, t, 'highpass', 7500, 0.8, [[0, 0.001], [0.001, v], [open ? 0.24 : 0.035, 0.001]]);
+}
+// an 808: a sine sub with grit, gliding to f1
+function sub(c, out, t, f, dur, v = 1, f1 = f) {
+  const g = gain(c, drive(c, out, 2.4));
+  osc(c, g, 'sine', t, dur, f, f1);
+  shape(g.gain, t, [[0, 0.001], [0.008, v], [dur * 0.7, v * 0.6], [dur, 0.001]]);
+}
+// the phonk cowbell: two detuned squares through a ringing band-pass
+function cowbell(c, out, t, f, v = 1) {
+  const bp = filt(c, 'bandpass', f * 1.25, 2.2), g = gain(c, out);
+  bp.connect(g);
+  osc(c, bp, 'square', t, 0.32, f);
+  osc(c, bp, 'square', t, 0.32, f * 1.505);
+  shape(g.gain, t, [[0, 0.001], [0.002, v], [0.06, v * 0.35], [0.32, 0.001]]);
+}
+// a plucked note: a bright attack that closes down
+function pluck(c, out, t, f, dur, v = 1, type = 'triangle', bright = 3200) {
+  const lp = filt(c, 'lowpass', bright, 1.2), g = gain(c, out);
+  lp.connect(g);
+  lp.frequency.setValueAtTime(bright, t);
+  lp.frequency.exponentialRampToValueAtTime(Math.max(200, bright * 0.2), t + dur);
+  osc(c, lp, type, t, dur, f);
+  shape(g.gain, t, [[0, 0.001], [0.005, v], [dur, 0.001]]);
+}
+// a chord stab of saws, a little detuned
+function stab(c, out, t, notes, dur, v = 0.5, bright = 2600) {
+  for (const n of notes) for (const det of [-6, 6]) pluck(c, out, t, midi(n) * Math.pow(2, det / 1200), dur, v / notes.length, 'sawtooth', bright);
+}
+
+// each one: tempo, length in beats, whether it loops, volume, and play(c, out, start, beat seconds)
+const MUSIC = {
+  // trap bounce in F minor, 140: rolling hats, a gliding 808 and a bell riff
+  griddy: { bpm: 140, beats: 16, loop: true, vol: 0.9, play(c, out, t0, B) {
+    const s = B / 4;
+    const bassline = [[29, 41], [29, 41], [25, 37], [27, 39]]; // per bar: the 808 note and where it slides
+    const riff = [[0, 77], [3, 80], [6, 84], [8, 82], [10, 80], [12, 77], [14, 75]];
+    const riff2 = [[0, 77], [3, 80], [6, 84], [8, 87], [10, 85], [12, 84], [13, 82], [14, 80]];
+    for (let bar = 0; bar < 4; bar++) {
+      const tb = t0 + bar * 16 * s;
+      for (const k of [0, 6, 10]) kick(c, out, tb + k * s, 0.95);
+      if (bar % 2) kick(c, out, tb + 14 * s, 0.7);
+      clap(c, out, tb + 8 * s, 0.8);
+      for (let k = 0; k < 16; k += 2) hat(c, out, tb + k * s, k % 4 ? 0.14 : 0.2);
+      if (bar % 2) for (let k = 0; k < 6; k++) hat(c, out, tb + 12 * s + k * ((s * 4) / 6), 0.12 + k * 0.02); // a roll into the next bar
+      const [n, slide] = bassline[bar];
+      sub(c, out, tb, midi(n), 6 * s, 0.9);
+      sub(c, out, tb + 6 * s, midi(n), 4 * s, 0.85);
+      sub(c, out, tb + 10 * s, midi(n), 6 * s, 0.85, midi(slide));
+      for (const [k, m] of bar < 3 ? riff : riff2) pluck(c, out, tb + k * s, midi(m), 0.32, 0.22, 'triangle', 5200);
+    }
+  } },
+  // a Brazilian-funk phonk groove in G minor, 130: a cowbell hook over a distorted 808 and a funk beat
+  clark: { bpm: 103.4, beats: 16, loop: true, vol: 0.85, play(c, out, t0, B) {
+    const s = B / 4;
+    const hook = [[0, 79], [2, 79], [3, 82], [5, 81], [6, 79], [8, 86], [10, 84], [11, 82], [13, 81], [14, 77]];
+    const hook2 = [[0, 79], [2, 79], [3, 82], [5, 81], [6, 79], [8, 74], [9, 77], [10, 79], [12, 82], [14, 81]];
+    const bass = [31, 31, 27, 29];
+    for (let bar = 0; bar < 4; bar++) {
+      const tb = t0 + bar * 16 * s;
+      for (const k of [0, 3, 7, 10, 12]) kick(c, out, tb + k * s, k ? 0.85 : 1, 38);
+      for (const k of [4, 12]) clap(c, out, tb + k * s, 0.75);
+      snare(c, out, tb + 14 * s, 0.3);
+      for (let k = 2; k < 16; k += 4) hat(c, out, tb + k * s, 0.16, k === 14);
+      sub(c, out, tb, midi(bass[bar]), 7 * s, 0.95);
+      sub(c, out, tb + 7 * s, midi(bass[bar]), 9 * s, 0.9, midi(bass[bar] - (bar === 3 ? 5 : 0)));
+      for (const [k, m] of bar % 2 ? hook2 : hook) cowbell(c, out, tb + k * s, midi(m - 12), 0.42);
+    }
+  } },
+  // disco in A minor, 118: four on the floor, an octave bass, chord stabs and a string line
+  verity: { bpm: 105.2, beats: 16, loop: true, vol: 0.8, play(c, out, t0, B) {
+    const s = B / 4;
+    const chords = [[57, 60, 64, 67], [57, 60, 64, 67], [50, 54, 57, 60, 64], [52, 56, 59, 62]]; // Am7 Am7 D9 E7
+    const roots = [33, 33, 38, 40];
+    const line = [[0, 76], [4, 79], [6, 81], [10, 79], [12, 76], [14, 74]];
+    for (let bar = 0; bar < 4; bar++) {
+      const tb = t0 + bar * 16 * s;
+      for (let k = 0; k < 16; k += 4) kick(c, out, tb + k * s, 0.9, 50);
+      for (const k of [4, 12]) clap(c, out, tb + k * s, 0.6);
+      for (let k = 2; k < 16; k += 4) hat(c, out, tb + k * s, 0.2, true);
+      for (let k = 1; k < 16; k += 2) hat(c, out, tb + k * s, 0.07);
+      for (let k = 0; k < 16; k += 2) pluck(c, out, tb + k * s, midi(roots[bar] + (k % 4 ? 12 : 0)), 0.2, 0.5, 'sawtooth', 900);
+      for (const k of [3, 6, 11, 14]) stab(c, out, tb + k * s, chords[bar], 0.22, 0.32, 3000);
+      if (bar % 2 === 0) for (const [k, m] of line) pluck(c, out, tb + k * s, midi(m), 0.5, 0.12, 'sawtooth', 2400);
+    }
+  } },
+  // a bright little hello: a marimba arpeggio up and a sparkle
+  wave: { bpm: 120, beats: 5, loop: false, vol: 0.7, play(c, out, t0, B) {
+    [72, 76, 79, 84, 88].forEach((m, i) => pluck(c, out, t0 + i * B * 0.25, midi(m), 0.45, 0.35, 'sine', 4000));
+    for (let i = 0; i < 6; i++) pluck(c, out, t0 + 1.3 + i * 0.06, midi(96 + (i % 3) * 3), 0.25, 0.08, 'sine', 8000);
+  } },
+  // the drop: a snare build, then a big hit and a sub falling away
+  dab: { bpm: 120, beats: 4.4, loop: false, vol: 0.85, play(c, out, t0) {
+    for (let i = 0; i < 8; i++) snare(c, out, t0 + i * 0.05, 0.15 + i * 0.07);
+    kick(c, out, t0 + 0.45, 1.2, 30);
+    clap(c, out, t0 + 0.45, 0.8);
+    sub(c, out, t0 + 0.45, midi(36), 1.5, 1, midi(24));
+    stab(c, out, t0 + 0.45, [60, 63, 67, 70], 0.9, 0.5, 4000);
+  } },
+};
+
+async function bakeMusic(id, sampleRate) {
+  const M = MUSIC[id];
+  const B = 60 / M.bpm, len = M.beats * B;
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const c = new OAC(1, Math.ceil((M.loop ? len * 2 : len + 0.5) * sampleRate), sampleRate);
+  const bus = c.createGain();
+  bus.gain.value = 0.55;
+  const comp = c.createDynamicsCompressor();
+  comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.15;
+  bus.connect(comp).connect(c.destination);
+  M.play(c, bus, 0, B);
+  if (M.loop) M.play(c, bus, len, B);
+  const full = await c.startRendering();
+  // a loop keeps the second pass: exactly one loop, with the first pass's tails in it
+  const n = M.loop ? Math.round(len * sampleRate) : full.length;
+  const d = full.getChannelData(0).slice(full.length - n);
+  const out = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate });
+  out.copyToChannel(d, 0);
+  return level(out);
+}
+
+// an emote's song from its file, decoded and levelled like the rest
+async function loadSong(c, file) {
+  const r = await fetch(api('/sounds/emotes/' + file));
+  if (!r.ok) throw new Error('no song ' + file);
+  return level(await c.decodeAudioData(await r.arrayBuffer()));
+}
+
+// level every piece of emote music alike: about the same loudness, never clipping
+function level(buf) {
+  let peak = 0, sq = 0, n = 0;
+  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < d.length; i++) { peak = Math.max(peak, Math.abs(d[i])); sq += d[i] * d[i]; }
+    n += d.length;
+  }
+  const k = Math.min(0.9 / Math.max(peak, 1e-4), 0.17 / Math.max(Math.sqrt(sq / n), 1e-4));
+  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < d.length; i++) d[i] *= k;
+  }
+  return buf;
+}
+
 // room reverb: a few early reflections, then a diffuse tail that darkens as it decays
 function reverbIR(c, sec = 1.8) {
   const len = Math.floor(c.sampleRate * sec), ir = c.createBuffer(2, len, c.sampleRate);
@@ -504,6 +669,79 @@ export class Synth {
       this.rainSrc = null;
     }
     if (this.rainGain) this.rainGain.gain.value = muffled ? 0.02 : 0.06;
+  }
+
+  // a dancer's music (an emote id), from where they are (null: your own, not placed in the world). Returns
+  // { move(pos), stop() }; the music starts as soon as it's rendered (the first time takes a moment).
+  emote(id, pos) {
+    if (!this.ctx || !MUSIC[id]) return null;
+    const c = this.ctx, M = MUSIC[id];
+    this.music ||= {};
+    const song = EMOTE[id]?.song;
+    const ready = (this.music[id] ||= (song ? loadSong(c, song).catch((e) => { console.warn('emote song failed, using the synth loop', e); return bakeMusic(id, c.sampleRate); }) : bakeMusic(id, c.sampleRate))
+      .catch((e) => { console.warn('emote music failed', e); return null; }));
+    const g = c.createGain();
+    g.gain.value = M.vol * (pos ? 1 : 0.6);
+    let lp = null, pan = null;
+    if (pos) {
+      lp = c.createBiquadFilter();
+      lp.type = 'lowpass';
+      pan = c.createPanner();
+      pan.panningModel = 'HRTF';
+      pan.distanceModel = 'inverse';
+      pan.refDistance = 140;
+      pan.rolloffFactor = 1.2;
+      pan.maxDistance = 6000;
+      g.connect(lp).connect(pan).connect(this.master);
+      const send = c.createGain();
+      send.gain.value = 0.15;
+      lp.connect(send).connect(this.verb);
+    } else g.connect(this.master);
+    const h = {
+      src: null, done: false,
+      move: (p) => {
+        if (!pan || !p) return;
+        if (pan.positionX) { pan.positionX.value = p[0]; pan.positionY.value = p[1]; pan.positionZ.value = p[2]; }
+        else pan.setPosition(...p);
+        const d = Math.hypot(p[0] - this.ear[0], p[1] - this.ear[1], p[2] - this.ear[2]);
+        lp.frequency.value = Math.max(700, 20000 * Math.exp(-d / 1500));
+      },
+      stop: () => {
+        if (h.done) return;
+        h.done = true;
+        const t = c.currentTime;
+        g.gain.setValueAtTime(g.gain.value, t);
+        g.gain.linearRampToValueAtTime(0, t + 0.25);
+        if (h.src) h.src.stop(t + 0.3);
+        setTimeout(() => g.disconnect(), 400);
+      },
+    };
+    h.move(pos);
+    ready.then((buf) => {
+      if (!buf || h.done) return;
+      const src = c.createBufferSource();
+      src.buffer = buf;
+      src.loop = M.loop;
+      src.connect(g);
+      src.start();
+      h.src = src;
+    });
+    return h;
+  }
+
+  // the scrape of a slide along the ground
+  slide(pos) {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime;
+    const s = c.createBufferSource();
+    s.buffer = this.noise;
+    const f = c.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.setValueAtTime(900, t); f.frequency.exponentialRampToValueAtTime(380, t + 0.7); f.Q.value = 0.8;
+    const g = this.out(pos, 0.5, 0.1);
+    const e = c.createGain();
+    e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(0.9, t + 0.03); e.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
+    s.connect(f).connect(e).connect(g);
+    s.start(t, Math.random(), 0.8);
   }
 
   swing(pos) {

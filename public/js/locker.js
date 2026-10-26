@@ -1,10 +1,13 @@
 // Shop and wardrobe: one dialog with a turning preview of your character. Coins and owned items live on the
 // server under this browser's secret save code; the dialog only asks the server to buy or equip.
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { Avatar, MODELS, SUIT_COLORS } from './avatar.js';
 import { COSMETICS, COSMETIC, COS_SLOTS } from './cosmetics.js';
 import { esc } from './hud.js';
 import { api } from './net.js';
+import { loadSlot, instance } from './assets.js';
+import { applyGunSkin, addCharm, swingCharm } from './skins.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -27,6 +30,10 @@ class Preview {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.scene = new THREE.Scene();
+    // something for metal to reflect (gold and chrome finishes look black without it)
+    const pm = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    pm.dispose();
     const key = new THREE.DirectionalLight(0xfff1dc, 2.6);
     key.position.set(60, -40, 90);
     const rim = new THREE.DirectionalLight(0x9fc4ff, 1.6);
@@ -43,10 +50,31 @@ class Preview {
   }
 
   show(color, model, cos) {
-    if (this.avatar) { this.turn.remove(this.avatar.root); this.avatar.root.traverse((o) => { if (o.geometry && !o.geometry.userData.keep) o.geometry.dispose(); }); this.avatar.dispose(); }
+    this.clear();
     this.avatar = new Avatar(color, model, cos);
     this.avatar.root.matrixAutoUpdate = true;
     this.turn.add(this.avatar.root);
+  }
+
+  // gun skins and charms: a rifle on its own, big, turning, in the skin and with the charm
+  async showGun(cos) {
+    const ask = (this.asked = {});
+    const proto = await loadSlot('rifle');
+    if (this.asked !== ask) return;
+    this.clear();
+    const g = instance(proto), size = proto.object?.userData.size;
+    if (COSMETIC[cos.wskin]?.slot === 'wskin') applyGunSkin(g, COSMETIC[cos.wskin].finish);
+    if (COSMETIC[cos.charm]?.slot === 'charm') addCharm(g, COSMETIC[cos.charm].charm, size);
+    g.scale.setScalar(Math.min(3.4, 80 / (size?.x || 24)));
+    g.position.z = 46;
+    this.gun = g;
+    this.turn.add(g);
+  }
+
+  clear() {
+    this.asked = null;
+    if (this.gun) { this.turn.remove(this.gun); this.gun = null; }
+    if (this.avatar) { this.turn.remove(this.avatar.root); this.avatar.root.traverse((o) => { if (o.geometry && !o.geometry.userData.keep) o.geometry.dispose(); }); this.avatar.dispose(); this.avatar = null; }
   }
 
   start() {
@@ -66,6 +94,7 @@ class Preview {
       }
       this.turn.rotation.z += dt * 0.6;
       this.avatar?.animate(dt, { speed: 0, fwdSpeed: 0, sideSpeed: 0, ground: true, ducked: false, pitch: 0, alive: true });
+      if (this.gun) swingCharm(this.gun, now / 1000, Math.sin(now / 900) * 0.25);
       this.renderer.render(this.scene, this.camera);
       requestAnimationFrame(frame);
     };
@@ -100,7 +129,7 @@ export class Locker {
   constructor(opts) {
     this.opts = opts;
     this.token = saveToken();
-    this.profile = { coins: 0, owned: [], eq: {} };
+    this.profile = { coins: 0, owned: [], eq: {}, unloaded: true };
     this.tab = 'shop';
     this.slot = 'hat';
     this.preview = null;
@@ -170,6 +199,7 @@ export class Locker {
   close() {
     $('dlg-locker').hidden = true;
     this.preview?.stop();
+    this.opts.onTheme?.(this.profile.eq.menu, false); // back to the theme you own, if one was being tried
   }
 
   // the picture for an image cape or flag: once you own one, upload it here
@@ -207,6 +237,10 @@ export class Locker {
     if (!this.preview) return;
     const cos = { ...this.profile.eq };
     if (trying) cos[COSMETIC[trying].slot] = trying;
+    const slot = trying ? COSMETIC[trying].slot : this.slot;
+    // a menu theme shows on the menus themselves while you point at it
+    this.opts.onTheme?.(cos.menu, false);
+    if (slot === 'wskin' || slot === 'charm') return this.preview.showGun(cos);
     // your own picture shows in the preview straight away (others see it once it's approved)
     cos.img = this.profile.imgSt === 'ok' ? this.profile.img : this.localImg || (this.profile.imgSt === 'rejected' ? 'x' : 'p');
     this.preview.show(this.opts.settings.color | 0, this.opts.settings.model | 0, cos);

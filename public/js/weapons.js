@@ -26,6 +26,12 @@ export const WEAPONS = [
   { id: 'autoshotgun', slot: 3, name: 'AUTO SHOTGUN', damage: 7, rate: 0.26, spread: 0.11, pellets: 6, clip: 8, ammo: 'buckshot', maxAmmo: 30, spawnAmmo: 8, reload: 2.4 },
   { id: 'railgun', slot: 4, name: 'RAILGUN', damage: 90, rate: 1.4, semi: true, spread: 0, clip: 4, ammo: 'cells', maxAmmo: 12, spawnAmmo: 4, reload: 2.5, pierce: true },
   { id: 'claws', slot: 0, name: 'FISTS', melee: true, damage: 40, rate: 0.5, range: 70, clip: -1, ammo: null, zombie: true },
+  // more melee (key 1 again to switch between them): quick and short, or slow and heavy
+  { id: 'knife', slot: 0, name: 'KNIFE', melee: true, damage: 30, rate: 0.3, range: 62, clip: -1, ammo: null },
+  { id: 'bat', slot: 0, name: 'BASEBALL BAT', melee: true, damage: 40, rate: 0.55, range: 84, clip: -1, ammo: null },
+  { id: 'katana', slot: 0, name: 'KATANA', melee: true, damage: 55, rate: 0.55, range: 92, clip: -1, ammo: null },
+  { id: 'axe', slot: 0, name: 'FIRE AXE', melee: true, damage: 65, rate: 0.8, range: 82, clip: -1, ammo: null },
+  { id: 'sledge', slot: 0, name: 'SLEDGEHAMMER', melee: true, damage: 90, rate: 1.1, range: 86, clip: -1, ammo: null },
 ];
 
 export const WEAPON_INDEX = Object.fromEntries(WEAPONS.map((w, i) => [w.id, i]));
@@ -35,7 +41,7 @@ export const SLOT_COUNT = 5;
 export const LOADOUTS = {
   default: { name: 'Standard (crowbar, pistol, SMG)', weapons: ['crowbar', 'pistol', 'smg1'], full: false },
   all: { name: 'Everything, full ammo', weapons: WEAPONS.filter((w) => !w.zombie).map((w) => w.id), full: true },
-  melee: { name: 'Crowbars only', weapons: ['crowbar'], full: false, noPickups: true },
+  melee: { name: 'Melee only (crowbar, knife, bat, katana, axe, sledgehammer)', weapons: ['knife', 'bat', 'katana', 'axe', 'sledge', 'crowbar'], full: false, noPickups: true },
   explosives: { name: 'Explosives', weapons: ['crowbar', 'rpg', 'grenade'], full: true },
   snipers: { name: 'Snipers & revolvers', weapons: ['crowbar', 'sniper', '357'], full: true },
   heavy: { name: 'Heavy (machine gun, auto shotgun, railgun)', weapons: ['crowbar', 'lmg', 'autoshotgun', 'railgun'], full: true },
@@ -60,6 +66,7 @@ export const POWERS = { dmgBoost: { mul: 2 }, haste: { mul: 1.35 }, boots: { mul
 export const ITEM_ROTATION = [
   'health', 'battery', 'shotgun', 'ammo', 'damage', '357', 'crossbow', 'lmg', 'vial', 'rpg', 'haste', 'sniper', 'autoshotgun', 'health',
   'grenade', 'megahealth', 'railgun', 'heavyarmor', 'ar2', 'boots', 'ammo', 'battery', 'shotgun', 'vial', 'rpg', 'health',
+  'katana', 'bat', 'sledge', 'knife', 'axe',
 ];
 
 // Zombies (infection): what a zombie is like
@@ -75,11 +82,12 @@ export const PERKS = {
 };
 export const WALL_COST = { '357': 500, smg1: 1000, ar2: 1200, crossbow: 1250, shotgun: 1500, sniper: 1500, autoshotgun: 2000, lmg: 3000, grenade: 250 };
 export const BOX_COST = 950;
-export const BOX_POOL = ['357', 'smg1', 'ar2', 'shotgun', 'crossbow', 'sniper', 'rpg', 'grenade', 'lmg', 'autoshotgun', 'railgun'];
+export const BOX_POOL = ['357', 'smg1', 'ar2', 'shotgun', 'crossbow', 'sniper', 'rpg', 'grenade', 'lmg', 'autoshotgun', 'railgun', 'katana', 'sledge'];
 // Free roam gun shop: [weapon, price, price of a full refill of its ammo]
 export const GUN_SHOP = [
   ['pistol', 250, 40], ['357', 700, 90], ['smg1', 1500, 120], ['shotgun', 1300, 100], ['ar2', 3000, 180], ['autoshotgun', 4200, 220],
   ['crossbow', 2200, 150], ['sniper', 5000, 260], ['lmg', 7500, 320], ['grenade', 600, 300], ['rpg', 9500, 900], ['railgun', 15000, 700],
+  ['knife', 150, 0], ['bat', 300, 0], ['axe', 800, 0], ['sledge', 1000, 0], ['katana', 1200, 0],
 ];
 export const ARMOR_PRICE = 400;
 export const DROP_NAMES = { maxammo: 'MAX AMMO', instakill: 'INSTA-KILL', double: 'DOUBLE POINTS', nuke: 'KABOOM' };

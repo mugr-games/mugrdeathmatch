@@ -71,7 +71,8 @@ export function rng(seed) {
   };
 }
 
-export function spreadDirs(w, yaw, pitch, seed, zoomed = false) {
+// aiming: the aim button is held (down the sights, or the scope): the shots go tighter
+export function spreadDirs(w, yaw, pitch, seed, aiming = false) {
   const r = rng(seed * 2654435761);
   const f = viewDir(yaw, pitch);
   const y = (yaw * Math.PI) / 180, p = (pitch * Math.PI) / 180;
@@ -80,7 +81,7 @@ export function spreadDirs(w, yaw, pitch, seed, zoomed = false) {
   const out = [];
   for (let i = 0; i < (w.pellets || 1); i++) {
     // gaussian-ish cone like the engine's shotgun pattern
-    const sp = zoomed && w.zoomSpread !== undefined ? w.zoomSpread : w.spread || 0;
+    const sp = !aiming ? w.spread || 0 : w.zoomSpread !== undefined ? w.zoomSpread : (w.spread || 0) * (w.pellets ? 0.7 : 0.4);
     const a = (r() + r() - 1) * sp, b = (r() + r() - 1) * sp;
     const d = [f[0] + right[0] * a + up[0] * b, f[1] + right[1] * a + up[1] * b, f[2] + right[2] * a + up[2] * b];
     const l = Math.hypot(d[0], d[1], d[2]);
@@ -193,6 +194,8 @@ export function packOwn(ps) {
     rm: ps.rateMul || 1, lm: ps.reloadMul || 1, dn: ps.downed ? 1 : 0,
     // free roam: the car you're driving, or the seat you ride in
     car: ps.car ? packCar(ps.car) : 0, st: ps.seat ? [ps.seat.v, ps.seat.s] : 0, ch: ps.chute ? 1 : 0,
+    // a slide in progress, its cooldown, and whether crouch was already held (prediction needs them)
+    sl: [+(ps.slide || 0).toFixed(4), +(ps.slideCd || 0).toFixed(4)], dh: ps.duckHeld ? 1 : 0,
   };
 }
 
@@ -208,6 +211,8 @@ export function unpackOwn(m, ps) {
   ps.car = m.car ? unpackCar(m.car) : null;
   ps.seat = m.st ? { v: m.st[0], s: m.st[1] } : null;
   ps.chute = !!m.ch;
+  [ps.slide, ps.slideCd] = m.sl || [0, 0];
+  ps.duckHeld = !!m.dh;
   return ps;
 }
 
