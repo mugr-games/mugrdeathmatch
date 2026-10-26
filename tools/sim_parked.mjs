@@ -12,7 +12,7 @@ p.ps.alive = true;
 R.players.set(1, p);
 F.join(p);
 p.ps.origin = F.spawnPoint(p).origin.slice();
-F.message(p, { k: 'buy', id: 'pip', paint: 3 });
+F.message(p, { k: "buy", id: "pip", paint: 3 });
 const v = F.vehicles.get(p.fp.mine);
 const start = v.s.o.slice();
 let last = start.slice();

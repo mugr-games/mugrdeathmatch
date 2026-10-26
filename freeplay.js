@@ -12,7 +12,7 @@ import { BoxWorld } from './public/js/collide.js';
 const DEG = Math.PI / 180, D = 180 / Math.PI;
 // FREEROAM_TEST=1 (testing only): start rich, at the airport
 const TEST = process.env.FREEROAM_TEST === '1';
-const START_CASH = TEST ? 1000000 : 5000;
+const START_CASH = TEST ? 1000000 : 10000;
 const TRAFFIC = { urban: 14, rural: 5 }, PEOPLE = { urban: 18, rural: 2 };
 const SPAWN_MIN = 3200, SPAWN_MAX = 7600, DESPAWN = 10500;
 const PED_MIN = 1600, PED_MAX = 4600, PED_DESPAWN = 6800;

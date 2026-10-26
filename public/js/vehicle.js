@@ -9,25 +9,30 @@ const DEG = Math.PI / 180;
 // top: top speed (units/s; 1000 ≈ 57 mph), accel, brake. hx, hy, h: half length, half width, height.
 // wb: wheelbase. seats: driver first. hp: how much damage before it burns.
 export const VEHICLES = [
-  { id: 'pip', name: 'Pip', style: 'hatch', shop: 'cars', price: 3200, top: 1350, accel: 560, hx: 78, hy: 38, h: 56, wb: 112, seats: 4, hp: 700, mass: 1, blurb: 'A tiny hatchback. Parks anywhere.' },
-  { id: 'meridian', name: 'Meridian', style: 'sedan', shop: 'cars', price: 6800, top: 1550, accel: 600, hx: 96, hy: 41, h: 56, wb: 140, seats: 4, hp: 850, mass: 1.2, blurb: 'The family saloon everyone has.' },
-  { id: 'haybale', name: 'Haybale', style: 'pickup', shop: 'cars', price: 9400, top: 1450, accel: 600, hx: 104, hy: 43, h: 68, wb: 160, seats: 2, hp: 1050, mass: 1.5, blurb: 'Farm pickup with a bed in the back.' },
-  { id: 'courier', name: 'Courier', style: 'van', shop: 'cars', price: 7600, top: 1250, accel: 500, hx: 106, hy: 44, h: 86, wb: 160, seats: 2, hp: 1050, mass: 1.8, blurb: 'Box van. Slow, but it pushes.' },
-  { id: 'bastion', name: 'Bastion', style: 'suv', shop: 'cars', price: 14500, top: 1550, accel: 640, hx: 100, hy: 44, h: 74, wb: 150, seats: 4, hp: 1150, mass: 1.7, blurb: 'Big four-by-four. Climbs kerbs.' },
-  { id: 'thunderhoof', name: 'Thunderhoof', style: 'muscle', shop: 'cars', price: 27000, top: 2050, accel: 860, hx: 100, hy: 43, h: 52, wb: 150, seats: 2, hp: 950, mass: 1.4, blurb: 'V8 muscle car. Loud and quick.' },
-  { id: 'vela', name: 'Vela GT', style: 'coupe', shop: 'cars', price: 54000, top: 2400, accel: 1000, hx: 92, hy: 42, h: 48, wb: 140, seats: 2, hp: 850, mass: 1.2, blurb: 'Grand tourer. Fast and sure-footed.' },
-  { id: 'nyx', name: 'Nyx R', style: 'super', shop: 'cars', price: 135000, top: 2800, accel: 1300, hx: 94, hy: 45, h: 44, wb: 142, seats: 2, hp: 850, mass: 1.2, blurb: 'The fastest thing on four wheels.' },
+  { id: 'pip', name: 'Pip', style: 'hatch', shop: 'cars', price: 6400, top: 1350, accel: 560, hx: 78, hy: 38, h: 56, wb: 112, seats: 4, hp: 700, mass: 1, blurb: 'A tiny hatchback. Parks anywhere.' },
+  { id: 'meridian', name: 'Meridian', style: 'sedan', shop: 'cars', price: 13600, top: 1550, accel: 600, hx: 96, hy: 41, h: 56, wb: 140, seats: 4, hp: 850, mass: 1.2, blurb: 'The family saloon everyone has.' },
+  { id: 'haybale', name: 'Haybale', style: 'pickup', shop: 'cars', price: 18800, top: 1450, accel: 600, hx: 104, hy: 43, h: 68, wb: 160, seats: 2, hp: 1050, mass: 1.5, blurb: 'Farm pickup with a bed in the back.' },
+  { id: 'courier', name: 'Courier', style: 'van', shop: 'cars', price: 15200, top: 1250, accel: 500, hx: 106, hy: 44, h: 86, wb: 160, seats: 2, hp: 1050, mass: 1.8, blurb: 'Box van. Slow, but it pushes.' },
+  { id: 'bastion', name: 'Bastion', style: 'suv', shop: 'cars', price: 29000, top: 1550, accel: 640, hx: 100, hy: 44, h: 74, wb: 150, seats: 4, hp: 1150, mass: 1.7, blurb: 'Big four-by-four. Climbs kerbs.' },
+  { id: 'thunderhoof', name: 'Thunderhoof', style: 'muscle', shop: 'cars', price: 54000, top: 2050, accel: 860, hx: 100, hy: 43, h: 52, wb: 150, seats: 2, hp: 950, mass: 1.4, blurb: 'V8 muscle car. Loud and quick.' },
+  { id: 'vela', name: 'Vela GT', style: 'coupe', shop: 'cars', price: 108000, top: 2400, accel: 1000, hx: 92, hy: 42, h: 48, wb: 140, seats: 2, hp: 850, mass: 1.2, blurb: 'Grand tourer. Fast and sure-footed.' },
+  { id: 'nyx', name: 'Nyx R', style: 'super', shop: 'cars', price: 270000, top: 2800, accel: 1300, hx: 94, hy: 45, h: 44, wb: 142, seats: 2, hp: 850, mass: 1.2, blurb: 'The fastest thing on four wheels.' },
   { id: 'cab', name: 'Cab', style: 'taxi', shop: null, price: 0, top: 1500, accel: 600, hx: 96, hy: 41, h: 56, wb: 140, seats: 4, hp: 850, mass: 1.2 },
   { id: 'cruiser', name: 'Police Cruiser', style: 'police', shop: null, price: 0, top: 2200, accel: 950, hx: 98, hy: 42, h: 58, wb: 145, seats: 4, hp: 1300, mass: 1.4 },
-  { id: 'sprocket', name: 'Sprocket', style: 'bmx', shop: 'bikes', bike: true, pedal: true, price: 350, top: 650, accel: 300, hx: 32, hy: 10, h: 40, wb: 52, seats: 1, hp: 250, mass: 0.3, blurb: 'A BMX. Pedal power.' },
-  { id: 'zip', name: 'Zip 50', style: 'scooter', shop: 'bikes', bike: true, price: 1700, top: 1100, accel: 460, hx: 38, hy: 12, h: 44, wb: 58, seats: 2, hp: 350, mass: 0.5, blurb: 'Little scooter. Goes forever.' },
-  { id: 'mudlark', name: 'Mudlark', style: 'dirt', shop: 'bikes', bike: true, price: 6600, top: 1800, accel: 850, hx: 42, hy: 12, h: 48, wb: 64, seats: 2, hp: 420, mass: 0.6, blurb: 'Dirt bike. Light and twitchy.' },
-  { id: 'kestrel', name: 'Kestrel 1000', style: 'sport', shop: 'bikes', bike: true, price: 19500, top: 2650, accel: 1200, hx: 44, hy: 13, h: 46, wb: 66, seats: 2, hp: 450, mass: 0.7, blurb: 'Superbike. Hold on.' },
+  { id: 'sprocket', name: 'Sprocket', style: 'bmx', shop: 'bikes', bike: true, pedal: true, price: 700, top: 650, accel: 300, hx: 32, hy: 10, h: 40, wb: 52, seats: 1, hp: 250, mass: 0.3, blurb: 'A BMX. Pedal power.' },
+  { id: 'zip', name: 'Zip 50', style: 'scooter', shop: 'bikes', bike: true, price: 3400, top: 1100, accel: 460, hx: 38, hy: 12, h: 44, wb: 58, seats: 2, hp: 350, mass: 0.5, blurb: 'Little scooter. Goes forever.' },
+  { id: 'mudlark', name: 'Mudlark', style: 'dirt', shop: 'bikes', bike: true, price: 13200, top: 1800, accel: 850, hx: 42, hy: 12, h: 48, wb: 64, seats: 2, hp: 420, mass: 0.6, blurb: 'Dirt bike. Light and twitchy.' },
+  { id: 'kestrel', name: 'Kestrel 1000', style: 'sport', shop: 'bikes', bike: true, price: 39000, top: 2650, accel: 1200, hx: 44, hy: 13, h: 46, wb: 66, seats: 2, hp: 450, mass: 0.7, blurb: 'Superbike. Hold on.' },
   // aircraft: thrust, top speed, stall (too slow to fly), vr (lift-off speed), turn (degrees a second), span (wingspan)
-  { id: 'skylark', name: 'Skylark', style: 'prop', air: true, shop: 'planes', price: 48000, thrust: 950, top: 1900, stall: 650, vr: 720, turn: 58, hx: 150, hy: 28, h: 74, span: 440, wb: 200, seats: 2, hp: 600, mass: 2, blurb: 'Four-seat prop plane. Easy to fly.' },
-  { id: 'duster', name: 'Duster', style: 'biplane', air: true, shop: 'planes', price: 26000, thrust: 800, top: 1650, stall: 520, vr: 600, turn: 70, hx: 130, hy: 26, h: 80, span: 400, wb: 180, seats: 1, hp: 500, mass: 1.8, blurb: 'Old crop-duster biplane. Nimble and slow.' },
-  { id: 'comet', name: 'Comet', style: 'bizjet', air: true, jet: true, shop: 'planes', price: 420000, thrust: 1900, top: 3400, stall: 1050, vr: 1150, turn: 36, hx: 260, hy: 44, h: 110, span: 780, wb: 300, seats: 4, hp: 900, mass: 4, blurb: 'Business jet. Very fast, very wide turns.' },
+  { id: 'skylark', name: 'Skylark', style: 'prop', air: true, shop: 'planes', price: 96000, thrust: 950, top: 1900, stall: 650, vr: 720, turn: 58, hx: 150, hy: 28, h: 74, span: 440, wb: 200, seats: 2, hp: 600, mass: 2, blurb: 'Four-seat prop plane. Easy to fly.' },
+  { id: 'duster', name: 'Duster', style: 'biplane', air: true, shop: 'planes', price: 52000, thrust: 800, top: 1650, stall: 520, vr: 600, turn: 70, hx: 130, hy: 26, h: 80, span: 400, wb: 180, seats: 1, hp: 500, mass: 1.8, blurb: 'Old crop-duster biplane. Nimble and slow.' },
+  { id: 'comet', name: 'Comet', style: 'bizjet', air: true, jet: true, shop: 'planes', price: 840000, thrust: 1900, top: 3400, stall: 1050, vr: 1150, turn: 36, hx: 260, hy: 44, h: 110, span: 780, wb: 300, seats: 4, hp: 900, mass: 4, blurb: 'Business jet. Very fast, very wide turns.' },
   { id: 'talon', name: 'Talon F-9', style: 'fighter', air: true, jet: true, guns: true, shop: null, price: 0, thrust: 3300, top: 4300, stall: 950, vr: 1050, turn: 88, hx: 230, hy: 40, h: 92, span: 470, wb: 260, seats: 1, hp: 1000, mass: 3, blurb: 'Military fighter with a cannon and missiles. Only at Fort Talon.' },
+  // (new vehicles go at the end: saved garages keep vehicles by their place in this list)
+  // e-bikes: quiet electric bikes, faster the more you pay (20, 50 and 80 mph)
+  { id: 'spark', name: 'Spark E-Bike', style: 'bmx', shop: 'bikes', bike: true, pedal: true, price: 1500, top: 352, accel: 260, hx: 34, hy: 10, h: 42, wb: 54, seats: 1, hp: 220, mass: 0.35, blurb: 'Electric bike. 20 mph, silent.' },
+  { id: 'volt', name: 'Volt E-Bike', style: 'bmx', shop: 'bikes', bike: true, pedal: true, price: 6500, top: 880, accel: 420, hx: 36, hy: 11, h: 42, wb: 56, seats: 1, hp: 260, mass: 0.4, blurb: 'Fast electric bike. 50 mph.' },
+  { id: 'surge', name: 'Surge E-Moto', style: 'scooter', shop: 'bikes', bike: true, pedal: true, price: 18000, top: 1408, accel: 700, hx: 40, hy: 12, h: 44, wb: 60, seats: 2, hp: 360, mass: 0.55, blurb: 'Electric motorbike. 80 mph, no noise.' },
 ];
 export const VEHICLE_INDEX = Object.fromEntries(VEHICLES.map((v, i) => [v.id, i]));
 // paint for bought cars and traffic
