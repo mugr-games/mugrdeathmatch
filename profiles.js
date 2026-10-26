@@ -9,6 +9,8 @@
 //
 // Storage: JSON files by default. Hosts whose disk is wiped on restart (Render's free plan) can use a free
 // Upstash Redis database instead: set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.
+import { COSMETIC as COSMETIC_CAT } from './public/js/cosmetics.js';
+const COSMETIC_SLOT = Object.fromEntries(Object.entries(COSMETIC_CAT).map(([k, v]) => [k, v.slot]));
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -242,7 +244,7 @@ export function createProfiles(file) {
     return pr;
   }
 
-  const view = (pr) => ({ coins: pr.coins, owned: pr.owned, eq: pr.eq, name: pr.name || null, stats: pr.stats || {} });
+  const view = (pr) => ({ coins: pr.coins, owned: pr.owned, eq: pr.eq, name: pr.name || null, stats: pr.stats || {}, role: pr.role || null });
   const newToken = () => crypto.randomBytes(16).toString('hex');
 
   // give the owner their coins (once) and items
@@ -304,6 +306,41 @@ export function createProfiles(file) {
       touch(pr);
       rank(pr);
       return { token, ...view(pr) };
+    },
+    // staff: the owner makes someone an admin, a mod or the co-owner; each comes with its own free cosmetic,
+    // put on straight away. role null takes it away.
+    async setRole(name, role) {
+      const key = String(name || '').trim().toLowerCase();
+      const acc = NAME.test(key) ? await accounts.get(key) : null;
+      if (!acc) return { error: `No account called ${name}.` };
+      if (key === OWNER_NAME) return { error: 'That is the owner.' };
+      const pr = await load(acc.token);
+      if (!pr) return { error: 'That save could not be loaded.' };
+      acc.role = role || null;
+      accounts.save(key, acc);
+      pr.role = role || null;
+      const gift = { admin: ['admin_hat'], mod: ['mod_visor'], coowner: ['goated_cape', 'admin_hat'] }[role] || [];
+      for (const id of gift) if (!pr.owned.includes(id)) pr.owned.push(id);
+      if (gift[0]) pr.eq[COSMETIC_SLOT[gift[0]]] = gift[0];
+      touch(pr);
+      return { pr, name: acc.name };
+    },
+    // the owner sets up an account for someone (the co-owner) with a password the owner types in
+    async createStaff(name, password, role) {
+      name = String(name || '').trim();
+      password = String(password || '');
+      if (!NAME.test(name)) return { error: 'Usernames are 3 to 16 letters, numbers or _.' };
+      if (password.length < 6 || password.length > 100) return { error: 'Passwords need at least 6 characters.' };
+      const key = name.toLowerCase();
+      if (key === OWNER_NAME) return { error: 'That name is reserved.' };
+      if (await accounts.get(key)) return this.setRole(name, role); // already there: just make them staff
+      const token = newToken();
+      const pr = await load(token);
+      if (!pr) return { error: 'The server is full.' };
+      accounts.save(key, { name, token, created: Date.now(), ...(await hashPassword(password)) });
+      pr.name = name;
+      touch(pr);
+      return this.setRole(name, role);
     },
     async login(name, password, guestToken) {
       const key = String(name || '').trim().toLowerCase();

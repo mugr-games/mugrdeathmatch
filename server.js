@@ -1444,11 +1444,36 @@ async function modAction(ws, action, name, reason) {
 }
 
 // owner chat commands: /kick name [reason], /ban name [reason], /unban name, /bans
+// staff ranks: the owner, then the co-owner, admins and mods (set by the owner with /role)
+const roleOf = (ws) => (isOwner(ws) ? 'owner' : ws.profile?.role || null);
+const CAN = {
+  owner: ['kick', 'ban', 'unban', 'bans', 'givecash', 'role', 'coowner'],
+  coowner: ['kick', 'ban', 'unban', 'bans', 'givecash', 'role'],
+  admin: ['kick', 'ban', 'unban', 'bans', 'givecash'],
+  mod: ['kick', 'bans'],
+};
 async function command(ws, text) {
   const [cmd, name, ...rest] = text.slice(1).split(/\s+/);
   const reason = rest.join(' ');
   const c = (cmd || '').toLowerCase();
-  if (!isOwner(ws)) return sys(ws, 'Commands are for the owner.');
+  const role = roleOf(ws);
+  if (!role) return sys(ws, 'Commands are for the owner and staff.');
+  if (!CAN[role].includes(c)) return sys(ws, `Your commands: ${CAN[role].map((x) => '/' + x).join(', ')}`);
+  // /role name admin|mod|coowner|none: make someone staff (they get the admin hat, the mod visor or the GOATED cape)
+  if (c === 'role') {
+    const want = String(rest[0] || '').toLowerCase();
+    if (!['admin', 'mod', 'none'].includes(want) && !(want === 'coowner' && role === 'owner')) return sys(ws, 'Use: /role name admin|mod|none' + (role === 'owner' ? '|coowner' : ''));
+    const r = await profiles.setRole(name, want === 'none' ? null : want);
+    if (r.error) return sys(ws, r.error);
+    for (const s of online.get(String(name).toLowerCase()) || []) { s.profile = r.pr; wsSend(s, { t: 'refresh' }); sys(s, want === 'none' ? 'You are not staff any more.' : `You're now ${want === 'coowner' ? 'the co-owner' : 'a' + (want === 'admin' ? 'n admin' : ' mod')}! Your free ${want === 'mod' ? 'mod visor' : want === 'admin' ? 'admin hat' : 'GOATED cape'} is on.`); const p = playerOf(s); if (p?.room) broadcast(p.room, { t: 'info', p: info(p) }); }
+    return sys(ws, want === 'none' ? `${r.name} isn't staff any more.` : `${r.name} is now ${want}.`);
+  }
+  // /coowner name password: make the co-owner's account (the owner types the password; it's never shown in chat)
+  if (c === 'coowner') {
+    const r = await profiles.createStaff(name, rest[0], 'coowner');
+    if (r.error) return sys(ws, r.error);
+    return sys(ws, `${r.name} is the co-owner: they sign in with that name and password, and the GOATED cape is theirs.`);
+  }
   if (c === 'kick' || c === 'ban' || c === 'unban') return modAction(ws, c, name, reason);
   // free roam money: /givecash name amount (a negative amount takes it away)
   if (c === 'givecash') {
@@ -1462,7 +1487,7 @@ async function command(ws, text) {
     const list = await profiles.listBans();
     return sys(ws, list.length ? 'Banned: ' + list.map((b) => b.name).join(', ') : 'Nobody is banned.');
   }
-  sys(ws, 'Commands: /kick name [reason], /ban name [reason], /unban name, /bans, /givecash name amount');
+  sys(ws, 'Commands: /kick name [reason], /ban name [reason], /unban name, /bans, /givecash name amount, /role name admin|mod|none, /coowner name password');
 }
 
 // mutes, by account and address, until a time (kept in memory: a restart lifts them)

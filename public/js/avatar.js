@@ -373,6 +373,26 @@ function cmat(color, rough = 0.6, metal = 0, glow = 0) {
 }
 const halfSphere = (r) => new THREE.SphereGeometry(r, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2).applyMatrix4(RX); // dome up +Z
 
+// writing on a cosmetic (the admin hat, the mod visor, the GOATED cape)
+const TEXT_MATS = new Map();
+function textMat(text, bg, fg, w = 512, h = 128, glow = 0) {
+  const key = text + bg + fg + w;
+  if (TEXT_MATS.has(key)) return TEXT_MATS.get(key);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  x.fillStyle = bg; x.fillRect(0, 0, w, h);
+  x.fillStyle = fg; x.textAlign = 'center'; x.textBaseline = 'middle';
+  let size = h * 0.7;
+  do { x.font = `900 ${size}px Inter, system-ui, sans-serif`; size -= 2; } while (x.measureText(text).width > w * 0.94 && size > 8);
+  x.fillText(text, w / 2, h / 2);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.5, emissive: glow ? 0xffffff : 0, emissiveMap: glow ? t : null, emissiveIntensity: glow });
+  TEXT_MATS.set(key, m);
+  return m;
+}
+
 // a hat on the head group (origin at the neck, head centre about 7 up, ht = top of the head; mats: the
 // wearer's suit materials, so helmets match the suit); returns the pieces that animate
 function buildHat(id, ht, g, mats) {
@@ -426,6 +446,16 @@ function buildHat(id, ht, g, mats) {
   } else if (id === 'halo') {
     anim.halo = add(at(new THREE.TorusGeometry(6, 0.75, 8, 32), 0, 0, 0), cmat('#ffd86a', 0.3, 0.5, 2.2));
     anim.halo.position.z = ht + 5;
+  } else if (id === 'admin_hat') {
+    // a red officer's cap with a gold band and an ADMIN badge on the front
+    add(at(cyl(7.2, 7.8, 4.2, 24), 0, 0, ht + 1), cmat('#b3161c', 0.5));
+    add(at(cyl(8, 8, 1.2, 24), 0, 0, ht - 0.8), cmat('#e8b021', 0.3, 1));
+    add(at(rbox(5, 9, 0.8, 0.3), 5.2, 0, ht - 1.2, 0, 0.25, 0), cmat('#151515', 0.4)); // the peak
+    add(at(new THREE.PlaneGeometry(8, 2.2).rotateY(Math.PI / 2).rotateX(Math.PI / 2), 7.85, 0, ht + 1.2), textMat('ADMIN', '#b3161c', '#ffd23a', 256, 64, 0.6));
+  } else if (id === 'mod_visor') {
+    // a band round the head with the message scrolling all the way round
+    const band = new THREE.CylinderGeometry(8.4, 8.4, 3.4, 40, 1, true).rotateX(Math.PI / 2);
+    add(at(band, 0, 0, 8), textMat('(You could NEVER guess it, MOD.)  ★  ', '#101820', '#5ff2ff', 1024, 64, 1.2)).material.side = THREE.DoubleSide;
   } else if (id === 'crown') {
     const gold = cmat('#e8b021', 0.25, 1);
     add(at(cyl(6.3, 6.3, 3.6, 24), 0, 0, ht + 0.4), gold);
@@ -456,6 +486,14 @@ function buildBack(id, bx, g) {
     for (const s of [-1, 1]) add(at(rbox(1.05, 1.2, 36, 0.4), -0.5, s * 10.4, -18), cmat('#ffcc33', 0.25, 1, 0.9), pivot); // edges
     add(at(rbox(1.2, 6, 6, 0.5), -1, 0, -12, Math.PI / 4), cmat('#ffcc33', 0.2, 1, 1.4), pivot); // crest
     add(at(sph(1.4, 10, 8), -1.6, 0, -12), cmat('#ff3060', 0.2, 0, 2), pivot); // jewel
+    anim.cape = pivot;
+  } else if (id === 'goated_cape') {
+    // the co-owner's cape: black and gold with GOATED across it
+    const pivot = group(bx + 1, 0, 21);
+    add(at(rbox(0.9, 21, 38, 0.4), -0.5, 0, -18), cmat('#111111', 0.5, 0.2), pivot);
+    add(at(rbox(1.1, 22, 2.4, 0.5), -0.5, 0, -0.6), cmat('#ffcc33', 0.25, 1, 0.6), pivot);
+    add(at(rbox(1.1, 22, 1.4, 0.4), -0.5, 0, -36.6), cmat('#ffcc33', 0.25, 1, 0.9), pivot);
+    add(at(new THREE.PlaneGeometry(19, 6).rotateY(-Math.PI / 2).rotateX(-Math.PI / 2).rotateX(Math.PI / 2), -1.05, 0, -14), textMat('GOATED', '#111111', '#ffcc33', 512, 160, 0.8), pivot);
     anim.cape = pivot;
   } else if (id === 'banner') {
     add(at(cyl(0.5, 0.5, 42, 8), bx - 1, 3, 26), cmat('#2b2b2e', 0.4, 0.6));

@@ -32,6 +32,10 @@ export const COSMETICS = [
   { id: 'glow_rainbow', slot: 'glow', name: 'Rainbow', price: 700, color: 'rainbow' },
   // not sold: only the owner account has it
   { id: 'owner_cape', slot: 'back', name: 'Owner cape', price: 0, hidden: true },
+  // staff: given with the role, never sold
+  { id: 'admin_hat', slot: 'hat', name: 'Admin hat', price: 0, hidden: true },
+  { id: 'mod_visor', slot: 'hat', name: 'Mod visor', price: 0, hidden: true },
+  { id: 'goated_cape', slot: 'back', name: 'GOATED cape', price: 0, hidden: true },
 ];
 
 export const COSMETIC = Object.fromEntries(COSMETICS.map((c) => [c.id, c]));
