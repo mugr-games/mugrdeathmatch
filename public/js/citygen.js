@@ -186,11 +186,11 @@ export function signal(i, j, axis, t) {
 // ------------------------------------------------------------------ places: shops, gas stations, hospitals, police
 // Fixed cells near each city's middle; rural gas stations sit at highway crossings.
 const PLACE_DEFS = {
-  halcyon: [['gas', 6, 3], ['gas', -7, -5], ['gas', 2, -9], ['gas', -5, 8], ['gas', 9, -6], ['gun', 3, -3], ['gun', -6, 5], ['hospital', -3, -4], ['police', 4, 4]],
-  bayreach: [['gas', 5, -4], ['gas', -6, 6], ['gas', 3, 8], ['gun', -4, -3], ['gun', 6, 5], ['hospital', 3, 3], ['police', -5, 4]],
-  sundown: [['gas', 6, 3], ['gas', -5, -5], ['gas', 2, 7], ['gun', -3, 4], ['hospital', 4, -4], ['police', -5, 1]],
+  halcyon: [['gas', 6, 3], ['gas', -7, -5], ['gas', 2, -9], ['gas', -5, 8], ['gas', 9, -6], ['gun', 3, -3], ['gun', -6, 5], ['hospital', -3, -4], ['police', 4, 4], ['mech', -2, 6], ['mech', 7, -3], ['customs', 5, -1]],
+  bayreach: [['gas', 5, -4], ['gas', -6, 6], ['gas', 3, 8], ['gun', -4, -3], ['gun', 6, 5], ['hospital', 3, 3], ['police', -5, 4], ['mech', -2, -5], ['customs', 2, 6]],
+  sundown: [['gas', 6, 3], ['gas', -5, -5], ['gas', 2, 7], ['gun', -3, 4], ['hospital', 4, -4], ['police', -5, 1], ['mech', 4, 5], ['customs', -2, -4]],
 };
-export const PLACE_NAMES = { gas: 'Fill & Go', gun: 'Mugr Arms', hospital: 'County General', police: 'County Police' };
+export const PLACE_NAMES = { gas: 'Fill & Go', gun: 'Mugr Arms', hospital: 'County General', police: 'County Police', mech: 'Mugr Motorworks', customs: 'Halcyon Customs' };
 const PLACE_AT = new Map(); // "i,j" -> { type, ... }
 {
   const add = (type, i, j, where) => {
@@ -204,6 +204,7 @@ const PLACE_AT = new Map(); // "i,j" -> { type, ... }
     add('gas', a + 1, b + 1, t.name);
     add('gun', c2 - 1, d2 - 1, t.name);
     add('hospital', a + 1, d2 - 1, t.name);
+    add('mech', c2 - 1, b + 1, t.name);
   }
   // highway crossings out in the country get a gas station on one corner
   for (let i = -N + 8; i < N; i += 8) for (let j = -N + 8; j < N; j += 8) {
@@ -793,7 +794,53 @@ function buildPlace(ctx, place) {
   if (t === 'gas') gasStation(ctx, place);
   else if (t === 'gun') gunShop(ctx, place);
   else if (t === 'hospital') hospital(ctx, place);
+  else if (t === 'mech' || t === 'customs') garage(ctx, place);
   else police(ctx, place);
+}
+
+// a garage you drive into: a wide door on the road side, a bay with a lift, tool chests, a bench and tyres.
+// Mechanics fix your car; the customs garage fits parts.
+function garage(ctx, place) {
+  const { lot, box, deco, base, out } = ctx;
+  const f = lotFrame(lot, frontOf(ctx));
+  const pt = (a, b, z = 0) => { const p = f.pt(a, b); return [p[0], p[1], base + z]; };
+  const rect = (a, b, c, e) => f.rect(a, b, c, e);
+  const cus = place.type === 'customs';
+  const mid = f.width / 2, half = Math.min(460, f.width / 2 - 30), dw = Math.min(300, half - 110), T = 16, H = 330;
+  const u0 = mid - half, u1 = mid + half, v0 = 260, v1 = Math.min(1160, f.depth - 40);
+  const mat = cus ? 'customwall' : 'garagewall';
+  const wall = (a, b, c, e, z0 = 0, z1 = H) => { const q = rect(a, b, c, e); box(q[0], q[1], base + z0, q[2], q[3], base + z1, mat); };
+  // the front: a big door opening with a header over it
+  wall(u0, v0, mid - dw, v0 + T); wall(mid + dw, v0, u1, v0 + T); wall(mid - dw, v0, mid + dw, v0 + T, 250, H);
+  wall(u0, v1 - T, u1, v1); wall(u0, v0, u0 + T, v1); wall(u1 - T, v0, u1, v1);
+  const roof = rect(u0, v0, u1, v1);
+  box(roof[0], roof[1], base + H, roof[2], roof[3], base + H + 14, 'concrete');
+  // tool chests on both side walls and a workbench at the back
+  for (const a of [u0 + T, u1 - T - 60]) { const q = rect(a, v0 + 200, a + 60, v0 + 420); box(q[0], q[1], base, q[2], q[3], base + 90, cus ? 'chestblue' : 'chestred'); }
+  const wb = rect(u0 + T, v1 - 240, u0 + T + 70, v1 - T);
+  box(wb[0], wb[1], base, wb[2], wb[3], base + 80, 'wood');
+  if (ctx.visual) {
+    const fc = rect(0, 0, f.width, v0);
+    deco(fc[0], fc[1], base, fc[2], fc[3], base + 0.6, 'concrete');
+    const fl = rect(u0 + T, v0 + T, u1 - T, v1 - T);
+    deco(fl[0], fl[1], base, fl[2], fl[3], base + 0.6, cus ? 'checker' : 'oilfloor');
+    // the lift's posts, the bay lines, a stack of tyres
+    for (const s of [-1, 1]) { const q = rect(mid + s * (dw - 50) - 12, v0 + 480, mid + s * (dw - 50) + 12, v0 + 504); deco(q[0], q[1], base, q[2], q[3], base + 220, 'yellowmetal'); }
+    for (const s of [-1, 1]) { const q = rect(mid + s * (dw - 20) - 4, v0 + 30, mid + s * (dw - 20) + 4, v1 - 60); deco(q[0], q[1], base + 0.6, q[2], q[3], base + 1.2, 'yline'); }
+    for (let k = 0; k < 4; k++) { const q = rect(u1 - T - 70, v1 - T - 70, u1 - T, v1 - T); deco(q[0], q[1], base + k * 22, q[2], q[3], base + k * 22 + 20, 'tyre'); }
+    // the roller door rolled up under the header, and the sign above
+    const rd = rect(mid - dw, v0 - 12, mid + dw, v0);
+    deco(rd[0], rd[1], base + 250, rd[2], rd[3], base + 282, 'metal');
+    const sg = rect(mid - Math.min(300, half - 20), v0 - 16, mid + Math.min(300, half - 20), v0 - 12);
+    deco(sg[0], sg[1], base + 284, sg[2], sg[3], base + H + 12, cus ? 'customsign' : 'mechsign');
+    // the customs shop's light strips
+    if (cus) for (const a of [u0 + 60, u1 - 60]) { const q = rect(a - 6, v0 + T, a + 6, v1 - T); deco(q[0], q[1], base + H - 20, q[2], q[3], base + H - 8, 'neon'); }
+  }
+  const bay = rect(mid - dw + 30, v0 + 40, mid + dw - 30, v1 - 80);
+  out.spots.push({
+    type: place.type, id: place.i + ',' + place.j, name: PLACE_NAMES[place.type], where: place.where, door: pt(mid, v0 - 80), yaw: f.yaw,
+    bay: { mins: [bay[0], bay[1], base], maxs: [bay[2], bay[3], base + H] },
+  });
 }
 
 // walls of a shop you can walk into: a doorway in the front, windows either side, a roof

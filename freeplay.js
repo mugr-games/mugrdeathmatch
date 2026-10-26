@@ -3,7 +3,7 @@
 // pavements and run from gunfire, gas station tills to rob, gun shops, the wanted level and the police who come
 // for you, and the money and things you own (kept on your profile).
 import { genCell, G, N, RW, LANE, KERB, district, isUrban, roadFrom, roadH, roadV, exits, hasSignal, signal, DIRS, RIGHT, SPEED, PLACES, HOSPITALS, CITIES, nearestLane, cellOf, AIRFIELDS, inAirfield } from './public/js/citygen.js';
-import { VEHICLES, VEHICLE_INDEX, PAINTS, newCar, vmove, amove, seatPos, carBoxes, touches } from './public/js/vehicle.js';
+import { VEHICLES, VEHICLE_INDEX, PAINTS, MODS, PAINT_PRICE, packMods, newCar, vmove, amove, seatPos, carBoxes, touches } from './public/js/vehicle.js';
 import { newPlayerState, pmove, BTN, MV } from './public/js/pmove.js';
 import { WEAPONS, WEAPON_INDEX, GUN_SHOP, ARMOR_PRICE } from './public/js/weapons.js';
 import { giveWeapon, initLoadout, hitTest } from './public/js/sim.js';
@@ -22,12 +22,15 @@ const COP_LOOK = 1 * 4 + 1; // trooper in blue
 const SOLDIER_LOOK = 2 + 7 * 4; // juggernaut in graphite
 const GARAGE = 20; // vehicles you can keep
 const JAMAL = 1000; // what Jamal charges to make the police forget you
+const TOW = 300; // Hook & Haul's call-out fee (repairs on top)
 // airbase missiles: faster than any plane but they turn wider than a fighter, so hard turns and flares save you
 const SAM = { speed: 6500, turn: 50, life: 12, range: 40000, every: 2.2, damage: 650 };
 const AIRPORT = AIRFIELDS.find((a) => !a.military), AIRBASE = AIRFIELDS.find((a) => a.military);
 const TRAFFIC_POOL = {
-  urban: [['pip', 4], ['meridian', 5], ['cab', 2.5], ['courier', 1.5], ['bastion', 2], ['haybale', 1], ['thunderhoof', 0.5], ['vela', 0.35], ['nyx', 0.08], ['zip', 0.8], ['kestrel', 0.3], ['sprocket', 0.3]],
-  rural: [['haybale', 4], ['meridian', 2], ['bastion', 2.5], ['courier', 1.5], ['pip', 1.5], ['thunderhoof', 0.8], ['mudlark', 0.6], ['kestrel', 0.4], ['vela', 0.3]],
+  urban: [['pip', 3], ['meridian', 4], ['cab', 2.5], ['courier', 1.5], ['bastion', 1.6], ['haybale', 0.8], ['thunderhoof', 0.4], ['vela', 0.3], ['nyx', 0.06], ['zip', 0.8], ['kestrel', 0.3], ['sprocket', 0.3],
+    ['fennec', 1.2], ['bento', 1], ['fjord', 1.2], ['nomad', 1.3], ['aurora', 0.9], ['brougham', 0.5], ['stallion', 0.35], ['ridgeback', 0.35], ['rallye', 0.3], ['zephyr', 0.3], ['monarch', 0.12], ['cinder', 0.05], ['hauler', 0.5]],
+  rural: [['haybale', 3.5], ['meridian', 1.8], ['bastion', 2], ['courier', 1.2], ['pip', 1.2], ['thunderhoof', 0.7], ['mudlark', 0.6], ['kestrel', 0.4], ['vela', 0.3],
+    ['dunerunner', 1], ['fjord', 0.8], ['ridgeback', 0.4], ['nomad', 0.6], ['hauler', 0.4], ['rallye', 0.3]],
 };
 const r1 = (v) => Math.round(v);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -183,6 +186,7 @@ export function createFreeplay(R, api) {
     return v;
   }
   function removeVehicle(v) {
+    unhook(v);
     for (const p of v.seats) if (p) leaveSeat(p, true);
     F.vehicles.delete(v.id);
     for (const p of players()) if (p.fp?.mine === v.id) p.fp.mine = 0;
@@ -283,6 +287,7 @@ export function createFreeplay(R, api) {
   F.vehicleHit = (id, dmg, by) => { const v = F.vehicles.get(id); if (v) { damageVehicle(v, dmg, by); if (by && v.kind === 'police' && !v.wreck) crime(by, 'hurtcop'); } };
   function explode(v) {
     if (v.wreck) return;
+    unhook(v);
     v.wreck = now();
     v.s.dead = true;
     v.burn = false;
@@ -339,11 +344,13 @@ export function createFreeplay(R, api) {
     if (ps.car) {
       const V = VEHICLES[v.k];
       if (pressed & BTN.HORN && v.kind === 'police') v.siren = !v.siren;
-      if (cmd.buttons & BTN.HORN && v.kind !== 'police') v.horn = now() + 0.15;
+      if (pressed & BTN.HORN && V.tow) hook(p, v);
+      else if (cmd.buttons & BTN.HORN && v.kind !== 'police') v.horn = now() + 0.15;
       const w = world();
-      w.skip = v.id;
+      w.skip = v.id; w.skip2 = v.towing || 0;
       const r = V.air ? amove(w, v.s, cmd, dt) : vmove(w, v.s, cmd, dt);
-      w.skip = 0;
+      w.skip = 0; w.skip2 = 0;
+      if (v.towing) towAlong(v);
       if (V.air) {
         v.seenAt = now();
         seatPlayer(p, v, 0);
@@ -357,11 +364,103 @@ export function createFreeplay(R, api) {
       v.seenAt = now();
       seatPlayer(p, v, 0);
       impact(v, r, dt);
+      wear(p, v, dt);
       return 1;
     }
     seatPlayer(p, v, ps.seat.s);
     return 2;
   };
+
+  // customs parts on a car: the engine tune rides in the car state (the driver predicts with it), armour adds health
+  function applyMods(v, m) {
+    v.mods = m || null;
+    v.s.tune = m?.eng | 0;
+    v.maxHp = VEHICLES[v.k].hp * (1 + 0.25 * (m?.arm | 0));
+    v.hp = v.maxHp;
+  }
+  // cheap and battered cars break down: the engine limps along until a mechanic fixes it or a tow truck comes
+  function wear(p, v, dt) {
+    const V = VEHICLES[v.k];
+    if (v.broke || V.pedal || speedOf(v) < 250) return;
+    let mtbf = (V.price || 15000) < 20000 ? 900 : (V.price || 15000) < 70000 ? 2400 : 6000; // seconds of driving, on average
+    if (v.hp < v.maxHp * 0.45) mtbf /= 5;
+    if (Math.random() >= dt / mtbf) return;
+    v.broke = true; v.s.limp = 1;
+    note(p, `Your ${V.name}'s engine is failing! Limp to a mechanic (the grey wrench on the map) or call Hook & Haul on your phone.`);
+  }
+  const repairCost = (v) => Math.max(100, Math.round(((1 - Math.max(0, v.hp) / v.maxHp) * (VEHICLES[v.k].price || 15000) * 0.06 + (v.broke ? 450 : 0)) / 10) * 10);
+  function fix(v) { v.hp = v.maxHp; v.burn = false; v.broke = false; v.s.limp = 0; }
+  // tow trucks: H hooks the car behind; it trails along like a trailer
+  function hook(p, v) {
+    const V = VEHICLES[v.k];
+    if (v.towing) { unhook(v); return note(p, 'Dropped it.'); }
+    const fx = Math.cos(v.s.yaw * DEG), fy = Math.sin(v.s.yaw * DEG);
+    const back = [v.s.o[0] - fx * V.hx, v.s.o[1] - fy * V.hx, v.s.o[2]];
+    let best = null, bd = Infinity;
+    for (const o of F.vehicles.values()) {
+      const O = VEHICLES[o.k];
+      if (o === v || O.air || O.tow || o.wreck || o.towedBy || o.seats.some(Boolean)) continue;
+      const d = dist2(o.s.o, back);
+      if (d < (O.hx + 150) ** 2 && d < bd) { bd = d; best = o; }
+    }
+    if (!best) return note(p, 'Back up to a car and press H to hook it.');
+    best.ai = null; best.npc.fill(-1); best.siren = false;
+    best.towedBy = v.id; v.towing = best.id;
+    note(p, `Hooked the ${VEHICLES[best.k].name}. Drive it into a mechanic's garage to get paid. H drops it.`);
+  }
+  function unhook(v) {
+    const t = v.towing && F.vehicles.get(v.towing);
+    if (t) t.towedBy = 0;
+    v.towing = 0;
+    const by = v.towedBy && F.vehicles.get(v.towedBy);
+    if (by) by.towing = 0;
+    v.towedBy = 0;
+  }
+  function towAlong(v) {
+    const t = F.vehicles.get(v.towing);
+    if (!t || t.wreck) { unhook(v); return; }
+    const V = VEHICLES[v.k], T = VEHICLES[t.k];
+    const hk = [v.s.o[0] - Math.cos(v.s.yaw * DEG) * (V.hx + 12), v.s.o[1] - Math.sin(v.s.yaw * DEG) * (V.hx + 12)];
+    let dx = hk[0] - t.s.o[0], dy = hk[1] - t.s.o[1];
+    const d = Math.hypot(dx, dy) || 1;
+    dx /= d; dy /= d;
+    t.s.o[0] = hk[0] - dx * T.hx; t.s.o[1] = hk[1] - dy * T.hx; t.s.o[2] = v.s.o[2];
+    t.s.yaw = Math.atan2(dy, dx) / DEG;
+    t.s.v = v.s.v.slice(); t.s.g = true; t.s.steer = 0;
+    t.seenAt = now();
+  }
+  // a mechanic's bay: fixes your car for a price, or takes the car off your hook and pays for the tow
+  function mechanic(p, v) {
+    const V = VEHICLES[v.k];
+    const t = v.towing && F.vehicles.get(v.towing);
+    if (t) {
+      unhook(v);
+      if (t.kind === 'mine' && t.owner) {
+        fix(t);
+        const o = [...players()].find((q) => q.id === t.owner);
+        if (o && o !== p) note(o, `Your ${VEHICLES[t.k].name} was towed to a mechanic and fixed.`);
+        return note(p, t.owner === p.id ? 'Your car is fixed, on the house.' : 'Dropped off. That one belongs to a player, so it\'s fixed for free.');
+      }
+      const fee = 400 + (t.broke || t.hp < t.maxHp * 0.6 ? 350 : 0);
+      removeVehicle(t);
+      earn(p, fee);
+      state(p);
+      return note(p, `Tow job done: Mugr Motorworks paid you $${fee}.`);
+    }
+    if (v.hp >= v.maxHp - 1 && !v.broke) return note(p, `Mugr Motorworks: "Your ${V.name} is running fine. Come back when it isn't."`);
+    const cost = repairCost(v);
+    if (!pay(p, cost)) return note(p, `Mugr Motorworks: "That's $${cost.toLocaleString()} and you haven't got it."`);
+    fix(v);
+    state(p);
+    note(p, `Mugr Motorworks fixed your ${V.name} for $${cost.toLocaleString()}.`);
+  }
+  // the customs garage: only on cars you own (they keep the parts in your garage)
+  function customs(p, v) {
+    if (v.owner !== p.id || v.slot == null) return note(p, 'Halcyon Customs: "We only work on cars you own. Save it on your phone first."');
+    if (p.fp.wanted) return note(p, 'Halcyon Customs: "Not with the police on your tail!"');
+    api.send(p, { t: 'fp', k: 'customs', paint: v.paint, mods: packMods(v.mods), name: VEHICLES[v.k].name });
+  }
+  const inBay = (b, o) => o[0] > b.mins[0] && o[0] < b.maxs[0] && o[1] > b.mins[1] && o[1] < b.maxs[1] && Math.abs(o[2] - b.mins[2]) < 80;
 
   // E: get out, use a shop counter, or get in the car you're next to
   function use(p) {
@@ -644,6 +743,7 @@ export function createFreeplay(R, api) {
 
   function vehicleThink(v, dt) {
     if (driverOf(v)) return; // a player drives it (their commands move it)
+    if (v.towedBy) { if (F.vehicles.has(v.towedBy)) return; v.towedBy = 0; } // hanging off a tow truck
     if (VEHICLES[v.k].air) {
       // nobody flying it: parked planes sit; one that's been left in the air comes down
       if (v.s.g && Math.abs(v.s.v[0]) + Math.abs(v.s.v[1]) < 2) return;
@@ -1022,7 +1122,8 @@ export function createFreeplay(R, api) {
       if (!stand) return note(p, 'Every stand at the airports is taken. Try again soon.');
       ensureAround(stand[0], stand[1], 1);
       const v = addVehicle(car.k, stand, stand[3], 'mine', car.c);
-      v.owner = p.id;
+      v.owner = p.id; v.slot = idx;
+      applyMods(v, car.m);
       p.fp.mine = v.id;
       return note(p, `Your ${VEHICLES[car.k].name} is waiting on the apron at ${port.name}.`);
     }
@@ -1039,7 +1140,8 @@ export function createFreeplay(R, api) {
     if (!lane) return note(p, 'There\'s no road nearby to bring it to.');
     ensureAround(lane.x, lane.y, 1);
     const v = addVehicle(car.k, [lane.x, lane.y, 0], DIR_YAW[lane.dir], 'mine', car.c);
-    v.owner = p.id;
+    v.owner = p.id; v.slot = idx;
+    applyMods(v, car.m);
     p.fp.mine = v.id;
     note(p, `Your ${VEHICLES[car.k].name} is parked on the road nearby (the car on your radar).`);
   }
@@ -1068,11 +1170,49 @@ export function createFreeplay(R, api) {
       d.cars.push({ k: v.k, c: v.paint });
       const old = F.vehicles.get(p.fp.mine);
       if (old && old !== v) { old.owner = 0; old.kind = 'parked'; }
-      v.kind = 'mine'; v.owner = p.id; v.siren = false;
+      v.kind = 'mine'; v.owner = p.id; v.siren = false; v.slot = d.cars.length - 1;
       p.fp.mine = v.id;
       save(p);
       state(p);
       note(p, `Saved: the ${VEHICLES[v.k].name} is in your garage now. Call it from the phone whenever you like.`);
+    } else if (m.k === 'tow') {
+      // Hook & Haul: your car goes to a mechanic, gets fixed, and comes back to you
+      const v = F.vehicles.get(p.fp.mine);
+      if (!v || v.wreck || VEHICLES[v.k].air) return note(p, 'Hook & Haul: "You\'ve got no car out for us to fetch."');
+      if (v.hp >= v.maxHp - 1 && !v.broke) return note(p, 'Hook & Haul: "Your car\'s fine, pal."');
+      if (v.seats.some((o) => o && o !== p)) return note(p, 'Somebody else is in your vehicle.');
+      const cost = TOW + repairCost(v);
+      if (!pay(p, cost)) return note(p, `Hook & Haul: "Tow and repairs come to $${cost.toLocaleString()}."`);
+      const slot = v.slot;
+      removeVehicle(v);
+      state(p);
+      note(p, `Hook & Haul towed it to Mugr Motorworks and fixed it ($${cost.toLocaleString()}).`);
+      if (slot != null) deliver(p, slot);
+    } else if (m.k === 'mod') {
+      const v = vehicleOf(p);
+      const at = v && PLACES.find((s) => s.type === 'customs' && s.id === p.fp.atCustoms);
+      if (!at || !p.ps.car || v.owner !== p.id || v.slot == null) return note(p, 'Drive your own car into a customs garage.');
+      const car = d.cars[v.slot];
+      if (!car) return;
+      const val = m.val | 0;
+      if (m.part === 'paint') {
+        if (val < 0 || val >= PAINTS.length || val === v.paint) return;
+        if (!pay(p, PAINT_PRICE)) return note(p, `A respray costs $${PAINT_PRICE}.`);
+        v.paint = car.c = val;
+      } else {
+        const M = MODS[m.part];
+        if (!M || val < 0 || val >= M.opts.length) return;
+        const cur = (car.m ||= {});
+        if ((cur[m.part] | 0) === val) return;
+        if (!pay(p, M.price[val])) return note(p, `${M.name} (${M.opts[val]}) costs $${M.price[val].toLocaleString()}.`);
+        cur[m.part] = val;
+        const health = v.hp / v.maxHp;
+        applyMods(v, cur);
+        v.hp = v.maxHp * health;
+      }
+      save(p);
+      state(p);
+      customs(p, v);
     } else if (m.k === 'jamal') {
       // a phone call to Jamal: the police forget all about you, for a price
       if (!p.fp.wanted) return note(p, 'Jamal: "You\'re clean, my friend. Call me when you\'re in trouble."');
@@ -1300,6 +1440,15 @@ export function createFreeplay(R, api) {
     if (p.ps.alive && t - (p.lastHurt || 0) > 8 && p.ps.hp < 100) p.ps.hp = Math.min(100, p.ps.hp + 4 * dt);
     if (fp.robProg && !F.stores.size) fp.robProg = 0;
     if (fp.dirty && t >= (fp.saveAt || 0)) { fp.dirty = false; fp.saveAt = t + 5; api.save(p); }
+    // drive into a mechanic's bay to get fixed, or a customs garage to fit parts
+    const v = p.ps.car ? vehicleOf(p) : null;
+    const bay = (type) => v && !VEHICLES[v.k].air ? PLACES.find((s) => s.type === type && inBay(s.bay, v.s.o)) : null;
+    const mech = bay('mech');
+    if (mech && fp.atMech !== mech.id && speedOf(v) < 160) { fp.atMech = mech.id; mechanic(p, v); }
+    else if (!mech) fp.atMech = null;
+    const cus = bay('customs');
+    if (cus && fp.atCustoms !== cus.id && speedOf(v) < 160) { fp.atCustoms = cus.id; customs(p, v); }
+    else if (!cus && fp.atCustoms) { fp.atCustoms = null; api.send(p, { t: 'fp', k: 'customsShut' }); }
     if (fp.first && p.ps.alive) { fp.first = false; note(p, 'Welcome to Mugr County. P opens your phone: buy cars and bikes. E gets in a car. Gun shops and gas stations are on the radar.'); }
   }
 
@@ -1365,8 +1514,8 @@ export function createFreeplay(R, api) {
       const look = q ? lookOf(q) : v.npc[k] ?? -1;
       occ |= (look >= 0 ? look & 31 : 63) << (k * 6);
     }
-    const flags = (v.siren ? 1 : 0) | (v.brake ? 2 : 0) | (v.horn > now() ? 4 : 0) | (v.burn ? 8 : 0) | (v.wreck ? 16 : 0) | (v.hp < v.maxHp * 0.45 ? 32 : 0) | (v.owner === p.id ? 64 : 0) | (v.kind === 'police' ? 128 : 0);
-    return [v.id, v.k, r1(s.o[0]), r1(s.o[1]), r1(s.o[2]), Math.round(s.yaw * 10) / 10, r1(s.v[0]), r1(s.v[1]), Math.round(s.steer * 100), flags, v.paint, occ, Math.round((s.pitch || 0) * 10), Math.round((s.roll || 0) * 10), r1(s.v[2]), Math.round((s.thr || 0) * 100)];
+    const flags = (v.siren ? 1 : 0) | (v.brake ? 2 : 0) | (v.horn > now() ? 4 : 0) | (v.burn ? 8 : 0) | (v.wreck ? 16 : 0) | (v.hp < v.maxHp * 0.45 || v.broke ? 32 : 0) | (v.owner === p.id ? 64 : 0) | (v.kind === 'police' ? 128 : 0) | (v.towedBy ? 256 : 0);
+    return [v.id, v.k, r1(s.o[0]), r1(s.o[1]), r1(s.o[2]), Math.round(s.yaw * 10) / 10, r1(s.v[0]), r1(s.v[1]), Math.round(s.steer * 100), flags, v.paint, occ, Math.round((s.pitch || 0) * 10), Math.round((s.roll || 0) * 10), r1(s.v[2]), Math.round((s.thr || 0) * 100), packMods(v.mods)];
   }
   function prow(n) {
     const kind = n.kind === 'cop' ? 1 : n.kind === 'clerk' ? 2 : n.kind === 'gunclerk' ? 3 : 0;

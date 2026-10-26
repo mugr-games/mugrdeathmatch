@@ -36,8 +36,36 @@ export const VEHICLES = [
   // helicopters: top (forward speed), climb (up and down speed), turn (degrees a second)
   { id: 'kite', name: 'Kite 300', style: 'heli', air: true, heli: true, shop: 'planes', price: 380000, top: 1700, climb: 700, turn: 80, hx: 130, hy: 34, h: 96, span: 380, wb: 160, seats: 2, hp: 700, mass: 2, blurb: 'Light helicopter. Hovers anywhere.' },
   { id: 'atlas', name: 'Atlas Utility', style: 'heli', air: true, heli: true, shop: 'planes', price: 760000, top: 2000, climb: 800, turn: 65, hx: 190, hy: 46, h: 120, span: 520, wb: 220, seats: 4, hp: 1100, mass: 3, blurb: 'Big twin-engine helicopter for four.' },
+  // more cars, each styled after a kind of real car (always added at the end)
+  { id: 'fennec', name: 'Fennec GTi', style: 'hatch', shop: 'cars', price: 26000, top: 1900, accel: 820, hx: 82, hy: 39, h: 56, wb: 120, seats: 4, hp: 750, mass: 1.05, blurb: 'Hot hatch. Small, quick and fun.' },
+  { id: 'bento', name: 'Bento Kei', style: 'kei', shop: 'cars', price: 8200, top: 1150, accel: 480, hx: 68, hy: 34, h: 66, wb: 100, seats: 4, hp: 600, mass: 0.85, blurb: 'Tiny boxy city car. Fits through anything.' },
+  { id: 'fjord', name: 'Fjord Estate', style: 'wagon', shop: 'cars', price: 34000, top: 1650, accel: 620, hx: 100, hy: 42, h: 58, wb: 148, seats: 4, hp: 950, mass: 1.35, blurb: 'Safe, roomy estate car with a long roof.' },
+  { id: 'nomad', name: 'Nomad Minivan', style: 'minivan', shop: 'cars', price: 31000, top: 1500, accel: 560, hx: 104, hy: 44, h: 72, wb: 154, seats: 4, hp: 1000, mass: 1.5, blurb: 'The school-run minivan. Sliding doors.' },
+  { id: 'zephyr', name: 'Zephyr Roadster', style: 'roadster', shop: 'cars', price: 39000, top: 2000, accel: 860, hx: 80, hy: 39, h: 46, wb: 116, seats: 2, hp: 700, mass: 0.95, blurb: 'Light two-seat convertible. Top down.' },
+  { id: 'rallye', name: 'Rallye 4', style: 'sportsedan', shop: 'cars', price: 48000, top: 2150, accel: 980, hx: 94, hy: 41, h: 56, wb: 138, seats: 4, hp: 900, mass: 1.25, grip: 12, blurb: 'Rally-bred four-wheel-drive saloon with a big wing.' },
+  { id: 'aurora', name: 'Aurora E', style: 'fastback', shop: 'cars', price: 62000, top: 2250, accel: 1250, hx: 96, hy: 42, h: 54, wb: 146, seats: 4, hp: 900, mass: 1.4, blurb: 'Electric saloon. Silent, and very quick off the line.' },
+  { id: 'dunerunner', name: 'Dune Runner', style: 'pickup', shop: 'cars', price: 66000, top: 1850, accel: 820, hx: 112, hy: 47, h: 76, wb: 170, seats: 4, hp: 1350, mass: 1.8, blurb: 'Desert-racing pickup on long-travel suspension.' },
+  { id: 'stallion', name: 'Stallion 5.0', style: 'muscle', shop: 'cars', price: 72000, top: 2350, accel: 1000, hx: 98, hy: 42, h: 52, wb: 146, seats: 2, hp: 950, mass: 1.35, blurb: 'Modern pony car with a five-litre V8.' },
+  { id: 'ridgeback', name: 'Ridgeback', style: 'boxy', shop: 'cars', price: 124000, top: 1800, accel: 760, hx: 98, hy: 45, h: 82, wb: 148, seats: 4, hp: 1400, mass: 1.9, blurb: 'Square-cut luxury off-roader. Built like a vault.' },
+  { id: 'brougham', name: 'Brougham S', style: 'sedan', shop: 'cars', price: 146000, top: 2250, accel: 880, hx: 108, hy: 44, h: 58, wb: 160, seats: 4, hp: 1100, mass: 1.6, blurb: 'Big executive saloon. Whisper quiet.' },
+  { id: 'monarch', name: 'Monarch Limousine', style: 'limo', shop: 'cars', price: 220000, top: 1700, accel: 560, hx: 150, hy: 45, h: 60, wb: 236, seats: 4, hp: 1300, mass: 2.2, blurb: 'Stretch limousine. Arrive like a star.' },
+  { id: 'cinder', name: 'Cinder V12', style: 'wedge', shop: 'cars', price: 440000, top: 3000, accel: 1400, hx: 96, hy: 46, h: 42, wb: 144, seats: 2, hp: 850, mass: 1.25, blurb: 'Wedge-shaped V12 supercar.' },
+  { id: 'hauler', name: 'Hook & Haul Tow Truck', style: 'tow', shop: 'cars', tow: true, price: 46000, top: 1500, accel: 620, hx: 120, hy: 46, h: 84, wb: 176, seats: 2, hp: 1500, mass: 2.4, blurb: 'Tow truck. H hooks the car behind you; take broken cars to a mechanic for cash.' },
 ];
 export const VEHICLE_INDEX = Object.fromEntries(VEHICLES.map((v, i) => [v.id, i]));
+// customs: what a customs garage can fit, its price, and how it packs into one number for the network
+export const MODS = {
+  rim: { name: 'Rims', opts: ['Silver', 'Black', 'Gold', 'White'], price: [0, 900, 1800, 900] },
+  tint: { name: 'Window tint', opts: ['None', 'Light', 'Limo'], price: [0, 400, 800] },
+  neon: { name: 'Underglow', opts: ['Off', 'Red', 'Blue', 'Green', 'Purple', 'Pink', 'White'], price: [0, 1500, 1500, 1500, 1500, 1500, 1500] },
+  wing: { name: 'Spoiler', opts: ['None', 'Ducktail', 'Race wing'], price: [0, 1200, 2500] },
+  eng: { name: 'Engine', opts: ['Stock', 'Street', 'Sport', 'Race'], price: [0, 5000, 12000, 24000] },
+  arm: { name: 'Armour', opts: ['Stock', '+25%', '+50%'], price: [0, 6000, 14000] },
+};
+export const PAINT_PRICE = 600;
+const MOD_BITS = { rim: [0, 2], tint: [2, 2], neon: [4, 3], wing: [7, 2], eng: [9, 2], arm: [11, 2] };
+export const packMods = (m) => { let n = 0; if (m) for (const k in MOD_BITS) n |= ((m[k] | 0) & ((1 << MOD_BITS[k][1]) - 1)) << MOD_BITS[k][0]; return n; };
+export const unpackMods = (n) => Object.fromEntries(Object.keys(MOD_BITS).map((k) => [k, ((n | 0) >> MOD_BITS[k][0]) & ((1 << MOD_BITS[k][1]) - 1)]));
 // paint for bought cars and traffic
 export const PAINTS = ['#c8ccd0', '#1c1d20', '#f2f2ee', '#b3261e', '#1e4fa8', '#2f7a3a', '#e8b21e', '#d8641e', '#6a3a8a', '#7a8088', '#3a5a6a', '#8a6a4a'];
 export const PAINT_NAMES = ['Silver', 'Black', 'White', 'Red', 'Blue', 'Green', 'Yellow', 'Orange', 'Purple', 'Grey', 'Teal', 'Bronze'];
@@ -124,6 +152,8 @@ function slide(world, c, V, fx, fy, dt, res) {
 export function vmove(world, c, cmd, dt) {
   const V = VEHICLES[c.k];
   const res = { hit: 0, dyn: null, n: null };
+  // the customs engine upgrade adds speed and pull; a broken-down engine barely goes
+  const tune = c.tune | 0, top = V.top * (1 + 0.07 * tune) * (c.limp ? 0.32 : 1), accel = V.accel * (1 + 0.1 * tune) * (c.limp ? 0.45 : 1);
   let fx = Math.cos(c.yaw * DEG), fy = Math.sin(c.yaw * DEG);
   let vf = c.v[0] * fx + c.v[1] * fy;
   let vs = c.v[0] * fy - c.v[1] * fx; // to the right
@@ -137,16 +167,16 @@ export function vmove(world, c, cmd, dt) {
   if (c.g) {
     if (thr > 0) {
       if (vf < -15) vf = Math.min(0, vf + V.brake * thr * dt);
-      else { const r = Math.max(0, vf) / V.top; vf += V.accel * thr * (1 - r * r) * dt; }
+      else { const r = Math.max(0, vf) / top; vf += accel * thr * (1 - r * r) * dt; }
     } else if (thr < 0) {
       if (vf > 15) vf = Math.max(0, vf + V.brake * thr * dt);
-      else if (vf > -V.rev) vf = Math.max(-V.rev, vf + V.accel * 0.7 * thr * dt);
+      else if (vf > -V.rev) vf = Math.max(-V.rev, vf + accel * 0.7 * thr * dt);
     } else vf -= Math.sign(vf) * Math.min(Math.abs(vf), (70 + Math.abs(vf) * 0.22) * dt); // rolling to a stop
     if (hb) vf -= Math.sign(vf) * Math.min(Math.abs(vf), V.brake * 0.55 * dt);
-    if (vf > V.top * 1.05) vf -= (vf - V.top) * Math.min(1, dt * 2);
+    if (vf > top * 1.05) vf -= (vf - top) * Math.min(1, dt * 2);
     // tyres grip sideways; the handbrake lets the back slide out
     vs *= Math.max(0, 1 - (hb && Math.abs(vf) > 200 ? 1.6 : V.grip) * dt);
-    const ang = c.steer * V.steerMax * (1 - 0.55 * Math.min(1, Math.abs(vf) / V.top));
+    const ang = c.steer * V.steerMax * (1 - 0.55 * Math.min(1, Math.abs(vf) / top));
     let yr = (vf / V.wb) * Math.tan(ang) / DEG; // degrees per second, clockwise for a right turn
     if (hb && Math.abs(vf) > 300) yr *= 1.4;
     const ny = c.yaw - yr * dt;
@@ -359,5 +389,5 @@ export function moveAny(world, ps, cmd, dt, rules) {
 }
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
-export const packCar = (c) => c && [c.k, c.id, ...c.o.map((v) => Math.round(v * 100) / 100), ...c.v.map((v) => Math.round(v * 100) / 100), r3(c.yaw), r3(c.steer), c.g ? 1 : 0, c.dead ? 1 : 0, r3(c.pitch || 0), r3(c.roll || 0), r3(c.thr || 0)];
-export const unpackCar = (a) => a && { k: a[0], id: a[1], o: [a[2], a[3], a[4]], v: [a[5], a[6], a[7]], yaw: a[8], steer: a[9], g: !!a[10], dead: !!a[11], pitch: a[12] || 0, roll: a[13] || 0, thr: a[14] || 0 };
+export const packCar = (c) => c && [c.k, c.id, ...c.o.map((v) => Math.round(v * 100) / 100), ...c.v.map((v) => Math.round(v * 100) / 100), r3(c.yaw), r3(c.steer), c.g ? 1 : 0, c.dead ? 1 : 0, r3(c.pitch || 0), r3(c.roll || 0), r3(c.thr || 0), c.tune | 0, c.limp ? 1 : 0];
+export const unpackCar = (a) => a && { k: a[0], id: a[1], o: [a[2], a[3], a[4]], v: [a[5], a[6], a[7]], yaw: a[8], steer: a[9], g: !!a[10], dead: !!a[11], pitch: a[12] || 0, roll: a[13] || 0, thr: a[14] || 0, tune: a[15] | 0, limp: a[16] | 0 };

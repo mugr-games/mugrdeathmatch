@@ -5,7 +5,7 @@
 // Model frame: x forward, y left, z up, origin on the ground under the middle.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { VEHICLES, PAINTS } from './vehicle.js';
+import { VEHICLES, PAINTS, unpackMods } from './vehicle.js';
 import { SUIT_COLORS } from './avatar.js';
 import { isPotato } from './shaders.js';
 
@@ -22,6 +22,23 @@ const STYLE = {
   muscle: { dash: 0.22, rf: -0.06, rr: -0.42, rear: -0.72, nose: 0.5, tail: 0.55, belt: 0.58, r: 15 },
   coupe: { dash: 0.24, rf: -0.06, rr: -0.4, rear: -0.74, nose: 0.42, tail: 0.55, belt: 0.56, r: 14 },
   super: { dash: 0.2, rf: -0.12, rr: -0.42, rear: -0.7, nose: 0.36, tail: 0.6, belt: 0.55, r: 14, wing: true },
+  // estate: the roof runs all the way back
+  wagon: { dash: 0.34, rf: 0.06, rr: -0.84, rear: -0.95, nose: 0.48, tail: 0.6, belt: 0.55, r: 14 },
+  // minivan and kei car: a short bonnet and a tall, long cabin
+  minivan: { dash: 0.62, rf: 0.22, rr: -0.9, rear: -0.97, nose: 0.46, tail: 0.62, belt: 0.52, r: 15 },
+  kei: { dash: 0.6, rf: 0.46, rr: -0.88, rear: -0.95, nose: 0.5, tail: 0.6, belt: 0.5, r: 11 },
+  // square off-roader with a spare wheel on the back and a roof rack
+  boxy: { dash: 0.48, rf: 0.38, rr: -0.92, rear: -0.97, nose: 0.62, tail: 0.64, belt: 0.6, r: 18, spare: true, rack: true },
+  // electric saloon: one long sweep of glass down to a short tail
+  fastback: { dash: 0.3, rf: 0, rr: -0.5, rear: -0.88, nose: 0.42, tail: 0.55, belt: 0.55, r: 15 },
+  sportsedan: { dash: 0.34, rf: 0.06, rr: -0.42, rear: -0.62, nose: 0.48, tail: 0.55, belt: 0.55, r: 15, wing: true },
+  limo: { dash: 0.5, rf: 0.4, rr: -0.72, rear: -0.84, nose: 0.48, tail: 0.55, belt: 0.55, r: 14 },
+  // convertible: no roof, just a windscreen and roll hoops
+  roadster: { dash: 0.2, rf: -0.02, rr: -0.3, rear: -0.55, nose: 0.48, tail: 0.6, belt: 0.62, r: 13, open: true },
+  // wedge supercar: a long flat nose and the cabin pushed forward
+  wedge: { dash: 0.12, rf: -0.2, rr: -0.46, rear: -0.74, nose: 0.3, tail: 0.64, belt: 0.52, r: 14 },
+  // tow truck: a tall cab, a bed, and the boom off the back
+  tow: { dash: 0.58, rf: 0.42, rr: 0.08, rear: 0.04, nose: 0.6, tail: 0.5, belt: 0.56, r: 17, bed: true, boom: true },
 };
 
 const MAT = {};
@@ -53,6 +70,29 @@ function mats() {
   MAT.ready = true;
   return MAT;
 }
+// customs parts: rims, window tint, underglow
+const RIMS = [null, 0x18191b, 0xc9a23e, 0xf0f0ee];
+const NEON = [0, 0xff2a2a, 0x2a6aff, 0x2aff6a, 0xa040ff, 0xff4fd8, 0xffffff];
+const modMats = new Map();
+function modMat(key, make) { if (!modMats.has(key)) modMats.set(key, make()); return modMats.get(key); }
+const rimMat = (i) => modMat('rim' + i, () => new THREE.MeshStandardMaterial({ color: RIMS[i], metalness: i === 3 ? 0.3 : 0.9, roughness: i === 3 ? 0.35 : 0.22 }));
+const tintMat = (i) => modMat('tint' + i, () => (isPotato() ? new THREE.MeshLambertMaterial({ color: 0x0a0d12, transparent: true, opacity: i === 1 ? 0.7 : 0.88, depthWrite: false })
+  : new THREE.MeshPhysicalMaterial({ color: 0x0c1016, metalness: 0.3, roughness: 0.05, transparent: true, opacity: i === 1 ? 0.66 : 0.87, depthWrite: false, envMapIntensity: 1.6 })));
+const neonMat = (i) => modMat('neon' + i, () => new THREE.MeshBasicMaterial({ color: NEON[i], transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+const mergeNI = (list) => mergeGeometries(list.map((g) => { const n = g.index ? g.toNonIndexed() : g; if (n.attributes.uv) n.deleteAttribute('uv'); return n; }));
+// a fitted spoiler: 1 a ducktail lip on the boot, 2 a race wing on stands
+const wings = new Map();
+function wingGeo(k, type) {
+  const key = k + ':' + type;
+  if (wings.has(key)) return wings.get(key);
+  const V = VEHICLES[k], S = shape(k), hx = V.hx, hy = V.hy, zt = S.zt;
+  const g = type === 1 ? mergeNI([extrude([[-hx + 1, zt - 0.5], [-hx + 16, zt - 0.5], [-hx - 1, zt + 5]], -hy + 5, hy - 5, 0.5)])
+    : mergeNI([extrude([[-hx + 2, zt + 14], [-hx + 20, zt + 15], [-hx + 18, zt + 17.5], [-hx, zt + 16.5]], -hy + 2, hy - 2, 0.6), box(3, 2, 15, -hx + 10, hy * 0.6, zt + 7), box(3, 2, 15, -hx + 10, -hy * 0.6, zt + 7)]);
+  g.computeVertexNormals();
+  wings.set(key, g);
+  return g;
+}
+
 const paints = new Map();
 export function paintMat(i, police) {
   const key = (police ? 'p' : '') + i;
@@ -146,7 +186,19 @@ function buildCar(V) {
   if (!S.box && !S.bed) paint.push(extrude([...tailP, [-hx + 8, c + 6], [xq, c + 6]], -hy + 4, hy - 4, 2.5));
   inside.push(box(xd - xq, hy * 2 - 8, 3, (xd + xq) / 2, 0, c + 6));
   // ---- the glasshouse: windscreen, a crowned roof, the rear window; pillars and a painted roof skin
-  if (!S.box) {
+  if (S.open) {
+    // a convertible: the windscreen in its frame, roll hoops behind the seats, a flat deck over the hood well
+    const ws = smooth([[xd, zb], [xd - (xd - xf) * 0.55, zb + (H - zb) * 0.75], [xf, H - 2]], 4);
+    glass.push(extrude([...ws, [xf - 2.5, H - 2], [xd - 2.5, zb]], -hy + 7, hy - 7, 0.8));
+    paint.push(box(3, hy * 2 - 12, 3, xf, 0, H - 1.5));
+    for (const s of [-1, 1]) {
+      paint.push(strut([xd, zb], [xf, H - 2], s * (hy - 6.5), 4, 3));
+      trim.push(box(xd - xq, 1.2, 1.4, (xd + xq) / 2, s * (hy - 4.6), zb + 0.6));
+    }
+    for (const [x, y] of V.seat) trim.push(box(4, hy * 0.5, 20, x - 24, y, zb + 10));
+    const deck = V.seat[0][0] - 30;
+    paint.push(box(Math.max(4, deck - xq), hy * 2 - 10, 3, (deck + xq) / 2, 0, zb - 1));
+  } else if (!S.box) {
     const crown = smooth([[xd, zb], [xd - (xd - xf) * 0.55, zb + (H - zb) * 0.72], [xf, H - 2], [(xf + xr) / 2, H], [xr, H - 2], [xq + (xr - xq) * 0.45, zb + (H - zb) * 0.7], [xq, zb]], 5);
     glass.push(extrude(crown, -hy + 6, hy - 6, 2));
     const top = crown.filter(([x]) => x <= xf + 2 && x >= xr - 2);
@@ -213,6 +265,26 @@ function buildCar(V) {
   const dials = box(0.4, 7, 2.6, xd - 10.3, V.seat[0][1], zb - 2.5);
   if (S.bar) { trim.push(box(9, hy * 1.4, 3, (xf + xr) / 2, 0, H + 1)); }
   if (S.sign) trim.push(box(8, 20, 3, (xf + xr) / 2, 0, H + 1));
+  if (S.spare) {
+    const t = new THREE.CylinderGeometry(r + 2, r + 2, 9, 16).rotateZ(Math.PI / 2);
+    t.translate(-hx - 5, 0, zt - r - 4);
+    trim.push(t);
+    chrome.push(box(1, r, r, -hx - 9.6, 0, zt - r - 4));
+  }
+  if (S.rack) {
+    for (const s of [-1, 1]) trim.push(box(xf - xr, 2.5, 3, (xf + xr) / 2, s * (hy - 9), H + 3));
+    for (const x of [xf - 6, (xf + xr) / 2, xr + 6]) trim.push(box(3, hy * 2 - 16, 2, x, 0, H + 4.5));
+  }
+  const beacon = [];
+  if (S.boom) {
+    // the tow rig: a frame on the bed, the boom with its cable and hook, the wheel lift; amber beacons on the cab
+    trim.push(box(14, hy * 1.4, 16, xq - 10, 0, zb + 8));
+    trim.push(strut([xq - 10, zb + 16], [-hx - 6, zb + 46], 0, 8, 8));
+    trim.push(box(1.5, 1.5, 26, -hx - 6, 0, zb + 32));
+    chrome.push(box(5, 3, 7, -hx - 6, 0, zb + 16));
+    trim.push(box(10, hy * 1.9, 6, -hx - 2, 0, c + 12));
+    beacon.push(box(7, hy * 1.2, 4, (xf + xr) / 2, 0, H + 2));
+  }
   if (S.wing) { paint.push(extrude([[-hx + 2, zt + 9], [-hx + 18, zt + 10], [-hx + 16, zt + 12], [-hx, zt + 11]], -hy + 2, hy - 2, 0.6)); for (const s of [-1, 1]) trim.push(box(3, 2, 9, -hx + 9, s * hy * 0.7, zt + 4)); }
   const nonIdx = (list) => mergeGeometries(list.map((g) => { const n = g.index ? g.toNonIndexed() : g; if (n.attributes.uv) n.deleteAttribute('uv'); return n; }));
   const out = {
@@ -221,6 +293,7 @@ function buildCar(V) {
     wheels: [[wf, hy - 9, r], [wf, -hy + 9, r], [wr, hy - 9, r], [wr, -hy + 9, r]], wheel: wheelGeo(r, 11), r,
     lod: mergeGeometries([box(hx * 2, hy * 2, zb - c, 0, 0, (zb + c) / 2), box(Math.max(10, xf - xr), hy * 2 - 10, H - zb, (xf + xr) / 2, 0, (zb + H) / 2)]),
     sw: { x: xd - 22, y: V.seat[0][1], z: zb - 3, r: hy * 0.27 }, bar: S.bar ? { x: (xf + xr) / 2, z: H + 3.5, w: hy * 0.6 } : null, sign: !!S.sign, roof: H,
+    beacon: beacon.length ? mergeGeometries(beacon) : null, zt,
   };
   for (const k of ['paint', 'glass', 'inside', 'seat', 'trim', 'chrome']) out[k].computeVertexNormals();
   return out;
@@ -419,7 +492,7 @@ function person(look, bike) {
 
 // ------------------------------------------------------------------ one vehicle in the world
 export class CarModel {
-  constructor(k, paint) {
+  constructor(k, paint, mods = 0) {
     const M = mats();
     const V = VEHICLES[k];
     const S = shape(k);
@@ -437,7 +510,11 @@ export class CarModel {
     this.paint = paintMat(paint, police);
     const mesh = (geo, m, shadow = true) => { if (!geo) return null; const o = new THREE.Mesh(geo, m); o.castShadow = shadow; o.receiveShadow = true; this.body3.add(o); return o; };
     this.body = mesh(S.paint, this.paint);
-    if (S.glass) mesh(S.glass, M.glass, false);
+    const md = unpackMods(mods);
+    const car = !V.air && !S.bike && S.zt !== undefined;
+    if (S.glass) mesh(S.glass, car && md.tint ? tintMat(md.tint) : M.glass, false);
+    if (car && md.wing) mesh(wingGeo(k, md.wing), this.paint);
+    if (S.beacon) this.beacon = mesh(S.beacon, M.taxi, false);
     mesh(S.trim, M.trim);
     if (S.inside) mesh(S.inside, M.inside, false);
     mesh(S.seat, M.seat, false);
@@ -490,7 +567,7 @@ export class CarModel {
       pivot.position.set(x, y, z);
       const spin = new THREE.Group();
       const tire = new THREE.Mesh(S.wheel.tire, M.tire);
-      const rim = new THREE.Mesh(S.wheel.rim, M.rim);
+      const rim = new THREE.Mesh(S.wheel.rim, car && md.rim ? rimMat(md.rim) : M.rim);
       tire.castShadow = true;
       spin.add(tire, rim);
       pivot.add(spin);
@@ -499,6 +576,12 @@ export class CarModel {
       this.near.add(pivot);
       return { pivot, spin, front: i < (S.bike ? 1 : 2) };
     });
+    // underglow: a soft pool of colour on the road under the car
+    if (car && md.neon) {
+      const glow = new THREE.Mesh(new THREE.PlaneGeometry(V.hx * 2, V.hy * 2.3), neonMat(md.neon));
+      glow.position.z = 1.5;
+      this.near.add(glow);
+    }
     // steering wheel or handlebars
     if (S.sw) {
       this.sw = new THREE.Group();
@@ -582,6 +665,7 @@ export class CarModel {
       this.body3.rotation.y += this.pitchV * dt;
     }
     if (this.tail) this.tail.material = st.brake ? mats().tailOn : mats().tailOff;
+    if (this.beacon) this.beacon.visible = Math.floor(t * 3) % 2 === 0;
     if (this.lights) {
       const on = st.siren && Math.floor(t * 6) % 2 === 0;
       this.lights[0].visible = !st.siren || on;

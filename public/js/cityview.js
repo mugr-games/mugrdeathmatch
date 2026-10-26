@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { G, N, RW, KERB, CHUNK, genCell, district, D, DISTRICT_NAMES, isWater, isUrban, roadH, roadV, hasSignal, signal, exits, DIRS, RIGHT, PLACES, CITIES, TOWNS, AIRFIELDS, hash, cellOf } from './citygen.js';
-import { VEHICLES, PAINTS, PAINT_NAMES, seatPos, carBoxes } from './vehicle.js';
+import { VEHICLES, PAINTS, PAINT_NAMES, MODS, PAINT_PRICE, unpackMods, seatPos, carBoxes } from './vehicle.js';
 import { CarModel, wheelInfo } from './carmodels.js';
 import { surfaceMaterial, neonMaterial, isPotato } from './shaders.js';
 import { SUIT_COLORS } from './avatar.js';
@@ -24,7 +24,7 @@ const money = (n) => '$' + Math.round(n).toLocaleString();
 const mph = (u) => Math.round(u * 0.0568);
 const lerp = (a, b, k) => a + (b - a) * k;
 const MAP_COL = { [D.OCEAN]: '#1d4a66', [D.LAKE]: '#2a5a7a', [D.CITY]: '#6a6a6c', [D.SUBURB]: '#56664a', [D.TOWN]: '#5e6450', [D.BEACH]: '#c8b080', [D.FARM]: '#6e6a3a', [D.FOREST]: '#2e4e26', [D.DESERT]: '#b49a68', [D.FIELD]: '#4a6a36', [D.MOUNTAIN]: '#8a7a68', [D.AIRPORT]: '#7a7e74', [D.AIRBASE]: '#7a6e5a' };
-const BLIP = { gas: '#ff5a3a', gun: '#ffd23a', hospital: '#ffffff', police: '#3a7aff' };
+const BLIP = { gas: '#ff5a3a', gun: '#ffd23a', hospital: '#ffffff', police: '#3a7aff', mech: '#a8b0c0', customs: '#ff4fd8' };
 // route cost of a road: highways are quicker than town streets
 function roadFromCost(i, j, d) {
   const k = d === 0 ? roadH(i, j) : d === 1 ? roadV(i, j) : d === 2 ? roadH(i - 1, j) : roadV(i, j - 1);
@@ -73,8 +73,8 @@ function signMat(text, bg, fg, sub) {
   return canvasMat(512, 128, (g, w, h) => {
     g.fillStyle = bg; g.fillRect(0, 0, w, h);
     g.fillStyle = fg; g.font = '900 72px Inter, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(text, w / 2, sub ? h * 0.42 : h / 2);
-    if (sub) { g.font = '700 26px Inter, system-ui, sans-serif'; g.fillText(sub, w / 2, h * 0.82); }
+    g.fillText(text, w / 2, sub ? h * 0.42 : h / 2, w - 30);
+    if (sub) { g.font = '700 26px Inter, system-ui, sans-serif'; g.fillText(sub, w / 2, h * 0.82, w - 30); }
   });
 }
 const ADS = [['DRINK FIZZ', '#e23b3b'], ['NYX R · 0-60 IN 2.9', '#151515'], ['FILL & GO · OPEN 24/7', '#d82a2a'], ['MUGR ARMS', '#2a2a2a'], ['COUNTY GENERAL', '#2a6ad8'], ['VISIT SUNDOWN', '#e88a1e']];
@@ -135,6 +135,16 @@ function material(key) {
     case 'gunsign': m = signMat('MUGR ARMS', '#1c1c1c', '#ffcf3a', 'GUNS · AMMO · ARMOUR'); break;
     case 'redcross': m = canvasMat(128, 128, (g) => { g.fillStyle = '#fff'; g.fillRect(0, 0, 128, 128); g.fillStyle = '#e02020'; g.fillRect(44, 12, 40, 104); g.fillRect(12, 44, 104, 40); }); break;
     case 'copsign': m = signMat('POLICE', '#1a3a8a', '#ffffff', 'MUGR COUNTY'); break;
+    case 'mechsign': m = signMat('MUGR MOTORWORKS', '#2a2e36', '#ffffff', 'REPAIRS · TYRES · TOWING'); break;
+    case 'customsign': m = signMat('HALCYON CUSTOMS', '#151018', '#ff4fd8', 'PAINT · WHEELS · ENGINES'); break;
+    case 'garagewall': m = sm('panel', '#8a9098', '#6a7078'); break;
+    case 'customwall': m = sm('panel', '#2a2830', '#3a3442'); break;
+    case 'chestred': m = sm('metal', '#b02020'); break;
+    case 'chestblue': m = sm('metal', '#2050b0'); break;
+    case 'yellowmetal': m = sm('metal', '#e8b81e'); break;
+    case 'tyre': m = sm('metal', '#141414'); break;
+    case 'oilfloor': m = sm('concrete', '#7a7670', '#5a5650'); break;
+    case 'checker': m = canvasMat(256, 256, (g) => { for (let a = 0; a < 8; a++) for (let b = 0; b < 8; b++) { g.fillStyle = (a + b) % 2 ? '#111114' : '#e8e8ec'; g.fillRect(a * 32, b * 32, 32, 32); } }, false); break;
     case 'billboard': { const a = ADS[vi % ADS.length]; m = signMat(a[0], a[1], '#ffffff'); break; }
     default: m = sm('concrete', '#a19d96');
   }
@@ -530,6 +540,8 @@ export class CityView {
     if (m.k === 'state') { this.state = { cash: m.cash, cars: m.cars, guns: m.guns }; if (this.phone) this.renderPhone(); if (this.shop) this.renderShop(); }
     else if (m.k === 'note') this.note(m.text);
     else if (m.k === 'shop') this.openShop(m);
+    else if (m.k === 'customs') this.openCustoms(m);
+    else if (m.k === 'customsShut') { if (this.shop?.kind === 'customs') this.closeShop(); }
   }
 
   snapshot(m) {
@@ -541,9 +553,16 @@ export class CityView {
         seen.add(r[0]);
         let c = this.cars.get(r[0]);
         if (!c) {
-          c = { id: r[0], k: r[1], snaps: [], model: new CarModel(r[1], r[10]), paint: r[10] };
+          c = { id: r[0], k: r[1], snaps: [], model: new CarModel(r[1], r[10], r[16]), paint: r[10], mods: r[16] | 0 };
           this.root.add(c.model.root);
           this.cars.set(r[0], c);
+        } else if (c.paint !== r[10] || c.mods !== (r[16] | 0)) {
+          // resprayed or fitted with new parts: build it again
+          this.root.remove(c.model.root);
+          c.model.dispose();
+          c.model = new CarModel(r[1], r[10], r[16]);
+          this.root.add(c.model.root);
+          c.paint = r[10]; c.mods = r[16] | 0;
         }
         c.snaps.push({ t: m.st, o: [r[2], r[3], r[4]], yaw: r[5], v: [r[6], r[7], r[14] || 0], steer: r[8] / 100, flags: r[9], pitch: (r[12] || 0) / 10, roll: (r[13] || 0) / 10, thr: (r[15] || 0) / 100 });
         while (c.snaps.length > 12) c.snaps.shift();
@@ -671,7 +690,7 @@ export class CityView {
     const g = this.g, ps = g.ps;
     this.ensureCollision(ps.origin[0], ps.origin[1], 2);
     const dyn = [];
-    for (const c of this.cars.values()) if (c.pose && c.id !== ps.car?.id) for (const b of carBoxes(c.pose, c.id)) dyn.push(b);
+    for (const c of this.cars.values()) if (c.pose && c.id !== ps.car?.id && !(c.flags & 256)) for (const b of carBoxes(c.pose, c.id)) dyn.push(b); // not the car on a tow hook
     g.world.dyn = dyn;
   }
 
@@ -1030,7 +1049,7 @@ export class CityView {
     else if (prompt) { const [k, text] = prompt.split('|'); p = (k ? `<b>${esc(k)}</b>` : '') + esc(text); }
     else if (this.g.ps.car && VEHICLES[this.g.ps.car.k].heli) p = '<small><b>W</b>/<b>S</b> forward and back · <b>A</b>/<b>D</b> slide · <b>Space</b> up · <b>C</b> down · turn with the mouse · <b>E</b> get out</small>';
     else if (this.g.ps.car && VEHICLES[this.g.ps.car.k].air) p = `<small><b>W</b>/<b>S</b> throttle · steer with the mouse · <b>A</b>/<b>D</b> rudder · <b>Q</b> flares${VEHICLES[this.g.ps.car.k].guns ? ' · <b>click</b> cannon · <b>right click</b> missile' : ''} · <b>E</b> bail out</small>`;
-    else if (this.g.ps.car || this.g.ps.seat) p = `<small><b>E</b> get out · <b>F</b> ${this.firstPerson ? 'chase camera' : 'first person'}${this.g.ps.car ? ' · <b>Space</b> handbrake · <b>H</b> horn' : ''}</small>`;
+    else if (this.g.ps.car || this.g.ps.seat) p = `<small><b>E</b> get out · <b>F</b> ${this.firstPerson ? 'chase camera' : 'first person'}${this.g.ps.car ? ` · <b>Space</b> handbrake · <b>H</b> ${VEHICLES[this.g.ps.car.k].tow ? 'hook or drop a car' : 'horn'}` : ''}</small>`;
     const pe = $('fp-prompt');
     if (pe.dataset.p !== p) { pe.dataset.p = p; pe.innerHTML = p; pe.hidden = !p; }
     // speedometer
@@ -1083,8 +1102,8 @@ export class CityView {
     for (const p of PLACES) {
       if (Math.abs(p.door[0] - eye[0]) > range * 2 || Math.abs(p.door[1] - eye[1]) > range * 2) continue;
       const near = Math.hypot(p.door[0] - eye[0], p.door[1] - eye[1]) < range * 1.6;
-      if (!near && p.type !== 'gun') continue;
-      blip(p.door[0], p.door[1], { gas: '#ff5a3a', gun: '#ffd23a', hospital: '#ffffff', police: '#3a7aff' }[p.type], 130, 'sq');
+      if (!near && p.type !== 'gun' && p.type !== 'mech' && p.type !== 'customs') continue;
+      blip(p.door[0], p.door[1], BLIP[p.type], 130, 'sq');
     }
     const t = performance.now() / 1000;
     for (const c of this.cars.values()) {
@@ -1145,8 +1164,8 @@ export class CityView {
   }
   phoneItems() {
     const P = this.phone;
-    if (P.screen === 'home') return [{ k: 'cars', label: 'Motors', icon: '🚗', sub: 'Buy a car' }, { k: 'bikes', label: 'Moto', icon: '🏍️', sub: 'Bikes & BMX' }, { k: 'planes', label: 'Aero', icon: '✈️', sub: 'Buy a plane' }, { k: 'garage', label: 'Garage', icon: '🔑', sub: `${this.state.cars.length} owned` }, { k: 'contacts', label: 'Contacts', icon: '📞', sub: 'Jamal' }, { k: 'map', label: 'Map', icon: '🗺️', sub: 'M for the big map' }];
-    if (P.screen === 'contacts') return [{ k: 'jamal', label: 'Jamal', sub: 'Lose your wanted level · $1,000' }];
+    if (P.screen === 'home') return [{ k: 'cars', label: 'Motors', icon: '🚗', sub: 'Buy a car' }, { k: 'bikes', label: 'Moto', icon: '🏍️', sub: 'Bikes & BMX' }, { k: 'planes', label: 'Aero', icon: '✈️', sub: 'Buy a plane' }, { k: 'garage', label: 'Garage', icon: '🔑', sub: `${this.state.cars.length} owned` }, { k: 'contacts', label: 'Contacts', icon: '📞', sub: 'Jamal · Towing' }, { k: 'map', label: 'Map', icon: '🗺️', sub: 'M for the big map' }];
+    if (P.screen === 'contacts') return [{ k: 'jamal', label: 'Jamal', sub: 'Lose your wanted level · $1,000' }, { k: 'tow', label: 'Hook & Haul Towing', sub: 'Your car towed to a mechanic, fixed and brought back · $300 + repairs' }];
     if (P.screen === 'garage' && this.g.ps.car && !(this.cars.get(this.g.ps.car.id)?.flags & 64)) return [{ save: true }, ...this.state.cars.map((c, n) => ({ n, V: VEHICLES[c.k], c: c.c }))];
     if (P.screen === 'cars' || P.screen === 'bikes' || P.screen === 'planes') return VEHICLES.map((V, i) => ({ V, i })).filter(({ V }) => V.shop === P.screen).sort((a, b) => a.V.price - b.V.price);
     if (P.screen === 'garage') return this.state.cars.map((c, n) => ({ n, V: VEHICLES[c.k], c: c.c }));
@@ -1283,7 +1302,7 @@ export class CityView {
       if (roadV(i, j) === 2) { ctx.beginPath(); ctx.moveTo((i + N) * s, (N - j) * s); ctx.lineTo((i + N) * s, (N - j - 1) * s); ctx.stroke(); }
     }
     const pt = (x, y) => [(x / G + N) * s, (N - y / G) * s];
-    for (const p of PLACES) { const [x, y] = pt(p.door[0], p.door[1]); ctx.fillStyle = { gas: '#ff5a3a', gun: '#ffd23a', hospital: '#ffffff', police: '#3a7aff' }[p.type]; ctx.fillRect(x - 2, y - 2, 4, 4); }
+    for (const p of PLACES) { const [x, y] = pt(p.door[0], p.door[1]); ctx.fillStyle = BLIP[p.type]; ctx.fillRect(x - 2, y - 2, 4, 4); }
     ctx.font = '700 10px Inter, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
     for (const c of [...CITIES, ...TOWNS]) { const [x, y] = pt(((c.rect[0] + c.rect[2] + 1) / 2) * G, ((c.rect[1] + c.rect[3] + 1) / 2) * G); ctx.fillText(c.name, x, y); }
     const mine = [...this.cars.values()].find((c) => c.flags & 64);
@@ -1399,7 +1418,7 @@ export class CityView {
       P.item = it; P.screen = 'paint'; P.sel = 0;
     } else if (P.screen === 'paint') { this.g.send({ t: 'fp', k: 'buy', id: P.item.V.id, paint: P.sel }); this.closePhone(); return; }
     else if (P.screen === 'garage') { this.g.send(it.save ? { t: 'fp', k: 'save' } : { t: 'fp', k: 'call', n: it.n }); this.closePhone(); return; }
-    else if (P.screen === 'contacts') { this.note('Calling Jamal…'); this.g.send({ t: 'fp', k: 'jamal' }); this.closePhone(); return; }
+    else if (P.screen === 'contacts') { this.note(`Calling ${it.label}…`); this.g.send({ t: 'fp', k: it.k }); this.closePhone(); return; }
     else if (P.screen === 'map') { this.closePhone(); this.toggleBigMap(); return; }
     this.renderPhone();
   }
@@ -1417,9 +1436,27 @@ export class CityView {
     this.shop = null;
     $('fp-shop').hidden = true;
   }
+  // the customs garage: every part with its price; what's fitted is marked
+  openCustoms(m) {
+    this.closePhone();
+    const md = unpackMods(m.mods);
+    const items = PAINTS.map((c, i) => ({ part: 'paint', val: i, label: `Paint · ${PAINT_NAMES[i]}`, price: PAINT_PRICE, on: i === m.paint, sw: c }));
+    for (const [part, M] of Object.entries(MODS)) M.opts.forEach((o, val) => items.push({ part, val, label: `${M.name} · ${o}`, price: M.price[val], on: md[part] === val }));
+    const sel = this.shop?.kind === 'customs' ? this.shop.sel : 0;
+    if (this.shop?.kind === 'customs') this.g.sound.ui(1700);
+    this.shop = { kind: 'customs', name: m.name, items, sel };
+    $('fp-shop').hidden = false;
+    this.renderShop();
+  }
   renderShop() {
     const S = this.shop;
     if (!S) return;
+    if (S.kind === 'customs') {
+      const rows = S.items.map((it, k) => `<li class="${k === S.sel ? 'on' : ''}${it.on ? ' own' : ''}"><b>${it.sw ? `<i class="sw" style="background:${it.sw}"></i>` : ''}${esc(it.label)}</b><span class="price">${it.on ? 'Fitted' : it.price ? money(it.price) : 'Free'}</span></li>`);
+      $('fp-shop').innerHTML = `<h3>HALCYON CUSTOMS</h3><p class="cash">${esc(S.name)} · ${money(this.state.cash)}</p><ul class="list">${rows.join('')}</ul><div class="keys"><b>↑↓</b> or wheel · <b>Enter</b> fit it · drive out to leave</div>`;
+      $('fp-shop').querySelector('.on')?.scrollIntoView({ block: 'nearest' });
+      return;
+    }
     const ps = this.g.ps;
     const rows = S.items.map((it, k) => {
       if (it.armor) return `<li class="${k === S.sel ? 'on' : ''}"><b>Body armour</b><span class="price">${money(it.price)}</span><small>${ps.armor >= 100 ? 'Full' : 'Fills your armour'}</small></li>`;
@@ -1433,6 +1470,7 @@ export class CityView {
   shopChoose() {
     const S = this.shop, it = S.items[S.sel];
     if (!it) return;
+    if (S.kind === 'customs') { if (!it.on) this.g.send({ t: 'fp', k: 'mod', part: it.part, val: it.val }); return; }
     if (it.armor) this.g.send({ t: 'fp', k: 'armor' });
     else {
       const wi = WEAPON_INDEX[it.w];

@@ -95,7 +95,7 @@ export class BoxWorld {
       const lo2 = Math.min(tw.start[2], tw.end[2]) - tw.ext[2] - 1, hi2 = Math.max(tw.start[2], tw.end[2]) + tw.ext[2] + 1;
       const ray = tw.ext[0] === 0 && tw.ext[1] === 0 && tw.ext[2] === 0;
       for (const b of this.dyn) {
-        if (b.id === this.skip) continue;
+        if (b.id === this.skip || (this.skip2 && b.id === this.skip2)) continue;
         const top = ray && b.shotTop !== undefined ? b.shotTop : b.maxs[2];
         if (b.maxs[0] < lo0 || b.mins[0] > hi0 || b.maxs[1] < lo1 || b.mins[1] > hi1 || top < lo2 || b.mins[2] > hi2) continue;
         let inside = true;
