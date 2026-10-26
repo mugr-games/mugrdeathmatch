@@ -560,7 +560,7 @@ document.addEventListener('mousedown', (e) => {
 });
 document.addEventListener('mouseup', (e) => { if (game) game.mouseButtons &= ~(e.button === 0 ? 1 : e.button === 2 ? 2 : 0); });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
-document.addEventListener('wheel', (e) => { if (playing && game && !game.fv.wheel(e.deltaY)) game.cycleWeapon(e.deltaY > 0 ? 1 : -1); }, { passive: true });
+document.addEventListener('wheel', (e) => { if (playing && game && !game.fv.bigMapWheel(e.deltaY) && !game.fv.wheel(e.deltaY)) game.cycleWeapon(e.deltaY > 0 ? 1 : -1); }, { passive: true });
 
 let chatOpen = false;
 function openChat() {
@@ -592,6 +592,7 @@ document.addEventListener('keydown', (e) => {
   if (game.fv.active) {
     if (!e.repeat && (e.code === 'KeyP' || (e.code === 'ArrowUp' && !game.fv.phoneOpen() && !game.fv.shop))) { game.fv.togglePhone(); return; }
     if (game.fv.key(e.code)) { e.preventDefault(); return; }
+    if (!e.repeat && e.code === 'KeyM') { game.fv.toggleBigMap(); return; }
     if (!e.repeat && e.code === 'KeyF' && (game.ps.car || game.ps.seat)) { const first = game.fv.toggleView(); save(); status(first ? 'First person driving (F for the chase camera)' : 'Chase camera (F for first person)'); return; }
   }
   if (e.repeat) return;

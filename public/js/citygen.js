@@ -1,13 +1,13 @@
 // Mugr County, the free roam world, built from code. The server and every browser generate the same world a
 // cell at a time, so nothing is downloaded and only the part near somebody is ever built. The world is a grid of
-// 2048-unit cells (a city block each), 112 across: about 5.9 km, the size of San Andreas. Three cities, three
-// towns, farms, forest, desert, a river with a lake, beaches and a mountain, joined by roads on the grid lines
+// 2048-unit cells (a city block each), 80 across: about 4 km. Three cities, three towns, farms, forest, desert,
+// a river with a lake, beaches, a mountain, an airport and a military airbase, joined by roads on the grid lines
 // (one lane each way, traffic on the right).
 // Only exact arithmetic decides anything solid (no sin, cos or pow), so every machine builds identical walls.
 // Units: 1 ≈ 1 inch, Z up.
 
 export const G = 2048; // one cell
-export const N = 56; // cells from the middle to each edge
+export const N = 40; // cells from the middle to each edge
 export const HALF = G * N;
 export const RW = 150; // road half width
 export const LANE = 75; // lane centre, from the middle of the road
@@ -17,21 +17,38 @@ export const CHUNK = 2; // cells per side of a render chunk
 export const SPEED = [0, 820, 1350]; // traffic speed on town streets and on highways
 const W = N * 2;
 
-export const D = { OCEAN: 0, LAKE: 1, CITY: 2, SUBURB: 3, TOWN: 4, BEACH: 5, FARM: 6, FOREST: 7, DESERT: 8, FIELD: 9, MOUNTAIN: 10 };
-export const DISTRICT_NAMES = ['Ocean', 'Mirror Lake', 'City', 'Suburbs', 'Town', 'Beach', 'Farmland', 'Woods', 'Desert', 'Grassland', 'Mount Mugr'];
+export const D = { OCEAN: 0, LAKE: 1, CITY: 2, SUBURB: 3, TOWN: 4, BEACH: 5, FARM: 6, FOREST: 7, DESERT: 8, FIELD: 9, MOUNTAIN: 10, AIRPORT: 11, AIRBASE: 12 };
+export const DISTRICT_NAMES = ['Ocean', 'Mirror Lake', 'City', 'Suburbs', 'Town', 'Beach', 'Farmland', 'Woods', 'Desert', 'Grassland', 'Mount Mugr', 'Mugr International', 'Fort Talon Air Base'];
 
 // [first cell i, first cell j, last cell i, last cell j]
 export const CITIES = [
-  { id: 'halcyon', name: 'Port Halcyon', rect: [10, -45, 40, -16], core: [26, -31], coreR: 6, tint: 0 },
-  { id: 'bayreach', name: 'Bayreach', rect: [-46, 16, -22, 40], core: [-34, 28], coreR: 5, tint: 1 },
-  { id: 'sundown', name: 'Sundown', rect: [18, 20, 42, 42], core: [30, 31], coreR: 4, tint: 2 },
+  { id: 'halcyon', name: 'Port Halcyon', rect: [8, -34, 30, -12], core: [19, -23], coreR: 5, tint: 0 },
+  { id: 'bayreach', name: 'Bayreach', rect: [-34, 12, -16, 30], core: [-25, 21], coreR: 4, tint: 1 },
+  { id: 'sundown', name: 'Sundown', rect: [14, 16, 32, 32], core: [23, 24], coreR: 3.5, tint: 2 },
 ];
 export const TOWNS = [
-  { id: 'pinecrest', name: 'Pinecrest', rect: [-40, -22, -34, -16] },
-  { id: 'dustwater', name: 'Dustwater', rect: [-4, 30, 1, 35] },
-  { id: 'millbrook', name: 'Millbrook', rect: [-16, -42, -11, -37] },
+  { id: 'pinecrest', name: 'Pinecrest', rect: [-30, -16, -25, -11] },
+  { id: 'dustwater', name: 'Dustwater', rect: [-4, 22, 0, 26] },
+  { id: 'millbrook', name: 'Millbrook', rect: [-12, -32, -8, -28] },
 ];
-const PEAK = [-26, -34], PEAK_R2 = 22; // Mount Mugr
+const PEAK = [-20, -24], PEAK_R2 = 14; // Mount Mugr
+// Airfields: a runway along x on one row of cells, the apron (where planes park) on the next, hangars behind.
+// The airbase is fenced, guarded and defended by missile sites.
+export const AIRFIELDS = [
+  { id: 'airport', name: 'Mugr International', rect: [4, 3, 13, 8], runwayJ: 5, apronJ: 6, hangarJ: 7, military: false },
+  { id: 'airbase', name: 'Fort Talon Air Base', rect: [-11, 9, -3, 14], runwayJ: 11, apronJ: 12, hangarJ: 13, military: true, gateI: -7 },
+];
+export const airfieldAt = (i, j) => AIRFIELDS.find((a) => i >= a.rect[0] && i <= a.rect[2] && j >= a.rect[1] && j <= a.rect[3]) || null;
+for (const a of AIRFIELDS) {
+  const [ai, aj, bi, bj] = a.rect;
+  // parking spots on the apron, nose to the runway; the middle of the base; missile sites at its corners
+  a.stands = [];
+  for (let i = ai + 1; i < bi; i++) for (const x of [512, 1536]) a.stands.push([i * G + x, a.apronJ * G + 900, 0, 270]);
+  a.center = [((ai + bi + 1) / 2) * G, ((aj + bj + 1) / 2) * G, 0];
+  a.min = [ai * G, aj * G]; a.max = [(bi + 1) * G, (bj + 1) * G];
+  a.sams = a.military ? [[ai * G + 600, aj * G + 600], [(bi + 1) * G - 600, aj * G + 600], [ai * G + 600, (bj + 1) * G - 600], [(bi + 1) * G - 600, (bj + 1) * G - 600]] : [];
+}
+export const inAirfield = (a, x, y) => x >= a.min[0] && x <= a.max[0] && y >= a.min[1] && y <= a.max[1];
 
 // ------------------------------------------------------------------ deterministic noise
 export function hash(i, j, k = 0) {
@@ -70,7 +87,7 @@ function coast(i, j) {
   const r2 = r * r;
   return m < r2 * r2 * r2;
 }
-const isLake = (i, j) => (j === -1 && i <= 3) || (i >= 2 && i <= 7 && j >= -4 && j <= 1);
+const isLake = (i, j) => (j === -1 && i <= 2) || (i >= 1 && i <= 5 && j >= -3 && j <= 1);
 function biome(i, j) {
   if (j >= 8) return i >= -12 ? D.DESERT : D.FOREST;
   const n = hash(i >> 2, j >> 2, 5);
@@ -82,6 +99,7 @@ for (let i = -N; i < N; i++) for (let j = -N; j < N; j++) {
   let d;
   if (cityAt(i, j)) d = D.CITY;
   else if (townAt(i, j)) d = D.TOWN;
+  else if (airfieldAt(i, j)) d = airfieldAt(i, j).military ? D.AIRBASE : D.AIRPORT;
   else if (!coast(i, j) && !cityAt(i, j, 1)) d = D.OCEAN;
   else if (isLake(i, j)) d = D.LAKE;
   else if (cityAt(i, j, 3)) d = D.SUBURB;
@@ -106,6 +124,7 @@ export function district(i, j) {
 }
 export const isWater = (d) => d === D.OCEAN || d === D.LAKE;
 export const isUrban = (d) => d === D.CITY || d === D.SUBURB || d === D.TOWN;
+export const isAir = (d) => d === D.AIRPORT || d === D.AIRBASE;
 
 // ------------------------------------------------------------------ roads
 // roadH(i, j): along y = jG from x = iG to (i+1)G, between cells (i, j-1) and (i, j).
@@ -115,6 +134,8 @@ const RH = new Uint8Array(W * (W + 1)), RV = new Uint8Array((W + 1) * W);
 const mod8 = (n) => ((n % 8) + 8) % 8;
 function roadKind(a, b, line) {
   if (a === D.OCEAN && b === D.OCEAN) return 0;
+  if (isAir(a) && isAir(b)) return 0; // nothing crosses a runway
+  if (isAir(a) || isAir(b)) return mod8(line) === 0 ? 2 : 0;
   const urban = isUrban(a) || isUrban(b);
   if (a === D.OCEAN || b === D.OCEAN) return urban ? 1 : 0; // seafront avenues
   if (urban) return 1;
@@ -163,9 +184,9 @@ export function signal(i, j, axis, t) {
 // ------------------------------------------------------------------ places: shops, gas stations, hospitals, police
 // Fixed cells near each city's middle; rural gas stations sit at highway crossings.
 const PLACE_DEFS = {
-  halcyon: [['gas', 8, 4], ['gas', -9, -6], ['gas', 3, -12], ['gas', -6, 10], ['gas', 13, -8], ['gun', 4, -3], ['gun', -7, 6], ['hospital', -3, -5], ['police', 5, 5]],
-  bayreach: [['gas', 6, -4], ['gas', -7, 7], ['gas', 3, 9], ['gun', -4, -3], ['gun', 8, 6], ['hospital', 3, 3], ['police', -5, 4]],
-  sundown: [['gas', 7, 3], ['gas', -6, -6], ['gas', 2, 9], ['gun', -3, 4], ['hospital', 4, -4], ['police', -5, 1]],
+  halcyon: [['gas', 6, 3], ['gas', -7, -5], ['gas', 2, -9], ['gas', -5, 8], ['gas', 9, -6], ['gun', 3, -3], ['gun', -6, 5], ['hospital', -3, -4], ['police', 4, 4]],
+  bayreach: [['gas', 5, -4], ['gas', -6, 6], ['gas', 3, 8], ['gun', -4, -3], ['gun', 6, 5], ['hospital', 3, 3], ['police', -5, 4]],
+  sundown: [['gas', 6, 3], ['gas', -5, -5], ['gas', 2, 7], ['gun', -3, 4], ['hospital', 4, -4], ['police', -5, 1]],
 };
 export const PLACE_NAMES = { gas: 'Fill & Go', gun: 'Mugr Arms', hospital: 'County General', police: 'County Police' };
 const PLACE_AT = new Map(); // "i,j" -> { type, ... }
@@ -186,7 +207,7 @@ const PLACE_AT = new Map(); // "i,j" -> { type, ... }
   for (let i = -N + 8; i < N; i += 8) for (let j = -N + 8; j < N; j += 8) {
     if (hash(i, j, 21) > 0.4) continue;
     const d = district(i, j);
-    if (isUrban(d) || isWater(d) || d === D.MOUNTAIN) continue;
+    if (isUrban(d) || isWater(d) || isAir(d) || d === D.MOUNTAIN) continue;
     if (!roadH(i, j) || !roadV(i, j)) continue;
     add('gas', i, j, DISTRICT_NAMES[d]);
   }
@@ -227,7 +248,7 @@ export function genCell(i, j, visual = true) {
       if (B || T) for (let x = x0 + 256; x < x1; x += 512) { if (B) deco(x - 30, y0 - 40, -600, x + 30, y0 + 40, -40, 'concrete'); if (T) deco(x - 30, y1 - 40, -600, x + 30, y1 + 40, -40, 'concrete'); }
     }
   } else {
-    const gmat = urban ? 'asphalt' : d === D.DESERT || d === D.BEACH ? 'sand' : d === D.MOUNTAIN ? 'rock' : d === D.FOREST ? 'forest' : d === D.FARM ? 'soil' : 'grass';
+    const gmat = isAir(d) ? (d === D.AIRBASE ? 'sand' : 'grass') : urban ? 'asphalt' : d === D.DESERT || d === D.BEACH ? 'sand' : d === D.MOUNTAIN ? 'rock' : d === D.FOREST ? 'forest' : d === D.FARM ? 'soil' : 'grass';
     box(x0, y0, -64, x1, y1, 0, gmat);
     out.ground = gmat;
     // country roads are drawn on top of the grass and sand
@@ -308,7 +329,8 @@ export function genCell(i, j, visual = true) {
   const ctx = { out, box, deco, tree, R, RV, lot, base, i, j, d, visual, edges: { L, R: Rr, B, T } };
 
   const place = placeAt(i, j);
-  if (place) buildPlace(ctx, place);
+  if (isAir(d)) airfield(ctx, airfieldAt(i, j));
+  else if (place) buildPlace(ctx, place);
   else if (d === D.CITY) cityLot(ctx);
   else if (d === D.SUBURB) suburbLot(ctx);
   else if (d === D.TOWN) townLot(ctx);
@@ -700,6 +722,67 @@ function mountain(ctx) {
     if (bx - ax < 300 || by - ay < 300) break;
   }
   if (k > 0.85 && ctx.visual) ctx.deco((ax + bx) / 2 - 8, (ay + by) / 2 - 8, z, (ax + bx) / 2 + 8, (ay + by) / 2 + 8, z + 600, 'metal'); // the radio mast on top
+}
+
+// ------------------------------------------------------------------ airfields
+function airfield(ctx, af) {
+  const { box, deco, i, j, visual } = ctx;
+  const x0 = i * G, y0 = j * G, x1 = x0 + G, y1 = y0 + G;
+  const [ai, aj, bi, bj] = af.rect;
+  if (j === af.runwayJ) {
+    // the runway, with its shoulder up to the apron
+    deco(x0, y0 + 600, 0, x1, y1, 0.6, 'asphalt');
+    if (visual) {
+      for (let x = x0 + 60; x < x1; x += 420) deco(x, y0 + 994, 0, x + 220, y0 + 1006, 0.8, 'line');
+      deco(x0, y0 + 640, 0, x1, y0 + 652, 0.8, 'line'); deco(x0, y0 + 1348, 0, x1, y0 + 1360, 0.8, 'line');
+      if (i === ai || i === bi) for (let k = 0; k < 8; k++) { const xa = i === ai ? x0 + 120 : x1 - 520; deco(xa, y0 + 690 + k * 80, 0, xa + 400, y0 + 730 + k * 80, 0.8, 'line'); }
+      for (let x = x0 + 128; x < x1; x += 512) for (const y of [y0 + 620, y0 + 1380]) deco(x - 6, y - 6, 0, x + 6, y + 6, 10, 'neon');
+    }
+  } else if (j === af.apronJ) {
+    deco(x0, y0, 0, x1, y1 - 200, 0.6, 'concrete');
+    if (visual && i > ai && i < bi) for (const x of [512, 1536]) { deco(x0 + x - 4, y0 + 300, 0, x0 + x + 4, y0 + 1500, 0.8, 'yline'); deco(x0 + x - 300, y0 + 1500, 0, x0 + x + 300, y0 + 1508, 0.8, 'yline'); }
+  } else if (j === af.hangarJ) {
+    deco(x0, y0, 0, x1, y1 - 300, 0.6, 'concrete');
+    const mid = Math.floor((ai + bi) / 2);
+    if (!af.military && i === mid) {
+      // the terminal: a long glass building, with the control tower beside it
+      box(x0 + 80, y0 + 500, 0, x1 - 80, y1 - 120, 520, 'curtain');
+      if (visual) deco(x0 + 60, y0 + 480, 520, x1 - 60, y1 - 100, 540, 'concrete');
+    } else if (!af.military && i === mid + 1) {
+      box(x0 + 800, y0 + 900, 0, x0 + 1100, y0 + 1200, 1500, 'concrete');
+      box(x0 + 740, y0 + 840, 1500, x0 + 1160, y0 + 1260, 1520, 'concrete');
+      if (visual) { deco(x0 + 750, y0 + 850, 1520, x0 + 1150, y0 + 1250, 1680, 'glass'); deco(x0 + 740, y0 + 840, 1680, x0 + 1160, y0 + 1260, 1700, 'concrete'); }
+    } else if (i > ai && i < bi) {
+      // a hangar, open to the apron
+      const hx0 = x0 + 160, hx1 = x1 - 160, hy0 = y0 + 120, hy1 = y0 + 1500, H = 560;
+      box(hx0, hy1 - 20, 0, hx1, hy1, H, 'hangar');
+      box(hx0, hy0, 0, hx0 + 20, hy1, H, 'hangar'); box(hx1 - 20, hy0, 0, hx1, hy1, H, 'hangar');
+      box(hx0, hy0, H - 120, hx1, hy0 + 20, H, 'hangar');
+      box(hx0 - 10, hy0 - 10, H, hx1 + 10, hy1 + 10, H + 24, 'hangar');
+    }
+  } else if (!af.military && j === af.hangarJ + 1 && visual) {
+    deco(x0 + 100, y0 + 100, 0, x1 - 100, y1 - 100, 0.5, 'asphalt');
+    for (let x = x0 + 200; x < x1 - 200; x += 130) deco(x - 3, y0 + 300, 0, x + 3, y0 + 520, 1, 'line');
+  } else if (af.military && j === af.hangarJ + 1) {
+    // barracks
+    box(x0 + 300, y0 + 400, 0, x1 - 300, y0 + 900, 260, 'precinct');
+  }
+  if (!af.military) return;
+  // the fence round the base, with a gate on the south side
+  const H = 300;
+  if (i === ai) box(x0, y0, 0, x0 + 16, y1, H, 'chain');
+  if (i === bi) box(x1 - 16, y0, 0, x1, y1, H, 'chain');
+  if (j === bj) box(x0, y1 - 16, 0, x1, y1, H, 'chain');
+  if (j === aj) {
+    if (i === af.gateI) { box(x0, y0, 0, x0 + 700, y0 + 16, H, 'chain'); box(x1 - 700, y0, 0, x1, y0 + 16, H, 'chain'); if (visual) deco(x0 + 700, y0 - 4, 120, x1 - 700, y0 + 20, 132, 'hazard'); }
+    else box(x0, y0, 0, x1, y0 + 16, H, 'chain');
+  }
+  // missile launchers on the corners
+  for (const [sx, sy] of af.sams) {
+    if (Math.floor(sx / G) !== i || Math.floor(sy / G) !== j) continue;
+    box(sx - 90, sy - 90, 0, sx + 90, sy + 90, 60, 'concrete');
+    if (visual) { deco(sx - 50, sy - 60, 60, sx + 50, sy + 60, 120, 'army'); for (const k of [-30, 0, 30]) deco(sx - 40, sy + k - 9, 120, sx + 70, sy + k + 9, 140, 'metal'); }
+  }
 }
 
 // ------------------------------------------------------------------ places

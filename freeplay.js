@@ -2,21 +2,29 @@
 // them and vanish far away. Cars (bought on the phone, stolen from traffic, police cruisers), people who walk the
 // pavements and run from gunfire, gas station tills to rob, gun shops, the wanted level and the police who come
 // for you, and the money and things you own (kept on your profile).
-import { genCell, G, N, RW, LANE, KERB, district, isUrban, roadFrom, roadH, roadV, exits, hasSignal, signal, DIRS, RIGHT, SPEED, PLACES, HOSPITALS, CITIES, nearestLane, cellOf } from './public/js/citygen.js';
-import { VEHICLES, VEHICLE_INDEX, PAINTS, newCar, vmove, seatPos, carBoxes, touches } from './public/js/vehicle.js';
+import { genCell, G, N, RW, LANE, KERB, district, isUrban, roadFrom, roadH, roadV, exits, hasSignal, signal, DIRS, RIGHT, SPEED, PLACES, HOSPITALS, CITIES, nearestLane, cellOf, AIRFIELDS, inAirfield } from './public/js/citygen.js';
+import { VEHICLES, VEHICLE_INDEX, PAINTS, newCar, vmove, amove, seatPos, carBoxes, touches } from './public/js/vehicle.js';
 import { newPlayerState, pmove, BTN, MV } from './public/js/pmove.js';
 import { WEAPONS, WEAPON_INDEX, GUN_SHOP, ARMOR_PRICE } from './public/js/weapons.js';
 import { giveWeapon, initLoadout, hitTest } from './public/js/sim.js';
 import { BoxWorld } from './public/js/collide.js';
 
 const DEG = Math.PI / 180, D = 180 / Math.PI;
-const START_CASH = 5000;
+// FREEROAM_TEST=1 (testing only): start rich, at the airport
+const TEST = process.env.FREEROAM_TEST === '1';
+const START_CASH = TEST ? 1000000 : 5000;
 const TRAFFIC = { urban: 14, rural: 5 }, PEOPLE = { urban: 18, rural: 2 };
 const SPAWN_MIN = 3200, SPAWN_MAX = 7600, DESPAWN = 10500;
 const PED_MIN = 1600, PED_MAX = 4600, PED_DESPAWN = 6800;
 const SEE_V = 8000, SEE_P = 4600; // how far away cars and people are sent (the browser draws people out to 4500)
 const DIR_YAW = [0, 90, 180, 270];
 const COP_LOOK = 1 * 4 + 1; // trooper in blue
+const SOLDIER_LOOK = 2 + 7 * 4; // juggernaut in graphite
+const GARAGE = 20; // vehicles you can keep
+const JAMAL = 1000; // what Jamal charges to make the police forget you
+// airbase missiles: faster than any plane but they turn wider than a fighter, so hard turns and flares save you
+const SAM = { speed: 6500, turn: 50, life: 12, range: 40000, every: 2.2, damage: 650 };
+const AIRPORT = AIRFIELDS.find((a) => !a.military), AIRBASE = AIRFIELDS.find((a) => a.military);
 const TRAFFIC_POOL = {
   urban: [['pip', 4], ['meridian', 5], ['cab', 2.5], ['courier', 1.5], ['bastion', 2], ['haybale', 1], ['thunderhoof', 0.5], ['vela', 0.35], ['nyx', 0.08], ['zip', 0.8], ['kestrel', 0.3], ['sprocket', 0.3]],
   rural: [['haybale', 4], ['meridian', 2], ['bastion', 2.5], ['courier', 1.5], ['pip', 1.5], ['thunderhoof', 0.8], ['mudlark', 0.6], ['kestrel', 0.4], ['vela', 0.3]],
@@ -138,6 +146,7 @@ export function createFreeplay(R, api) {
     let h = null;
     const at = p.fp?.diedAt;
     if (at) { let bd = Infinity; for (const x of HOSPITALS) { const d = dist2(x.door, at); if (d < bd) { bd = d; h = x; } } }
+    else if (TEST) { const s = AIRPORT.stands[1]; ensureAround(s[0], s[1], 2); return { origin: [s[0] + 300, s[1] + 300, 2], yaw: 270 }; }
     else h = HOSPITALS.find((x) => x.where === CITIES[0].name) || HOSPITALS[0];
     const s = h.spawns[(Math.random() * h.spawns.length) | 0];
     ensureAround(s.origin[0], s.origin[1], 2);
@@ -241,6 +250,15 @@ export function createFreeplay(R, api) {
     }
     ps.origin = spot || [v.s.o[0], v.s.o[1], v.s.o[2] + V.h + 8];
     ps.velocity = [v.s.v[0] * 0.5, v.s.v[1] * 0.5, 40];
+    if (V.air && !v.s.g) {
+      // jumping out of a plane: a parachute opens; the plane flies on and comes down
+      ps.chute = true;
+      ps.origin = [v.s.o[0], v.s.o[1], v.s.o[2] - 60];
+      ps.velocity = [v.s.v[0] * 0.25, v.s.v[1] * 0.25, -100];
+      v.s.dead = true;
+      ev({ e: 'vexit', id: p.id, v: v.id, chute: 1 });
+      return;
+    }
     ps.ducked = false; ps.duckAmt = 0; ps.onGround = false;
     ev({ e: 'vexit', id: p.id, v: v.id });
     const sp = speedOf(v);
@@ -311,12 +329,21 @@ export function createFreeplay(R, api) {
     const v = vehicleOf(p);
     if (!v) { ps.car = null; ps.seat = null; return 0; }
     if (ps.car) {
+      const V = VEHICLES[v.k];
       if (pressed & BTN.HORN && v.kind === 'police') v.siren = !v.siren;
       if (cmd.buttons & BTN.HORN && v.kind !== 'police') v.horn = now() + 0.15;
       const w = world();
       w.skip = v.id;
-      const r = vmove(w, v.s, cmd, dt);
+      const r = V.air ? amove(w, v.s, cmd, dt) : vmove(w, v.s, cmd, dt);
       w.skip = 0;
+      if (V.air) {
+        v.seenAt = now();
+        seatPlayer(p, v, 0);
+        if (r.crash) { damageVehicle(v, v.maxHp * 3, v.lastBy || p); return 1; }
+        if (V.guns && !v.s.g) jetWeapons(p, v, cmd, pressed);
+        if (pressed & BTN.ROCKETJUMP && !v.s.g) flares(v);
+        return 1;
+      }
       const f = Math.cos(v.s.yaw * DEG) * v.s.v[0] + Math.sin(v.s.yaw * DEG) * v.s.v[1];
       v.brake = (cmd.fwd < -0.1 && f > 40) || !!(cmd.buttons & BTN.JUMP);
       v.seenAt = now();
@@ -609,6 +636,16 @@ export function createFreeplay(R, api) {
 
   function vehicleThink(v, dt) {
     if (driverOf(v)) return; // a player drives it (their commands move it)
+    if (VEHICLES[v.k].air) {
+      // nobody flying it: parked planes sit; one that's been left in the air comes down
+      if (v.s.g && Math.abs(v.s.v[0]) + Math.abs(v.s.v[1]) < 2) return;
+      const w = world();
+      w.skip = v.id;
+      const r = amove(w, v.s, { fwd: -1, side: 0, yaw: v.s.yaw, pitch: 30, buttons: 0 }, dt);
+      w.skip = 0;
+      if (r.crash) damageVehicle(v, v.maxHp * 3, v.lastBy);
+      return;
+    }
     if (v.wreck) { coast(v, dt); return; }
     if (v.burn) { damageVehicle(v, 28 * dt, v.lastBy); if (v.wreck) return; }
     if (v.npc[0] >= 0 && v.ai) {
@@ -755,6 +792,8 @@ export function createFreeplay(R, api) {
     else if (kind === 'copcar') w = Math.max(w + 1, 2);
     else if (kind === 'rob') w = Math.max(w, 2);
     else if (kind === 'alarm') w = Math.max(w, 1);
+    else if (kind === 'trespass') w = Math.max(w, 4);
+    else if (kind === 'jet') w = Math.max(w, 5);
     w = Math.min(5, w);
     fp.wanted = w;
     seen(p);
@@ -966,6 +1005,16 @@ export function createFreeplay(R, api) {
       if (old.seats.includes(p)) return note(p, 'You\'re already in it.');
       removeVehicle(old);
     }
+    if (VEHICLES[car.k].air) {
+      // planes are only ever brought to the airport
+      const stand = AIRPORT.stands.find((s) => ![...F.vehicles.values()].some((v) => dist2(v.s.o, s) < 500 * 500));
+      if (!stand) return note(p, 'Every stand at the airport is taken. Try again soon.');
+      ensureAround(stand[0], stand[1], 1);
+      const v = addVehicle(car.k, stand, stand[3], 'mine', car.c);
+      v.owner = p.id;
+      p.fp.mine = v.id;
+      return note(p, `Your ${VEHICLES[car.k].name} is waiting on the apron at ${AIRPORT.name} (the airport).`);
+    }
     const o = p.ps.origin;
     let lane = null;
     for (const r of [0, 400, 900, 1600]) {
@@ -990,13 +1039,40 @@ export function createFreeplay(R, api) {
       const k = VEHICLE_INDEX[m.id];
       const V = VEHICLES[k];
       if (!V || !V.shop) return;
-      if (d.cars.length >= 12) return note(p, 'Your garage is full (12 vehicles).');
+      if (d.cars.length >= GARAGE) return note(p, `Your garage is full (${GARAGE} vehicles).`);
       if (!pay(p, V.price)) return note(p, `You need $${(V.price - d.cash).toLocaleString()} more for the ${V.name}.`);
       d.cars.push({ k, c: Number.isInteger(m.paint) && m.paint >= 0 && m.paint < PAINTS.length ? m.paint : 0 });
       state(p);
       note(p, `Bought: ${V.name}. It's on its way.`);
       deliver(p, d.cars.length - 1);
     } else if (m.k === 'call') deliver(p, m.n | 0);
+    else if (m.k === 'save') {
+      // keep the vehicle you're driving: it goes in your garage and the phone can bring it back any time
+      const v = p.ps.car ? F.vehicles.get(p.ps.car.id) : null;
+      if (!v) return note(p, 'Get in the driver\'s seat of the vehicle you want to keep.');
+      if (v.owner === p.id) return note(p, 'It\'s already yours.');
+      if (p.fp.wanted) return note(p, 'Lose the police first.');
+      if (v.wreck) return;
+      if (d.cars.length >= GARAGE) return note(p, `Your garage is full (${GARAGE} vehicles).`);
+      d.cars.push({ k: v.k, c: v.paint });
+      const old = F.vehicles.get(p.fp.mine);
+      if (old && old !== v) { old.owner = 0; old.kind = 'parked'; }
+      v.kind = 'mine'; v.owner = p.id; v.siren = false;
+      p.fp.mine = v.id;
+      save(p);
+      state(p);
+      note(p, `Saved: the ${VEHICLES[v.k].name} is in your garage now. Call it from the phone whenever you like.`);
+    } else if (m.k === 'jamal') {
+      // a phone call to Jamal: the police forget all about you, for a price
+      if (!p.fp.wanted) return note(p, 'Jamal: "You\'re clean, my friend. Call me when you\'re in trouble."');
+      if (!pay(p, JAMAL)) return note(p, `Jamal: "That's $${JAMAL.toLocaleString()}. Come back when you've got it."`);
+      p.fp.wanted = 0;
+      ev({ e: 'wanted', id: p.id, w: 0, jamal: 1 }, p.id);
+      for (const n of F.peds.values()) if (n.kind === 'cop' && n.target === p.id) { n.state = 'walk'; n.walk = null; n.target = 0; }
+      for (const v of F.vehicles.values()) if (v.ai && v.ai.target === p.id) v.ai.target = 0;
+      state(p);
+      note(p, 'Jamal: "Done. Your file just went missing. Keep your head down."');
+    }
     else if (m.k === 'gun' || m.k === 'ammo' || m.k === 'armor') {
       const shop = PLACES.find((s) => s.type === 'gun' && dist2(s.front, p.ps.origin) < 260 * 260);
       if (!shop || !p.ps.alive) return note(p, 'You have to be at the gun shop counter.');
@@ -1058,6 +1134,147 @@ export function createFreeplay(R, api) {
       }
     }
   }
+  // ---------------------------------------------------------------- airfields
+  F.missiles = new Map();
+  let nextMissile = 1, samAt = 0;
+  function airfieldsThink(people, dt) {
+    const t = now();
+    for (const a of AIRFIELDS) {
+      const near = people.some((p) => dist2(p.ps.origin, a.center) < 12000 * 12000);
+      if (!near) continue;
+      // planes waiting on the apron (fighters at the base): filled again when nobody's looking
+      a.parked ||= new Map();
+      a.stands.forEach((s, k) => {
+        if (k % 2) return; // every other stand stays free (deliveries at the airport)
+        const id = a.parked.get(k);
+        const v = id && F.vehicles.get(id);
+        if (v && !v.wreck && dist2(v.s.o, s) < 400 * 400) return;
+        if (v && (v.owner || v.seats.some(Boolean))) a.parked.delete(k);
+        if (people.some((p) => dist2(p.ps.origin, s) < 2500 * 2500)) return;
+        if ([...F.vehicles.values()].some((o) => dist2(o.s.o, s) < 500 * 500)) return;
+        ensureAround(s[0], s[1], 1);
+        const kind = a.military ? 'talon' : ['skylark', 'skylark', 'duster', 'comet'][(Math.random() * 4) | 0];
+        const nv = addVehicle(VEHICLE_INDEX[kind], s, s[3], a.military ? 'military' : 'parked', a.military ? 9 : undefined);
+        a.parked.set(k, nv.id);
+      });
+    }
+    // Fort Talon: off limits. Inside the fence the guards come for you; take a jet and the missiles do.
+    for (const p of people) {
+      if (!p.ps.alive) continue;
+      const o = p.ps.origin, v = vehicleOf(p);
+      const flying = v && VEHICLES[v.k].air && !v.s.g;
+      if (inAirfield(AIRBASE, o[0], o[1]) && !flying && o[2] < 400) {
+        if (p.fp.wanted < 4) { if (!p.fp.warned) { note(p, 'Restricted area! Fort Talon is a military base.'); p.fp.warned = true; } crime(p, 'trespass'); }
+        let soldiers = 0;
+        for (const n of F.peds.values()) if (n.soldier) soldiers++;
+        if (soldiers < 8 && t >= (F.soldierAt || 0)) {
+          F.soldierAt = t + 1.5;
+          const a = Math.random() * Math.PI * 2, r = 900 + Math.random() * 900;
+          const sx = o[0] + Math.cos(a) * r, sy = o[1] + Math.sin(a) * r;
+          if (inAirfield(AIRBASE, sx, sy)) {
+            ensureAround(sx, sy, 0);
+            const n = makePed('cop', [sx, sy, 0], Math.atan2(o[1] - sy, o[0] - sx) * D, SOLDIER_LOOK);
+            n.soldier = true; n.hp = 150; n.state = 'hunt'; n.target = p.id;
+          }
+        }
+      }
+      if (v && v.k === VEHICLE_INDEX.talon && p.ps.car && v.owner !== p.id && !v.flagged) { v.flagged = true; crime(p, 'jet'); }
+    }
+    // missile sites shoot at stolen jets and wanted pilots over the base
+    if (t >= samAt) {
+      samAt = t + SAM.every;
+      for (const v of F.vehicles.values()) {
+        const p = driverOf(v);
+        if (!p || !VEHICLES[v.k].air || v.s.g || v.wreck) continue;
+        if (dist2(v.s.o, AIRBASE.center) > SAM.range * SAM.range) continue;
+        if (!(p.fp.wanted >= 3 || (v.k === VEHICLE_INDEX.talon && v.owner !== p.id))) continue;
+        let inFlight = 0;
+        for (const m of F.missiles.values()) if (m.target === v.id) inFlight++;
+        if (inFlight >= 2) continue;
+        const site = AIRBASE.sams[(Math.random() * AIRBASE.sams.length) | 0];
+        launch([site[0], site[1], 160], [0, 0, 1], v.id, null);
+        ev({ e: 'lock', id: p.id }, p.id);
+      }
+    }
+    // missiles: home in, burn out, blow up
+    for (const m of [...F.missiles.values()]) {
+      m.t += dt;
+      const tv = m.target && F.vehicles.get(m.target);
+      if (tv && !tv.wreck && t >= m.lostAt) {
+        const lead = 0.25;
+        const want = [tv.s.o[0] + tv.s.v[0] * lead - m.o[0], tv.s.o[1] + tv.s.v[1] * lead - m.o[1], tv.s.o[2] + 40 + tv.s.v[2] * lead - m.o[2]];
+        const l = Math.hypot(...want) || 1;
+        const sp = Math.hypot(...m.v) || 1;
+        const k = Math.min(1, (SAM.turn * DEG * dt) * 1.4);
+        for (let i = 0; i < 3; i++) m.v[i] = m.v[i] / sp * (1 - k) + (want[i] / l) * k;
+        const n = Math.hypot(...m.v) || 1;
+        for (let i = 0; i < 3; i++) m.v[i] = (m.v[i] / n) * SAM.speed;
+        if (Math.hypot(tv.s.o[0] - m.o[0], tv.s.o[1] - m.o[1], tv.s.o[2] + 40 - m.o[2]) < 280) { boom(m, tv); continue; }
+      }
+      const end = [m.o[0] + m.v[0] * dt, m.o[1] + m.v[1] * dt, m.o[2] + m.v[2] * dt];
+      const tr = world().trace(m.o, end, [0, 0, 0], [0, 0, 0]);
+      m.o = tr.endpos.slice();
+      if (tr.fraction < 1) { boom(m, tr.dyn ? F.vehicles.get(tr.dyn.id) : null); continue; }
+      if (m.t > SAM.life) F.missiles.delete(m.id);
+    }
+  }
+  function launch(o, dir, target, owner) {
+    const id = nextMissile++;
+    F.missiles.set(id, { id, o: o.slice(), v: dir.map((x) => x * SAM.speed), target, owner, t: 0, lostAt: 0 });
+  }
+  function boom(m, hit) {
+    F.missiles.delete(m.id);
+    const at = m.o.map(r1);
+    ev({ e: 'boom', id: 0, o: at, k: 'rocket' });
+    if (hit) damageVehicle(hit, SAM.damage, m.owner);
+    api.blast(at, { radius: 360, splash: 120, knock: 600 }, m.owner, 'rpg');
+  }
+  // flares: missiles chasing you lose you, mostly
+  function flares(v) {
+    const t = now();
+    if (t < (v.flareAt || 0)) return;
+    v.flareAt = t + 5;
+    ev({ e: 'flare', v: v.id, o: v.s.o.map(r1) });
+    for (const m of F.missiles.values()) if (m.target === v.id && Math.random() < 0.75) { m.target = 0; m.lostAt = Infinity; }
+  }
+  // the fighter: a cannon (left mouse) and missiles that lock on to what's in front (right mouse)
+  function jetWeapons(p, v, cmd, pressed) {
+    const t = now(), s = v.s, V = VEHICLES[v.k];
+    const cp = Math.cos(s.pitch * DEG);
+    const f = [cp * Math.cos(s.yaw * DEG), cp * Math.sin(s.yaw * DEG), Math.sin(s.pitch * DEG)];
+    const nose = [s.o[0] + f[0] * (V.hx + 30), s.o[1] + f[1] * (V.hx + 30), s.o[2] + 40 + f[2] * (V.hx + 30)];
+    if (cmd.buttons & BTN.ATTACK && t >= (v.gunAt || 0)) {
+      v.gunAt = t + 0.07;
+      const end = [nose[0] + f[0] * 9000, nose[1] + f[1] * 9000, nose[2] + f[2] * 9000];
+      const w = world();
+      w.skip = v.id;
+      const tr = w.trace(nose, end, [0, 0, 0], [0, 0, 0]);
+      w.skip = 0;
+      let frac = tr.fraction, hitP = null, hitN = null;
+      for (const q of players()) { if (q === p || !q.ps.alive) continue; const h = hitTest(nose, end, q.ps.origin, q.ps.ducked); if (h && h.frac < frac) { frac = h.frac; hitP = q; } }
+      for (const n of F.peds.values()) { const h = hitTest(nose, end, n.ps.origin, n.ps.ducked); if (h && h.frac < frac) { frac = h.frac; hitN = n; hitP = null; } }
+      const e = [nose[0] + f[0] * 9000 * frac, nose[1] + f[1] * 9000 * frac, nose[2] + f[2] * 9000 * frac];
+      ev({ e: 'shot', id: p.id, w: WEAPON_INDEX.lmg, s: nose.map(r1), h: [[...e.map(r1), hitP ? hitP.id : hitN ? hitN.id : 0, hitP || hitN ? 0 : tr.fraction < 1 ? 1 : 0, tr.normal.map((x) => +x.toFixed(2))]], jet: 1 });
+      if (hitP) api.damage(hitP, p, 34, 'jet', f);
+      else if (hitN) F.hurt(hitN, p, 60, 'jet', false, f);
+      else if (tr.dyn) { const o = F.vehicles.get(tr.dyn.id); if (o) damageVehicle(o, 45, p); }
+    }
+    if (pressed & BTN.ATTACK2 && t >= (v.misAt || 0)) {
+      v.misAt = t + 1.6;
+      let best = null, bd = 0.94;
+      for (const o of F.vehicles.values()) {
+        if (o === v || o.wreck) continue;
+        const d = [o.s.o[0] - s.o[0], o.s.o[1] - s.o[1], o.s.o[2] - s.o[2]], l = Math.hypot(...d);
+        if (l > 14000 || l < 300) continue;
+        const c = (d[0] * f[0] + d[1] * f[1] + d[2] * f[2]) / l;
+        if (c > bd) { bd = c; best = o; }
+      }
+      launch(nose, f, best ? best.id : 0, p);
+      const tp = best && driverOf(best);
+      if (tp) ev({ e: 'lock', id: tp.id }, tp.id);
+    }
+  }
+
   function playerThink(p, dt) {
     const fp = p.fp;
     if (!fp) return;
@@ -1096,6 +1313,7 @@ export function createFreeplay(R, api) {
     runOver();
     for (const n of [...F.peds.values()]) pedThink(n, dt);
     storesThink(people, dt);
+    airfieldsThink(people, dt);
     pickups(people);
     for (const p of people) playerThink(p, dt);
   };
@@ -1113,7 +1331,7 @@ export function createFreeplay(R, api) {
         if (best) {
           const V = VEHICLES[best.k];
           const free = !best.seats[0] ? 0 : V.seat.findIndex((_, s) => s > 0 && !best.seats[s] && best.npc[s] < 0);
-          if (free === 0) prompt = `E|${best.npc[0] >= 0 ? 'Steal the' : best.kind === 'mine' && best.owner === p.id ? 'Get in your' : 'Get in the'} ${V.name}`;
+          if (free === 0) prompt = `E|${best.npc[0] >= 0 || best.kind === 'military' ? 'Steal the' : best.kind === 'mine' && best.owner === p.id ? (V.air ? 'Fly your' : 'Get in your') : V.air ? 'Fly the' : 'Get in the'} ${V.name}`;
           else if (free > 0) prompt = `E|Ride along in the ${V.name}`;
         }
       }
@@ -1124,7 +1342,9 @@ export function createFreeplay(R, api) {
       }
     }
     const seat = p.ps.seat ? p.ps.seat.s : p.ps.car ? 0 : -1;
-    return [fp.data.cash, fp.wanted, fp.wanted && now() - fp.seenAt > 2.5 ? 1 : 0, v ? v.id : 0, seat, prompt, Math.round((fp.robProg || 0) * 100), fp.mine];
+    let lock = 0;
+    if (v) for (const m of F.missiles.values()) if (m.target === v.id) lock = 1;
+    return [fp.data.cash, fp.wanted, fp.wanted && now() - fp.seenAt > 2.5 ? 1 : 0, v ? v.id : 0, seat, prompt, Math.round((fp.robProg || 0) * 100), fp.mine, lock];
   }
   function vrow(v, p) {
     const s = v.s;
@@ -1135,7 +1355,7 @@ export function createFreeplay(R, api) {
       occ |= (look >= 0 ? look & 31 : 63) << (k * 6);
     }
     const flags = (v.siren ? 1 : 0) | (v.brake ? 2 : 0) | (v.horn > now() ? 4 : 0) | (v.burn ? 8 : 0) | (v.wreck ? 16 : 0) | (v.hp < v.maxHp * 0.45 ? 32 : 0) | (v.owner === p.id ? 64 : 0) | (v.kind === 'police' ? 128 : 0);
-    return [v.id, v.k, r1(s.o[0]), r1(s.o[1]), r1(s.o[2]), Math.round(s.yaw * 10) / 10, r1(s.v[0]), r1(s.v[1]), Math.round(s.steer * 100), flags, v.paint, occ];
+    return [v.id, v.k, r1(s.o[0]), r1(s.o[1]), r1(s.o[2]), Math.round(s.yaw * 10) / 10, r1(s.v[0]), r1(s.v[1]), Math.round(s.steer * 100), flags, v.paint, occ, Math.round((s.pitch || 0) * 10), Math.round((s.roll || 0) * 10), r1(s.v[2]), Math.round((s.thr || 0) * 100)];
   }
   function prow(n) {
     const kind = n.kind === 'cop' ? 1 : n.kind === 'clerk' ? 2 : n.kind === 'gunclerk' ? 3 : 0;
@@ -1147,7 +1367,9 @@ export function createFreeplay(R, api) {
     const out = { fp: personal(p) };
     if (!full) return out;
     const near = (list, pos, r, cap) => list.map((x) => [x, dist2(pos(x), o)]).filter((e) => e[1] < r * r).sort((a, b) => a[1] - b[1]).slice(0, cap).map((e) => e[0]);
-    out.fv = near([...F.vehicles.values()], (v) => v.s.o, SEE_V, 44).map((v) => vrow(v, p));
+    // aircraft show from much further away
+    out.fv = [...F.vehicles.values()].map((v) => [v, dist2(v.s.o, o) / (VEHICLES[v.k].air ? 9 : 1)]).filter((e) => e[1] < SEE_V * SEE_V).sort((a, b) => a[1] - b[1]).slice(0, 48).map((e) => vrow(e[0], p));
+    out.fx = [...F.missiles.values()].filter((m) => dist2(m.o, o) < 30000 * 30000).map((m) => [m.id, r1(m.o[0]), r1(m.o[1]), r1(m.o[2]), r1(m.v[0]), r1(m.v[1]), r1(m.v[2])]);
     // your own car always comes through
     const mine = F.vehicles.get(p.fp?.mine);
     if (mine && !out.fv.some((r) => r[0] === mine.id)) out.fmv = [mine.id, r1(mine.s.o[0]), r1(mine.s.o[1])];

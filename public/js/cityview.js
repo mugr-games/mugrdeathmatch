@@ -5,7 +5,7 @@
 // map) and the gun shop counter.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { G, N, RW, KERB, CHUNK, genCell, district, D, isWater, isUrban, roadH, roadV, hasSignal, signal, exits, DIRS, RIGHT, PLACES, CITIES, TOWNS, hash, cellOf } from './citygen.js';
+import { G, N, RW, KERB, CHUNK, genCell, district, D, DISTRICT_NAMES, isWater, isUrban, roadH, roadV, hasSignal, signal, exits, DIRS, RIGHT, PLACES, CITIES, TOWNS, AIRFIELDS, hash, cellOf } from './citygen.js';
 import { VEHICLES, PAINTS, PAINT_NAMES, seatPos, carBoxes } from './vehicle.js';
 import { CarModel, wheelInfo } from './carmodels.js';
 import { surfaceMaterial, neonMaterial, isPotato } from './shaders.js';
@@ -23,6 +23,8 @@ const angDiff = (a, b) => ((b - a) % 360 + 540) % 360 - 180;
 const money = (n) => '$' + Math.round(n).toLocaleString();
 const mph = (u) => Math.round(u * 0.0568);
 const lerp = (a, b, k) => a + (b - a) * k;
+const MAP_COL = { [D.OCEAN]: '#1d4a66', [D.LAKE]: '#2a5a7a', [D.CITY]: '#6a6a6c', [D.SUBURB]: '#56664a', [D.TOWN]: '#5e6450', [D.BEACH]: '#c8b080', [D.FARM]: '#6e6a3a', [D.FOREST]: '#2e4e26', [D.DESERT]: '#b49a68', [D.FIELD]: '#4a6a36', [D.MOUNTAIN]: '#8a7a68', [D.AIRPORT]: '#7a7e74', [D.AIRBASE]: '#7a6e5a' };
+const BLIP = { gas: '#ff5a3a', gun: '#ffd23a', hospital: '#ffffff', police: '#3a7aff' };
 // draw distance in chunks: detailed, then simple shapes
 const RANGE = { potato: [1, 3], low: [2, 5], medium: [2, 7], high: [3, 8] };
 const FOG = { potato: 0.00009, low: 0.00006, medium: 0.000042, high: 0.000036 };
@@ -111,6 +113,9 @@ function material(key) {
     case 'siding4': m = sm('siding', '#a8c0a0'); break;
     case 'clinic': m = sm('facade', '#e8e8e4', '#c8ccd0'); break;
     case 'precinct': m = sm('brickwin', '#6e7a8e'); break;
+    case 'hangar': m = sm('panel', '#9aa0a6', '#7a8086'); break;
+    case 'chain': m = new THREE.MeshStandardMaterial({ color: 0x9aa0a4, metalness: 0.7, roughness: 0.4, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }); break;
+    case 'army': m = sm('metal', '#4a5636'); break;
     case 'facade': case 'curtain': case 'brickwin': case 'stuccowin': { const c = VARIANT[name][vi % 4]; m = sm(name, c[0], c[1] || c[0]); break; }
     case 'awning': m = sm('hazard', ['#c03a2a', '#2a6a3a', '#2a4a8a', '#c88a1a'][vi % 4]); break;
     case 'neon': m = neonMaterial(VARIANT.neon[vi % 4]); break;
@@ -203,6 +208,7 @@ export class CityView {
     this.phone = null;
     this.shop = null;
     this.notes = [];
+    this.missiles = new Map();
   }
 
   get active() { return this.on; }
@@ -242,6 +248,9 @@ export class CityView {
     for (const id of [...this.peds.keys()]) this.removePed(id);
     for (const c of this.cash.values()) this.root.remove(c.obj);
     this.cash.clear();
+    for (const ms of this.missiles.values()) this.root.remove(ms.obj);
+    this.missiles.clear();
+    if (this.bigMap) this.toggleBigMap();
     g.scene.remove(this.root);
     this.root = null;
     this.on = false;
@@ -257,7 +266,7 @@ export class CityView {
   backdrop() {
     const n = N * 2;
     const data = new Uint8Array(n * n * 4);
-    const col = { [D.OCEAN]: [31, 74, 94], [D.LAKE]: [31, 74, 94], [D.CITY]: [118, 116, 112], [D.SUBURB]: [96, 112, 78], [D.TOWN]: [104, 110, 86], [D.BEACH]: [210, 188, 136], [D.FARM]: [110, 106, 56], [D.FOREST]: [52, 82, 40], [D.DESERT]: [196, 168, 120], [D.FIELD]: [86, 118, 58], [D.MOUNTAIN]: [128, 114, 98] };
+    const col = { [D.OCEAN]: [31, 74, 94], [D.LAKE]: [31, 74, 94], [D.CITY]: [118, 116, 112], [D.SUBURB]: [96, 112, 78], [D.TOWN]: [104, 110, 86], [D.BEACH]: [210, 188, 136], [D.FARM]: [110, 106, 56], [D.FOREST]: [52, 82, 40], [D.DESERT]: [196, 168, 120], [D.FIELD]: [86, 118, 58], [D.MOUNTAIN]: [128, 114, 98], [D.AIRPORT]: [110, 120, 96], [D.AIRBASE]: [180, 160, 120] };
     for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) data.set([...col[district(i - N, j - N)], 255], (j * n + i) * 4);
     const tex = new THREE.DataTexture(data, n, n);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -495,7 +504,7 @@ export class CityView {
           this.root.add(c.model.root);
           this.cars.set(r[0], c);
         }
-        c.snaps.push({ t: m.st, o: [r[2], r[3], r[4]], yaw: r[5], v: [r[6], r[7]], steer: r[8] / 100, flags: r[9] });
+        c.snaps.push({ t: m.st, o: [r[2], r[3], r[4]], yaw: r[5], v: [r[6], r[7], r[14] || 0], steer: r[8] / 100, flags: r[9], pitch: (r[12] || 0) / 10, roll: (r[13] || 0) / 10, thr: (r[15] || 0) / 100 });
         while (c.snaps.length > 12) c.snaps.shift();
         c.occ = [0, 1, 2, 3].map((s) => { const l = (r[11] >> (s * 6)) & 63; return l === 63 ? -1 : l; });
         c.flags = r[9];
@@ -517,6 +526,26 @@ export class CityView {
         while (n.snaps.length > 12) n.snaps.shift();
       }
       for (const id of [...this.peds.keys()]) if (!seen.has(id)) this.removePed(id);
+    }
+    // missiles in the air
+    if (m.fx) {
+      const seen = new Set();
+      for (const [id, x, y, z, vx, vy, vz] of m.fx) {
+        seen.add(id);
+        let ms = this.missiles.get(id);
+        if (!ms) {
+          const obj = new THREE.Group();
+          const body = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 60, 8).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xe8e8e8, metalness: 0.4, roughness: 0.4 }));
+          const fire = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffb050, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+          fire.scale.setScalar(50); fire.position.x = -40;
+          obj.add(body, fire);
+          this.root.add(obj);
+          this.missiles.set(id, (ms = { obj, o: [x, y, z], v: [vx, vy, vz], at: performance.now() / 1000 }));
+          this.g.sound.launch('rocket', [x, y, z]);
+        }
+        ms.o = [x, y, z]; ms.v = [vx, vy, vz]; ms.at = performance.now() / 1000;
+      }
+      for (const [id, ms] of this.missiles) if (!seen.has(id)) { this.root.remove(ms.obj); this.missiles.delete(id); }
     }
     if (m.fm) {
       const seen = new Set();
@@ -547,6 +576,7 @@ export class CityView {
   removeCar(id) {
     const c = this.cars.get(id);
     if (!c) return;
+    for (const r of c.riders?.values() || []) r.obj?.dispose();
     this.root?.remove(c.model.root);
     c.model.dispose();
     this.cars.delete(id);
@@ -575,7 +605,10 @@ export class CityView {
       case 'venter': case 'vexit': if (ev.id === me) { g.sound.ui(ev.e === 'venter' ? 700 : 500); this.lookAt = 0; } return true;
       case 'cash': g.sound.pickup('ammo'); this.toast(`+${money(ev.n)}`); return true;
       case 'robbed': this.note(`You got ${money(ev.n)} from the till. The police are on their way!`); return true;
-      case 'wanted': if (ev.w === 0) this.note('You lost the police.'); else g.sound.ui(300); return true;
+      case 'wanted': if (ev.w === 0 && !ev.jamal) this.note('You lost the police.'); else if (ev.w) g.sound.ui(300); return true;
+      case 'lock': this.lockAt = performance.now() / 1000; return true;
+      case 'flare': this.flares(ev.o); return true;
+      case 'kill': if (ev.v === me) this.wasted(); return false;
       case 'bought': g.sound.pickup('weapon'); return true;
     }
     return false;
@@ -606,6 +639,7 @@ export class CityView {
     const car = this.myCar();
     if (!car || !this.g.ps.alive) { this.camCar = null; return null; }
     const g = this.g, s = car.state, V = VEHICLES[car.k];
+    if (V.air) return this.flyCamera(dt, car);
     const yawCar = s.yaw;
     // the view turns with the car; when you leave the mouse alone it settles back to looking ahead
     if (this.camCar !== car.id) { this.camCar = car.id; this.lastCarYaw = yawCar; this.setYaw = g.yaw = yawCar; this.mouseAt = 0; this.chase = null; }
@@ -638,6 +672,28 @@ export class CityView {
     return { eye, yaw: Math.atan2(d[1], d[0]) / DEG, pitch: -Math.atan2(d[2], Math.hypot(d[0], d[1])) / DEG };
   }
 
+  // aircraft: the mouse is where you want to go (the plane turns to follow); the camera sits behind, or in the cockpit
+  flyCamera(dt, car) {
+    const g = this.g, s = car.state, V = VEHICLES[car.k];
+    if (this.camCar !== car.id) { this.camCar = car.id; g.yaw = s.yaw; g.pitch = -(s.pitch || 0); this.chase = null; }
+    const err = car.own ? g.smoothErr : [0, 0, 0];
+    if (this.firstPerson) {
+      const e = seatPos(s, V.eye);
+      return { eye: [e[0] + err[0], e[1] + err[1], e[2] + err[2]], yaw: g.yaw, pitch: g.pitch, roll: s.roll || 0 };
+    }
+    const target = [s.o[0] + err[0], s.o[1] + err[1], s.o[2] + 60];
+    const dist = 420 + V.hx * 1.6;
+    const f = viewDir(g.yaw, g.pitch);
+    const want = [target[0] - f[0] * dist, target[1] - f[1] * dist, target[2] - f[2] * dist + 60];
+    g.world.skip = car.id;
+    const tr = g.world.trace(target, want, [-8, -8, -8], [8, 8, 8]);
+    g.world.skip = 0;
+    const k = Math.max(0.15, tr.fraction - 0.03);
+    this.chase = this.chase === null || this.chase === undefined ? k : Math.min(k, this.chase + dt * 1.5);
+    const eye = [target[0] + (want[0] - target[0]) * this.chase, target[1] + (want[1] - target[1]) * this.chase, target[2] + (want[2] - target[2]) * this.chase];
+    return { eye, yaw: g.yaw, pitch: g.pitch };
+  }
+
   toggleView() {
     this.firstPerson = !this.firstPerson;
     this.g.settings.driveFirst = this.firstPerson;
@@ -662,6 +718,7 @@ export class CityView {
         const s = ps.car;
         o = [s.o[0] + g.smoothErr[0], s.o[1] + g.smoothErr[1], s.o[2] + g.smoothErr[2]];
         yaw = s.yaw; steer = s.steer; v = s.v;
+        c.att = [s.pitch || 0, s.roll || 0, s.thr || 0];
       } else {
         const S = c.snaps;
         if (!S.length) continue;
@@ -670,16 +727,22 @@ export class CityView {
         const f = b.t > a.t ? Math.max(0, Math.min(1.5, (rt - a.t) / (b.t - a.t))) : 0;
         o = [lerp(a.o[0], b.o[0], f), lerp(a.o[1], b.o[1], f), lerp(a.o[2], b.o[2], f)];
         yaw = a.yaw + angDiff(a.yaw, b.yaw) * f; steer = lerp(a.steer, b.steer, f); v = b.v;
+        c.att = [lerp(a.pitch || 0, b.pitch || 0, f), lerp(a.roll || 0, b.roll || 0, f), b.thr || 0];
       }
-      c.pose = { k: c.k, o, yaw, v: [v[0], v[1], 0], steer };
+      c.pose = { k: c.k, o, yaw, v: [v[0], v[1], v[2] || 0], steer, pitch: c.att[0], roll: c.att[1], thr: c.att[2] };
       const speed = Math.hypot(v[0], v[1]) * Math.sign(v[0] * Math.cos(yaw * DEG) + v[1] * Math.sin(yaw * DEG) || 1);
       const d = Math.hypot(o[0] - eye[0], o[1] - eye[1]);
       const inside = ride && ride.id === c.id && this.firstPerson;
-      c.model.setOccupants(d < occNear || inside ? c.occ || [] : [], inside ? ride.seat : -1);
-      c.model.update(dt, t, { lod: d > carNear && !inside, dist: d, speed, steer, brake: !!(c.flags & 2), siren: !!(c.flags & 1), wreck: !!(c.flags & 16) });
-      c.model.root.matrix.makeRotationZ(yaw * DEG).setPosition(o[0], o[1], o[2]);
+      const close = d < occNear * 0.7;
+      c.model.setOccupants(!close && d < occNear ? c.occ || [] : [], inside ? ride.seat : -1);
+      this.riders(c, close ? c.occ || [] : [], inside ? ride.seat : -1, dt);
+      c.model.update(dt, t, { thr: c.att[2], lod: d > (VEHICLES[c.k].air ? carNear * 3 : carNear) && !inside, dist: d, speed, steer, brake: !!(c.flags & 2), siren: !!(c.flags & 1), wreck: !!(c.flags & 16) });
+      if (VEHICLES[c.k].air) {
+        _e.set(c.att[1] * DEG, -c.att[0] * DEG, yaw * DEG, 'ZYX');
+        c.model.root.matrix.makeRotationFromEuler(_e).setPosition(o[0], o[1], o[2]);
+      } else c.model.root.matrix.makeRotationZ(yaw * DEG).setPosition(o[0], o[1], o[2]);
       c.model.root.matrixWorldNeedsUpdate = true;
-      c.model.root.visible = d < 12000;
+      c.model.root.visible = d < (VEHICLES[c.k].air ? 40000 : 12000);
       // smoke and flames from wrecks and badly damaged cars
       if ((c.flags & 40) && d < 4000 && Math.random() < dt * (c.flags & 8 ? 14 : 5)) this.puff(o, VEHICLES[c.k], yaw, !!(c.flags & 8));
       // horns
@@ -728,9 +791,46 @@ export class CityView {
     this.farPeds.instanceMatrix.needsUpdate = true;
     if (this.farPeds.instanceColor) this.farPeds.instanceColor.needsUpdate = true;
     for (const c of this.cash.values()) c.obj.rotation.z = t * 2;
+    const nowS = performance.now() / 1000;
+    for (const ms of this.missiles.values()) {
+      const k = nowS - ms.at;
+      ms.obj.position.set(ms.o[0] + ms.v[0] * k, ms.o[1] + ms.v[1] * k, ms.o[2] + ms.v[2] * k);
+      ms.obj.rotation.set(0, -Math.atan2(ms.v[2], Math.hypot(ms.v[0], ms.v[1])), Math.atan2(ms.v[1], ms.v[0]), 'ZYX');
+      if (Math.random() < dt * 30) this.puff([ms.obj.position.x, ms.obj.position.y, ms.obj.position.z - 20], { hx: 0, h: 0 }, 0, false);
+    }
+    const locked = (this.me?.[8] || 0) || nowS - (this.lockAt || 0) < 1;
+    if (locked && nowS - (this.beepAt || 0) > 0.25) { this.beepAt = nowS; g.sound.ui(1800); }
+    $('fp-lock').hidden = !locked;
+    if (this.bigMap && t - (this.bigMapAt || 0) > 0.25) { this.bigMapAt = t; this.drawBigMap(); }
     this.audio(!!ps.car && ps.alive);
     this.updateHud(t);
     if ((t - (this.radarAt || 0)) > 0.08) { this.radarAt = t; this.drawRadar(eye); }
+  }
+
+  // the people in a car, as real characters sitting in their seats
+  riders(c, occ, skip, dt) {
+    c.riders ||= new Map();
+    const V = VEHICLES[c.k];
+    for (let s = 0; s < V.seat.length; s++) {
+      const look = s === skip ? -1 : occ[s] ?? -1;
+      let r = c.riders.get(s);
+      if (r && r.look !== look) { if (r.obj) { c.model.body3.remove(r.obj.root); r.obj.dispose(); } c.riders.delete(s); r = null; }
+      if (look < 0) continue;
+      if (!r) {
+        r = { look, obj: null };
+        c.riders.set(s, r);
+        this.g.makeCharacter(look >> 2, null, look & 3).then((ch) => {
+          if (c.riders.get(s) !== r || !this.cars.has(c.id)) { ch.dispose(); return; }
+          r.obj = ch;
+          const [x, y, z] = V.seat[s];
+          ch.root.matrix.makeTranslation(x, y, z - (V.bike ? -2 : 4));
+          ch.root.matrixWorldNeedsUpdate = true;
+          c.model.body3.add(ch.root);
+        });
+      }
+      if (r.obj) r.obj.animate(dt, { sit: { wheel: s === 0, steer: c.pose?.steer || 0, bike: !!V.bike } });
+    }
+    for (const [s, r] of c.riders) if (s >= V.seat.length) c.riders.delete(s);
   }
 
   // a puff of smoke (or fire) from the bonnet
@@ -743,11 +843,30 @@ export class CityView {
     g.addEffect(m, fire ? 0.6 : 1.6, (e, k) => { m.position.z += (fire ? 60 : 45) * (1 / 60); m.scale.setScalar((fire ? 30 : 40) * (1 + k * 2)); m.material.opacity = (fire ? 0.9 : 0.55) * (1 - k); });
   }
 
+  flares(o) {
+    for (let k = 0; k < 8; k++) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xfff0c0, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+      s.position.set(o[0], o[1], o[2]);
+      const v = [(Math.random() - 0.5) * 600, (Math.random() - 0.5) * 600, -100 - Math.random() * 300];
+      s.scale.setScalar(40);
+      this.g.addEffect(s, 2.2, (e, kk, dt) => { s.position.x += v[0] * dt; s.position.y += v[1] * dt; s.position.z += v[2] * dt; v[2] -= 300 * dt; s.material.opacity = 1 - kk; });
+    }
+    this.g.sound.ui(500);
+  }
+  // WASTED, like the old days
+  wasted() {
+    const el = $('fp-wasted');
+    el.hidden = false;
+    document.body.classList.add('fp-dead');
+    clearTimeout(this.wastedT);
+    this.wastedT = setTimeout(() => { el.hidden = true; document.body.classList.remove('fp-dead'); }, 4500);
+  }
+
   // your hands on the wheel in first person
   hands(ride) {
     const show = ride && ride.seat === 0 && this.firstPerson;
     const c = show ? this.cars.get(ride.id) : null;
-    if (this.handCar && this.handCar !== c) { this.handCar.model.near.remove(this.handGrp); this.handCar = null; }
+    if (this.handCar && this.handCar !== c) { this.handCar.model.body3.remove(this.handGrp); this.handCar = null; }
     if (!c) return;
     if (!this.handGrp) {
       const info = this.g.info.get(this.g.myId);
@@ -762,7 +881,7 @@ export class CityView {
         this.handGrp.add(arm, hand);
       }
     }
-    if (this.handCar !== c) { c.model.near.add(this.handGrp); this.handCar = c; }
+    if (this.handCar !== c) { c.model.body3.add(this.handGrp); this.handCar = c; }
     const w = wheelInfo(c.k), V = VEHICLES[c.k];
     if (!w) return;
     const st = c.pose.steer * 2.4 * (w.bike ? 0 : 1);
@@ -866,6 +985,7 @@ export class CityView {
     let p = '';
     if (rob > 0) p = `<span>Emptying the till… keep aiming</span><span class="bar"><span style="width:${rob}%"></span></span>`;
     else if (prompt) { const [k, text] = prompt.split('|'); p = (k ? `<b>${esc(k)}</b>` : '') + esc(text); }
+    else if (this.g.ps.car && VEHICLES[this.g.ps.car.k].air) p = `<small><b>W</b>/<b>S</b> throttle · steer with the mouse · <b>A</b>/<b>D</b> rudder · <b>Q</b> flares${VEHICLES[this.g.ps.car.k].guns ? ' · <b>click</b> cannon · <b>right click</b> missile' : ''} · <b>E</b> bail out</small>`;
     else if (this.g.ps.car || this.g.ps.seat) p = `<small><b>E</b> get out · <b>F</b> ${this.firstPerson ? 'chase camera' : 'first person'}${this.g.ps.car ? ' · <b>Space</b> handbrake · <b>H</b> horn' : ''}</small>`;
     const pe = $('fp-prompt');
     if (pe.dataset.p !== p) { pe.dataset.p = p; pe.innerHTML = p; pe.hidden = !p; }
@@ -875,7 +995,9 @@ export class CityView {
     if (car) {
       const v = car.state.v;
       sp.hidden = false;
-      sp.innerHTML = `<b>${mph(Math.hypot(v[0], v[1]))}</b><small>MPH</small><span>${esc(VEHICLES[car.k].name)}</span>`;
+      const V = VEHICLES[car.k];
+      if (V.air) sp.innerHTML = `<b>${Math.round(Math.hypot(v[0], v[1], v[2] || 0) * 0.0494)}</b><small>KT</small><span>ALT ${Math.max(0, Math.round(car.state.o[2] / 12)).toLocaleString()} FT · THROTTLE ${Math.round((car.state.thr || 0) * 100)}%</span><span>${esc(V.name)}</span>`;
+      else sp.innerHTML = `<b>${mph(Math.hypot(v[0], v[1]))}</b><small>MPH</small><span>${esc(V.name)}</span>`;
     } else sp.hidden = true;
     // the weapon HUD steps aside at the wheel
     document.body.classList.toggle('fp-driving', !!this.g.ps.car);
@@ -895,7 +1017,7 @@ export class CityView {
     ctx.fillStyle = '#2b3a2c'; ctx.fillRect(0, 0, W, W);
     ctx.setTransform(sn * s, -cs * s, -cs * s, -sn * s, R, R);
     const ci = cellOf(eye[0]), cj = cellOf(eye[1]);
-    const COL = { [D.OCEAN]: '#1d4a66', [D.LAKE]: '#1d4a66', [D.CITY]: '#4a4a4c', [D.SUBURB]: '#44523a', [D.TOWN]: '#4a5040', [D.BEACH]: '#a8946a', [D.FARM]: '#5a5a30', [D.FOREST]: '#2e4a26', [D.DESERT]: '#9a8458', [D.FIELD]: '#3e5a2e', [D.MOUNTAIN]: '#6a5e50' };
+    const COL = MAP_COL;
     for (let i = ci - 3; i <= ci + 3; i++) for (let j = cj - 3; j <= cj + 3; j++) { ctx.fillStyle = COL[district(i, j)]; ctx.fillRect(i * G - eye[0] - 2, j * G - eye[1] - 2, G + 4, G + 4); }
     ctx.lineCap = 'butt';
     for (let i = ci - 3; i <= ci + 4; i++) for (let j = cj - 3; j <= cj + 4; j++) {
@@ -941,9 +1063,15 @@ export class CityView {
     ctx.beginPath(); ctx.arc(R, R, R - 2, 0, Math.PI * 2); ctx.stroke();
     // where you are
     const d = district(ci, cj), c = CITIES.find((x) => ci >= x.rect[0] && ci <= x.rect[2] && cj >= x.rect[1] && cj <= x.rect[3]) || TOWNS.find((x) => ci >= x.rect[0] && ci <= x.rect[2] && cj >= x.rect[1] && cj <= x.rect[3]);
-    const name = c ? c.name : ['Ocean', 'Mirror Lake', 'City', 'Suburbs', 'Town', 'Beach', 'Farmland', 'Woods', 'Desert', 'Grassland', 'Mount Mugr'][d];
+    const name = c ? c.name : DISTRICT_NAMES[d];
     const z = $('fp-zone');
-    if (z.textContent !== name) z.textContent = name;
+    if (z.textContent !== name) {
+      z.textContent = name;
+      // a new area: its name comes up big in the corner for a moment
+      const a = $('fp-area');
+      a.textContent = name;
+      a.classList.remove('show'); void a.offsetWidth; a.classList.add('show');
+    }
   }
 
   // ---------------------------------------------------------------- the phone
@@ -966,8 +1094,10 @@ export class CityView {
   }
   phoneItems() {
     const P = this.phone;
-    if (P.screen === 'home') return [{ k: 'cars', label: 'Motors', icon: '🚗', sub: 'Buy a car' }, { k: 'bikes', label: 'Moto', icon: '🏍️', sub: 'Bikes & BMX' }, { k: 'garage', label: 'Garage', icon: '🔑', sub: `${this.state.cars.length} owned` }, { k: 'map', label: 'Map', icon: '🗺️', sub: 'Mugr County' }];
-    if (P.screen === 'cars' || P.screen === 'bikes') return VEHICLES.map((V, i) => ({ V, i })).filter(({ V }) => V.shop === P.screen).sort((a, b) => a.V.price - b.V.price);
+    if (P.screen === 'home') return [{ k: 'cars', label: 'Motors', icon: '🚗', sub: 'Buy a car' }, { k: 'bikes', label: 'Moto', icon: '🏍️', sub: 'Bikes & BMX' }, { k: 'planes', label: 'Aero', icon: '✈️', sub: 'Buy a plane' }, { k: 'garage', label: 'Garage', icon: '🔑', sub: `${this.state.cars.length} owned` }, { k: 'contacts', label: 'Contacts', icon: '📞', sub: 'Jamal' }, { k: 'map', label: 'Map', icon: '🗺️', sub: 'M for the big map' }];
+    if (P.screen === 'contacts') return [{ k: 'jamal', label: 'Jamal', sub: 'Lose your wanted level · $1,000' }];
+    if (P.screen === 'garage' && this.g.ps.car && !(this.cars.get(this.g.ps.car.id)?.flags & 64)) return [{ save: true }, ...this.state.cars.map((c, n) => ({ n, V: VEHICLES[c.k], c: c.c }))];
+    if (P.screen === 'cars' || P.screen === 'bikes' || P.screen === 'planes') return VEHICLES.map((V, i) => ({ V, i })).filter(({ V }) => V.shop === P.screen).sort((a, b) => a.V.price - b.V.price);
     if (P.screen === 'garage') return this.state.cars.map((c, n) => ({ n, V: VEHICLES[c.k], c: c.c }));
     if (P.screen === 'paint') return PAINTS.map((p, i) => ({ i }));
     return [];
@@ -978,21 +1108,108 @@ export class CityView {
     const items = this.phoneItems();
     P.sel = Math.max(0, Math.min(items.length - 1, P.sel));
     let body = '';
-    const title = { home: 'Mugr OS', cars: 'Motors', bikes: 'Moto', garage: 'Garage', map: 'Map', paint: 'Pick a colour' }[P.screen];
+    const title = { home: 'Mugr OS', cars: 'Motors', bikes: 'Moto', planes: 'Aero', garage: 'Garage', contacts: 'Contacts', map: 'Map', paint: 'Pick a colour' }[P.screen];
     if (P.screen === 'home') body = `<div class="apps">${items.map((it, k) => `<div class="app${k === P.sel ? ' on' : ''}" data-k="${k}"><span class="ic">${it.icon}</span><b>${it.label}</b><small>${esc(it.sub)}</small></div>`).join('')}</div>`;
-    else if (P.screen === 'cars' || P.screen === 'bikes') body = `<ul class="list">${items.map(({ V }, k) => `<li class="${k === P.sel ? 'on' : ''}${V.price > this.state.cash ? ' dim' : ''}" data-k="${k}"><b>${esc(V.name)}</b><span class="price">${money(V.price)}</span><small>${esc(V.blurb || '')}</small><span class="meter"><i style="width:${Math.round((V.top / 2800) * 100)}%"></i></span></li>`).join('')}</ul>`;
-    else if (P.screen === 'garage') body = items.length ? `<ul class="list">${items.map(({ V, c }, k) => `<li class="${k === P.sel ? 'on' : ''}" data-k="${k}"><b>${esc(V.name)}</b><span class="price"><i class="sw" style="background:${PAINTS[c]}"></i></span><small>Enter: bring it to me</small></li>`).join('')}</ul>` : '<p class="empty">No vehicles yet. Buy one in Motors or Moto.</p>';
+    else if (P.screen === 'cars' || P.screen === 'bikes' || P.screen === 'planes') body = `<ul class="list">${items.map(({ V }, k) => `<li class="${k === P.sel ? 'on' : ''}${V.price > this.state.cash ? ' dim' : ''}" data-k="${k}"><b>${esc(V.name)}</b><span class="price">${money(V.price)}</span><small>${esc(V.blurb || '')}${V.air ? ' Delivered to the airport.' : ''}</small><span class="meter"><i style="width:${Math.round((V.top / (V.air ? 4300 : 2800)) * 100)}%"></i></span></li>`).join('')}</ul>`;
+    else if (P.screen === 'garage') body = items.length ? `<ul class="list">${items.map((it, k) => it.save ? `<li class="${k === P.sel ? 'on' : ''} save" data-k="${k}"><b>Save this vehicle</b><small>Keep the one you're driving: call it any time</small></li>` : `<li class="${k === P.sel ? 'on' : ''}" data-k="${k}"><b>${esc(it.V.name)}</b><span class="price"><i class="sw" style="background:${PAINTS[it.c]}"></i></span><small>${it.V.air ? 'Enter: have it waiting at the airport' : 'Enter: bring it to me'}</small></li>`).join('')}</ul>` : '<p class="empty">No vehicles yet. Buy one, or drive something and save it here.</p>';
+    else if (P.screen === 'contacts') body = `<ul class="list">${items.map((it, k) => `<li class="${k === P.sel ? 'on' : ''}" data-k="${k}"><b>📞 ${esc(it.label)}</b><small>${esc(it.sub)}</small></li>`).join('')}</ul>`;
     else if (P.screen === 'paint') body = `<p class="pick">${esc(P.item.V.name)} · ${money(P.item.V.price)}</p><div class="paints">${items.map(({ i }, k) => `<i class="sw${k === P.sel ? ' on' : ''}" data-k="${k}" title="${PAINT_NAMES[i]}" style="background:${PAINTS[i]}"></i>`).join('')}</div><p class="pick">${PAINT_NAMES[P.sel]} · Enter to buy</p>`;
     else if (P.screen === 'map') body = '<canvas id="fp-map" width="300" height="300"></canvas><p class="legend"><i style="background:#ff5a3a"></i>Gas <i style="background:#ffd23a"></i>Guns <i style="background:#fff"></i>Hospital <i style="background:#3adc7a"></i>Your car</p>';
     $('fp-phone').innerHTML = `<div class="bar"><span>${new Date().toTimeString().slice(0, 5)}</span><span>${money(this.state.cash)}</span></div><h3>${title}</h3>${body}<div class="keys">${P.screen === 'home' ? '<b>↑↓←→</b> move · <b>Enter</b> open · <b>P</b> close' : '<b>↑↓</b> move · <b>Enter</b> choose · <b>Backspace</b> back'}</div>`;
     $('fp-phone').querySelector('.on')?.scrollIntoView({ block: 'nearest' });
     if (P.screen === 'map') this.drawMap();
   }
+  // the big map (M): the whole county, landscape, with everything on it; the wheel zooms in on you
+  toggleBigMap() {
+    this.bigMap = !this.bigMap;
+    const el = $('fp-bigmap');
+    el.hidden = !this.bigMap;
+    if (!this.bigMap) return;
+    this.closePhone();
+    this.bigZoom ||= 1;
+    const cv = $('fp-bigcanvas');
+    cv.width = Math.round(el.clientWidth * Math.min(2, devicePixelRatio));
+    cv.height = Math.round(el.clientHeight * Math.min(2, devicePixelRatio));
+    this.drawBigMap();
+  }
+  drawBigMap() {
+    const cv = $('fp-bigcanvas');
+    if (!cv || !cv.width) return;
+    const ctx = cv.getContext('2d');
+    const W = cv.width, H = cv.height, n = N * 2;
+    const o = this.g.ps.origin;
+    // fit the whole county across the screen; zooming keeps you in the middle
+    const s = (Math.max(W / n, H / n) * 0.98) * this.bigZoom;
+    const cx = this.bigZoom > 1 ? o[0] / G + N : N, cy = this.bigZoom > 1 ? N - o[1] / G : N;
+    const pt = (x, y) => [W / 2 + ((x / G + N) - cx) * s, H / 2 + ((N - y / G) - cy) * s];
+    // the land, roads and names only change with the zoom: drawn once and kept (zoomed in, it follows you)
+    const key = `${W}x${H}x${this.bigZoom}` + (this.bigZoom > 1 ? `@${Math.round(cx * 4)},${Math.round(cy * 4)}` : '');
+    if (this.mapBase?.key === key) { ctx.drawImage(this.mapBase.cv, 0, 0); return this.drawBlips(ctx, pt, s); }
+    ctx.fillStyle = MAP_COL[D.OCEAN]; ctx.fillRect(0, 0, W, H);
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      const [x, y] = pt((i - N) * G, (j - N + 1) * G);
+      if (x > W || y > H || x + s < 0 || y + s < 0) continue;
+      ctx.fillStyle = MAP_COL[district(i - N, j - N)]; ctx.fillRect(x, y, s + 0.6, s + 0.6);
+    }
+    // roads: town streets thin, highways bold
+    for (let i = -N; i <= N; i++) for (let j = -N; j <= N; j++) {
+      for (const [kind, ax, ay, bx, by] of [[roadH(i, j), i, j, i + 1, j], [roadV(i, j), i, j, i, j + 1]]) {
+        if (!kind || (kind === 1 && s < 7)) continue;
+        const a = pt(ax * G, ay * G), b = pt(bx * G, by * G);
+        ctx.strokeStyle = kind === 2 ? 'rgba(245,226,160,.85)' : 'rgba(220,220,214,.55)'; ctx.lineWidth = kind === 2 ? Math.max(1.5, s * 0.14) : Math.max(0.7, s * 0.1);
+        ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke();
+      }
+    }
+    const font = Math.round(Math.max(11, Math.min(22, s * 1.2)));
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    // runways
+    for (const a of AIRFIELDS) {
+      const [x0, y0] = pt(a.min[0], (a.runwayJ + 1) * G - 600), [x1, y1] = pt(a.max[0], a.runwayJ * G + 600);
+      ctx.fillStyle = '#2e3034'; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      const [lx, ly] = pt(a.center[0], a.max[1]);
+      ctx.font = `800 ${font}px Inter, system-ui, sans-serif`; ctx.fillStyle = a.military ? '#ffb4a0' : '#e8f0ff';
+      ctx.fillText((a.military ? '⚠ ' : '✈ ') + a.name, lx, ly - font);
+    }
+    const r = Math.max(3, s * 0.18);
+    for (const p of PLACES) { const [x, y] = pt(p.door[0], p.door[1]); ctx.fillStyle = BLIP[p.type]; ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.fillRect(x - r, y - r, r * 2, r * 2); ctx.strokeRect(x - r, y - r, r * 2, r * 2); }
+    ctx.font = `900 ${font + 6}px Inter, system-ui, sans-serif`; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 4;
+    for (const c of CITIES) { const [x, y] = pt(((c.rect[0] + c.rect[2] + 1) / 2) * G, ((c.rect[1] + c.rect[3] + 1) / 2) * G); ctx.strokeText(c.name.toUpperCase(), x, y); ctx.fillText(c.name.toUpperCase(), x, y); }
+    ctx.font = `700 ${font}px Inter, system-ui, sans-serif`;
+    for (const c of TOWNS) { const [x, y] = pt(((c.rect[0] + c.rect[2] + 1) / 2) * G, ((c.rect[1] + c.rect[3] + 1) / 2) * G); ctx.strokeText(c.name, x, y); ctx.fillText(c.name, x, y); }
+    const keep = this.mapBase?.cv || document.createElement('canvas');
+    keep.width = W; keep.height = H;
+    keep.getContext('2d').drawImage(cv, 0, 0);
+    this.mapBase = { key, cv: keep };
+    this.drawBlips(ctx, pt, s);
+  }
+  // your vehicle, police, other players, you
+  drawBlips(ctx, pt, s) {
+    const r = Math.max(3, s * 0.18);
+    const o = this.g.ps.origin;
+    const mine = [...this.cars.values()].find((c) => c.flags & 64);
+    const mp = mine?.pose ? mine.pose.o : this.mineFar ? [this.mineFar[1], this.mineFar[2]] : null;
+    if (mp) { const [x, y] = pt(mp[0], mp[1]); ctx.fillStyle = '#3adc7a'; ctx.fillRect(x - r * 1.3, y - r * 1.3, r * 2.6, r * 2.6); }
+    for (const c of this.cars.values()) if (c.flags & 128 && c.pose) { const [x, y] = pt(c.pose.o[0], c.pose.o[1]); ctx.fillStyle = Math.floor(performance.now() / 250) % 2 ? '#ff3030' : '#3060ff'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); }
+    for (const pl of this.g.players.values()) if (pl.pos) { const [x, y] = pt(pl.pos[0], pl.pos[1]); ctx.fillStyle = '#ff9a3a'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); }
+    const [px, py] = pt(o[0], o[1]);
+    ctx.save(); ctx.translate(px, py); ctx.rotate(-(this.g.yaw - 90) * DEG);
+    const a = Math.max(8, r * 2.4);
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, -a); ctx.lineTo(a * 0.7, a * 0.8); ctx.lineTo(0, a * 0.35); ctx.lineTo(-a * 0.7, a * 0.8); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  bigMapWheel(dy) {
+    if (!this.bigMap) return false;
+    this.bigZoom = Math.max(1, Math.min(6, this.bigZoom * (dy > 0 ? 0.8 : 1.25)));
+    this.drawBigMap();
+    return true;
+  }
+
   drawMap() {
     const cv = $('fp-map');
     if (!cv) return;
     const ctx = cv.getContext('2d'), n = N * 2, s = cv.width / n;
-    const COL = { [D.OCEAN]: '#1d4a66', [D.LAKE]: '#2a5a7a', [D.CITY]: '#6a6a6c', [D.SUBURB]: '#56664a', [D.TOWN]: '#5e6450', [D.BEACH]: '#c8b080', [D.FARM]: '#6e6a3a', [D.FOREST]: '#2e4e26', [D.DESERT]: '#b49a68', [D.FIELD]: '#4a6a36', [D.MOUNTAIN]: '#8a7a68' };
+    const COL = MAP_COL;
     for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) { ctx.fillStyle = COL[district(i - N, j - N)]; ctx.fillRect(i * s, (n - 1 - j) * s, s + 0.5, s + 0.5); }
     ctx.strokeStyle = 'rgba(230,230,220,.55)'; ctx.lineWidth = 0.8;
     for (let i = -N; i <= N; i++) for (let j = -N; j <= N; j++) {
@@ -1051,11 +1268,13 @@ export class CityView {
     if (!it) return;
     this.g.sound.ui(1500);
     if (P.screen === 'home') { P.screen = it.k; P.sel = 0; }
-    else if (P.screen === 'cars' || P.screen === 'bikes') {
+    else if (P.screen === 'cars' || P.screen === 'bikes' || P.screen === 'planes') {
       if (it.V.price > this.state.cash) { this.note(`You need ${money(it.V.price - this.state.cash)} more. Rob a gas station?`); return; }
       P.item = it; P.screen = 'paint'; P.sel = 0;
     } else if (P.screen === 'paint') { this.g.send({ t: 'fp', k: 'buy', id: P.item.V.id, paint: P.sel }); this.closePhone(); return; }
-    else if (P.screen === 'garage') { this.g.send({ t: 'fp', k: 'call', n: it.n }); this.closePhone(); return; }
+    else if (P.screen === 'garage') { this.g.send(it.save ? { t: 'fp', k: 'save' } : { t: 'fp', k: 'call', n: it.n }); this.closePhone(); return; }
+    else if (P.screen === 'contacts') { this.note('Calling Jamal…'); this.g.send({ t: 'fp', k: 'jamal' }); this.closePhone(); return; }
+    else if (P.screen === 'map') { this.closePhone(); this.toggleBigMap(); return; }
     this.renderPhone();
   }
 

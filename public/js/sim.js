@@ -192,7 +192,7 @@ export function packOwn(ps) {
     // zombies perks (fire rate, reload time) and being downed
     rm: ps.rateMul || 1, lm: ps.reloadMul || 1, dn: ps.downed ? 1 : 0,
     // free roam: the car you're driving, or the seat you ride in
-    car: ps.car ? packCar(ps.car) : 0, st: ps.seat ? [ps.seat.v, ps.seat.s] : 0,
+    car: ps.car ? packCar(ps.car) : 0, st: ps.seat ? [ps.seat.v, ps.seat.s] : 0, ch: ps.chute ? 1 : 0,
   };
 }
 
@@ -207,6 +207,7 @@ export function unpackOwn(m, ps) {
   ps.downed = !!m.dn;
   ps.car = m.car ? unpackCar(m.car) : null;
   ps.seat = m.st ? { v: m.st[0], s: m.st[1] } : null;
+  ps.chute = !!m.ch;
   return ps;
 }
 

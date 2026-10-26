@@ -23,6 +23,11 @@ export const VEHICLES = [
   { id: 'zip', name: 'Zip 50', style: 'scooter', shop: 'bikes', bike: true, price: 1700, top: 1100, accel: 460, hx: 38, hy: 12, h: 44, wb: 58, seats: 2, hp: 350, mass: 0.5, blurb: 'Little scooter. Goes forever.' },
   { id: 'mudlark', name: 'Mudlark', style: 'dirt', shop: 'bikes', bike: true, price: 6600, top: 1800, accel: 850, hx: 42, hy: 12, h: 48, wb: 64, seats: 2, hp: 420, mass: 0.6, blurb: 'Dirt bike. Light and twitchy.' },
   { id: 'kestrel', name: 'Kestrel 1000', style: 'sport', shop: 'bikes', bike: true, price: 19500, top: 2650, accel: 1200, hx: 44, hy: 13, h: 46, wb: 66, seats: 2, hp: 450, mass: 0.7, blurb: 'Superbike. Hold on.' },
+  // aircraft: thrust, top speed, stall (too slow to fly), vr (lift-off speed), turn (degrees a second), span (wingspan)
+  { id: 'skylark', name: 'Skylark', style: 'prop', air: true, shop: 'planes', price: 48000, thrust: 950, top: 1900, stall: 650, vr: 720, turn: 58, hx: 150, hy: 28, h: 74, span: 440, wb: 200, seats: 2, hp: 600, mass: 2, blurb: 'Four-seat prop plane. Easy to fly.' },
+  { id: 'duster', name: 'Duster', style: 'biplane', air: true, shop: 'planes', price: 26000, thrust: 800, top: 1650, stall: 520, vr: 600, turn: 70, hx: 130, hy: 26, h: 80, span: 400, wb: 180, seats: 1, hp: 500, mass: 1.8, blurb: 'Old crop-duster biplane. Nimble and slow.' },
+  { id: 'comet', name: 'Comet', style: 'bizjet', air: true, jet: true, shop: 'planes', price: 420000, thrust: 1900, top: 3400, stall: 1050, vr: 1150, turn: 36, hx: 260, hy: 44, h: 110, span: 780, wb: 300, seats: 4, hp: 900, mass: 4, blurb: 'Business jet. Very fast, very wide turns.' },
+  { id: 'talon', name: 'Talon F-9', style: 'fighter', air: true, jet: true, guns: true, shop: null, price: 0, thrust: 3300, top: 4300, stall: 950, vr: 1050, turn: 88, hx: 230, hy: 40, h: 92, span: 470, wb: 260, seats: 1, hp: 1000, mass: 3, blurb: 'Military fighter with a cannon and missiles. Only at Fort Talon.' },
 ];
 export const VEHICLE_INDEX = Object.fromEntries(VEHICLES.map((v, i) => [v.id, i]));
 // paint for bought cars and traffic
@@ -38,7 +43,10 @@ for (const V of VEHICLES) {
   V.maxs = [V.hy, V.hy, V.h * 0.82];
   V.off = V.hx - V.hy; // the two collision boxes sit this far ahead of and behind the middle
   // where people sit (x forward, y left, z up from the floor) and their eyes; the driver is on the left
-  if (V.bike) {
+  if (V.air) {
+    V.seat = [[V.hx * 0.3, 0, 26], [V.hx * 0.05, 0, 26], [-V.hx * 0.15, 12, 26], [-V.hx * 0.15, -12, 26]].slice(0, V.seats);
+    V.eye = [V.hx * 0.34, 0, 66];
+  } else if (V.bike) {
     V.seat = [[-4, 0, 26], [-28, 0, 30]].slice(0, V.seats);
     V.eye = [-2, 0, 62];
   } else {
@@ -46,11 +54,11 @@ for (const V of VEHICLES) {
     V.seat = [[-V.hx * 0.08, V.hy * 0.45, sz], [-V.hx * 0.08, -V.hy * 0.45, sz], [back, V.hy * 0.45, sz], [back, -V.hy * 0.45, sz]].slice(0, V.seats);
     V.eye = [V.seat[0][0] - 2, V.seat[0][1], V.h - 11];
   }
-  V.belt = V.bike ? 0 : V.h * 0.55; // bullets go over the doors and through the windows
+  V.belt = V.bike ? 0 : V.air ? V.h * 0.8 : V.h * 0.55; // bullets go over the doors and through the windows
 }
 
 export function newCar(k, id, o, yaw) {
-  return { k, id, o: o.slice(), v: [0, 0, 0], yaw, steer: 0, g: true };
+  return { k, id, o: o.slice(), v: [0, 0, 0], yaw, steer: 0, g: true, pitch: 0, roll: 0, thr: 0 };
 }
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -176,6 +184,79 @@ export function vmove(world, c, cmd, dt) {
   return res;
 }
 
+// ------------------------------------------------------------------ flying
+// Mouse-aim flight: the plane turns toward where you look (cmd.yaw and cmd.pitch), as fast as its airspeed
+// allows; W and S set the throttle; A and D add rudder (and steer on the ground). On the runway, look up past
+// the lift-off speed to take off. Too slow and it stalls and drops. Land gently (nose level, wings level, not
+// too fast down) or crash. Returns { crash, hit } for the server.
+const wrap = (a) => ((a % 360) + 360) % 360;
+const SKY_LIMIT = 98000; // past the coast: the plane turns itself back toward land
+const angTo = (a, b) => ((b - a) % 360 + 540) % 360 - 180;
+export function amove(world, c, cmd, dt) {
+  const V = VEHICLES[c.k];
+  const res = { hit: 0, dyn: null, n: null, crash: false };
+  const dead = !!c.dead;
+  c.pitch ||= 0; c.roll ||= 0; c.thr ||= 0;
+  c.thr = clamp(c.thr + (dead ? -1 : cmd.fwd || 0) * dt * 0.6, 0, 1);
+  const side = dead ? 0 : clamp(cmd.side || 0, -1, 1);
+  if (c.g) {
+    const fx = Math.cos(c.yaw * DEG), fy = Math.sin(c.yaw * DEG);
+    let s = c.v[0] * fx + c.v[1] * fy;
+    s += (c.thr * V.thrust - V.thrust * (s / V.top) * Math.abs(s / V.top) - Math.sign(s) * 50) * dt;
+    if (c.thr < 0.02 && (cmd.fwd || 0) < 0) s -= Math.sign(s) * Math.min(Math.abs(s), 700 * dt);
+    if (Math.abs(s) < 2 && c.thr < 0.02) s = 0;
+    s = Math.max(-80, s);
+    let turn = -side * 40 * Math.min(1, Math.abs(s) / 200);
+    if (s > 300 && !dead) turn += clamp(angTo(c.yaw, cmd.yaw) * 1.5, -18, 18);
+    c.yaw = wrap(c.yaw + turn * dt);
+    const want = dead ? 0 : clamp(-(cmd.pitch || 0), 0, 14);
+    if (s > V.vr && want > 3) c.pitch = Math.min(want, c.pitch + 10 * dt); else c.pitch = Math.max(0, c.pitch - 20 * dt);
+    c.roll -= c.roll * Math.min(1, dt * 6);
+    const nx = Math.cos(c.yaw * DEG), ny = Math.sin(c.yaw * DEG);
+    c.v[0] = nx * s; c.v[1] = ny * s; c.v[2] = 0;
+    if (c.pitch > 6 && s > V.vr) { c.g = false; c.v[2] = s * Math.sin(c.pitch * DEG) * 0.5; c.o[2] += 2; }
+  } else {
+    let sp = Math.hypot(c.v[0], c.v[1], c.v[2]);
+    const auth = clamp((sp - V.stall * 0.5) / (V.stall * 0.7), 0.12, 1);
+    const turn = V.turn * auth;
+    let aimYaw = cmd.yaw;
+    if (Math.abs(c.o[0]) > SKY_LIMIT || Math.abs(c.o[1]) > SKY_LIMIT) aimYaw = Math.atan2(-c.o[1], -c.o[0]) / DEG;
+    let dy = dead ? 0 : clamp(angTo(c.yaw, aimYaw) * 2.5, -turn, turn);
+    dy += -side * turn * 0.35;
+    const wantP = dead ? -40 : clamp(-(cmd.pitch || 0), -70, 75);
+    const dp = clamp((wantP - c.pitch) * 3, -turn * 0.9, turn * 0.9);
+    c.yaw = wrap(c.yaw + dy * dt);
+    c.pitch = clamp(c.pitch + dp * dt, -85, 85);
+    const wantRoll = dead ? c.roll + 90 * dt : clamp((-dy / V.turn) * 75, -80, 80); // bank into the turn (right wing down is +)
+    c.roll += (wantRoll - c.roll) * Math.min(1, dt * 4);
+    const sinP = Math.sin(c.pitch * DEG), cosP = Math.cos(c.pitch * DEG);
+    sp += (c.thr * V.thrust - V.thrust * (sp / V.top) * (sp / V.top) - 700 * sinP) * dt;
+    sp = Math.max(0, sp);
+    c.v[0] = cosP * Math.cos(c.yaw * DEG) * sp; c.v[1] = cosP * Math.sin(c.yaw * DEG) * sp; c.v[2] = sinP * sp;
+    if (sp < V.stall) { const k = 1 - sp / V.stall; c.v[2] -= 1100 * k; c.pitch -= 35 * k * dt; }
+  }
+  // move, and see what we hit
+  const fx = Math.cos(c.yaw * DEG), fy = Math.sin(c.yaw * DEG);
+  const d = [c.v[0] * dt, c.v[1] * dt, c.v[2] * dt];
+  const r = sweep(world, c, V, fx, fy, d, SW);
+  c.o[0] += d[0] * r.f; c.o[1] += d[1] * r.f; c.o[2] += d[2] * r.f;
+  if (r.f < 1) {
+    const n = r.n;
+    const into = -(c.v[0] * n[0] + c.v[1] * n[1] + c.v[2] * n[2]);
+    const gentle = n[2] > 0.7 && c.v[2] > -480 && Math.abs(c.roll) < 30 && c.pitch < 16 && c.pitch > -8;
+    if (gentle || (c.g && n[2] > 0.7)) { c.g = true; c.v[2] = 0; c.pitch = Math.max(0, c.pitch); }
+    else if (into > 200) { res.crash = true; res.hit = into; res.dyn = r.dyn; c.v = [0, 0, 0]; c.dead = true; }
+    else { c.v[0] += n[0] * into; c.v[1] += n[1] * into; c.v[2] += n[2] * into; }
+  }
+  if (c.g) {
+    const drop = sweep(world, c, V, fx, fy, [0, 0, -STEP], SW);
+    if (drop.f < 1 && drop.n[2] > 0.7) c.o[2] -= STEP * drop.f;
+    else if (Math.hypot(c.v[0], c.v[1]) > 30) { c.g = false; }
+  }
+  if (c.o[2] > 26000) { c.o[2] = 26000; if (c.v[2] > 0) c.v[2] = 0; }
+  return res;
+}
+
 // local seat offset -> world position on a car
 export function seatPos(c, local, out = [0, 0, 0]) {
   const fx = Math.cos(c.yaw * DEG), fy = Math.sin(c.yaw * DEG);
@@ -213,7 +294,7 @@ export function touches(c, p, pad = 16, zr = 72) {
 export function moveAny(world, ps, cmd, dt, rules) {
   if (ps.car) {
     world.skip = ps.car.id;
-    const r = vmove(world, ps.car, cmd, dt);
+    const r = VEHICLES[ps.car.k].air ? amove(world, ps.car, cmd, dt) : vmove(world, ps.car, cmd, dt);
     world.skip = 0;
     const V = VEHICLES[ps.car.k];
     seatPos(ps.car, V.seat[0], ps.origin);
@@ -221,10 +302,12 @@ export function moveAny(world, ps, cmd, dt, rules) {
     ps.onGround = true;
     return r;
   }
+  // (passengers sit still; the server moves them with the vehicle)
   if (ps.seat) return null;
   pmove(world, ps, cmd, dt, rules);
   return null;
 }
 
-export const packCar = (c) => c && [c.k, c.id, ...c.o.map((v) => Math.round(v * 100) / 100), ...c.v.map((v) => Math.round(v * 100) / 100), Math.round(c.yaw * 1000) / 1000, Math.round(c.steer * 1000) / 1000, c.g ? 1 : 0, c.dead ? 1 : 0];
-export const unpackCar = (a) => a && { k: a[0], id: a[1], o: [a[2], a[3], a[4]], v: [a[5], a[6], a[7]], yaw: a[8], steer: a[9], g: !!a[10], dead: !!a[11] };
+const r3 = (v) => Math.round(v * 1000) / 1000;
+export const packCar = (c) => c && [c.k, c.id, ...c.o.map((v) => Math.round(v * 100) / 100), ...c.v.map((v) => Math.round(v * 100) / 100), r3(c.yaw), r3(c.steer), c.g ? 1 : 0, c.dead ? 1 : 0, r3(c.pitch || 0), r3(c.roll || 0), r3(c.thr || 0)];
+export const unpackCar = (a) => a && { k: a[0], id: a[1], o: [a[2], a[3], a[4]], v: [a[5], a[6], a[7]], yaw: a[8], steer: a[9], g: !!a[10], dead: !!a[11], pitch: a[12] || 0, roll: a[13] || 0, thr: a[14] || 0 };

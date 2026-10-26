@@ -100,6 +100,8 @@ export function pmove(world, ps, cmd, dt, rules = DEFAULT_RULES) {
     slideMove(world, ps, dt);
     ps.velocity[2] -= MV.gravity * rules.gravity * dt * 0.5;
   }
+  // a parachute (jumping out of a plane): fall slowly, and it's packed away once you land
+  if (ps.chute) { if (ps.onGround) ps.chute = false; else if (ps.velocity[2] < -260) ps.velocity[2] = -260; }
   clampVel(ps);
   jumpPads(world, ps);
   const wasAir = !ps.onGround;

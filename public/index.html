@@ -391,6 +391,20 @@ body.fp-driving #ammo-box, body.fp-driving #crosshair { display: none; }
 #fp-shop { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 360px; max-height: 70vh; overflow: auto; padding: 14px 16px; border-radius: 8px; background: rgba(16,16,18,.94); border: 1px solid rgba(255,207,58,.4); color: #fff; }
 #fp-shop h3 { margin: 0; font: 900 22px var(--ui); color: #ffcf3a; letter-spacing: .06em; } #fp-shop .cash { margin: 2px 0 10px; font: 700 15px var(--num); color: #7dff9a; }
 #fp-shop .list li.own b { color: #ffcf3a; }
+#fp-area { position: absolute; right: 30px; bottom: 120px; font: 900 34px var(--ui); color: #fff; letter-spacing: .02em; text-shadow: 0 3px 0 #000, 0 0 12px rgba(0,0,0,.7); opacity: 0; font-style: italic; }
+#fp-area.show { animation: fparea 3.5s ease-out; }
+@keyframes fparea { 0% { opacity: 0; transform: translateY(10px); } 10%, 75% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+#fp-lock { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); padding: 8px 18px; border-radius: 6px; background: rgba(200,20,20,.85); color: #fff; font: 900 18px var(--ui); letter-spacing: .12em; animation: fpflash .4s steps(2) infinite; }
+#fp-lock b { padding: 0 5px; border-radius: 3px; background: #fff; color: #111; }
+#fp-bigmap { position: absolute; z-index: 6; inset: 5vh 4vw; border-radius: 10px; overflow: hidden; border: 2px solid rgba(255,255,255,.25); box-shadow: 0 20px 60px rgba(0,0,0,.7); background: #1d4a66; }
+#fp-bigcanvas { width: 100%; height: 100%; display: block; }
+#fp-bigmap .legend { position: absolute; left: 12px; bottom: 10px; padding: 6px 10px; border-radius: 6px; background: rgba(0,0,0,.6); font: 12px var(--ui); color: #ddd; }
+#fp-bigmap .legend i { display: inline-block; width: 10px; height: 10px; margin: 0 4px 0 10px; vertical-align: -1px; } #fp-bigmap .legend b { padding: 0 5px; border-radius: 3px; background: #fff; color: #111; }
+#fp-wasted { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(rgba(0,0,0,.1), rgba(0,0,0,.55)); }
+#fp-wasted span { font: 900 96px var(--ui); color: #c8241e; letter-spacing: .04em; font-style: italic; text-shadow: 0 4px 0 #000, 0 0 30px rgba(0,0,0,.8); animation: fpwasted 1.2s ease-out; }
+@keyframes fpwasted { from { transform: scale(1.6); opacity: 0; } }
+body.fp-dead #view { filter: grayscale(1) contrast(1.1); transition: filter 1s; }
+#fp-phone .list li.save { border-style: dashed; }
 #hz-obj { position: absolute; left: 16px; top: 96px; max-width: 330px; font: 12px var(--ui); color: #fff; text-shadow: 0 1px 3px #000; }
 #hz-obj .st { display: inline-block; font: 700 12px var(--ui); letter-spacing: .1em; padding: 3px 8px; border-radius: 4px; margin-bottom: 6px; }
 #hz-obj .st.calm { background: rgba(40,160,80,.75); } #hz-obj .st.alarm { background: rgba(210,30,30,.85); animation: hzflash 1s infinite; } #hz-obj .st.break { background: rgba(200,140,20,.8); }
@@ -649,7 +663,11 @@ html, body { font: 14px/1.45 var(--ui); }
     <div id="fp-speed" hidden></div>
     <div id="fp-phone" hidden></div>
     <div id="fp-shop" hidden></div>
-    <div id="fp-help"><b>P</b> phone · <b>E</b> get in / use</div>
+    <div id="fp-help"><b>P</b> phone · <b>M</b> map · <b>E</b> get in / use</div>
+    <div id="fp-area"></div>
+    <div id="fp-lock" hidden>MISSILE LOCK · <b>Q</b> flares</div>
+    <div id="fp-bigmap" hidden><canvas id="fp-bigcanvas"></canvas><div class="legend"><b>M</b> close · wheel to zoom · <i style="background:#ff5a3a"></i>Gas <i style="background:#ffd23a"></i>Guns <i style="background:#fff"></i>Hospital <i style="background:#3a7aff"></i>Police <i style="background:#3adc7a"></i>Your vehicle</div></div>
+    <div id="fp-wasted" hidden><span>WASTED</span></div>
   </div>
   <div id="heist-hud" hidden>
     <div id="hz-obj"></div>

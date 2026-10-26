@@ -762,7 +762,7 @@ export class Game {
         break;
       }
       case 'shot': {
-        if (ev.id === me) return; // predicted locally already
+        if (ev.id === me && !ev.jet) return; // predicted locally already (a jet's cannon isn't)
         const W = WEAPONS[ev.w];
         const pl = this.players.get(ev.id);
         const muzzle = pl?.muzzle || ev.s;
@@ -1823,6 +1823,19 @@ export class Game {
     eye[2] += this.stepSmooth;
     let yaw = this.yaw, pitch = this.pitch - (this.recoil || 0) * 0.5;
     let roll = 0;
+    // head bob: the view rises and falls with each step and sways a little side to side
+    {
+      const sp = ps.onGround && ps.alive && !ps.car && !ps.seat ? Math.hypot(ps.velocity[0], ps.velocity[1]) : 0;
+      const want = Math.min(1.2, sp / 320) * (ps.ducked ? 0.5 : 1) * (this.settings.bob === false ? 0 : 1);
+      this.bobAmp = (this.bobAmp || 0) + (want - (this.bobAmp || 0)) * Math.min(1, dt * 8);
+      if (sp > 10) this.bobPhase = (this.bobPhase || 0) + dt * sp / 36;
+      const b = this.bobAmp, ph = this.bobPhase || 0, yr = yaw * DEG;
+      eye[2] += (Math.abs(Math.sin(ph)) - 0.5) * 2.6 * b;
+      eye[0] += Math.sin(yr) * Math.sin(ph) * 1.3 * b;
+      eye[1] -= Math.cos(yr) * Math.sin(ph) * 1.3 * b;
+      roll += Math.sin(ph) * 0.45 * b;
+      pitch += Math.abs(Math.cos(ph)) * 0.35 * b;
+    }
     let lookAt = null;
     if (!ps.alive && this.connected) {
       const rd = this.ragdolls.find((r) => r.id === this.myId);
@@ -1856,7 +1869,7 @@ export class Game {
     if (scope && scope.hidden === this.zoomed) scope.hidden = !this.zoomed;
     // in a car: the seat or the chase camera
     const carCam = this.connected && this.fv.active ? this.fv.camera(dt) : null;
-    if (carCam) { eye = carCam.eye; yaw = carCam.yaw; pitch = carCam.pitch; }
+    if (carCam) { eye = carCam.eye; yaw = carCam.yaw; pitch = carCam.pitch; roll = carCam.roll || 0; }
     if (this.thirdPerson && ps.alive && this.connected && !this.zoomed && !lookAt && !carCam) {
       const f = viewDir(yaw, pitch), y = yaw * DEG;
       const right = [Math.sin(y), -Math.cos(y), 0];

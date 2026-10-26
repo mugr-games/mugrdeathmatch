@@ -607,8 +607,38 @@ export class Avatar {
   // zombies (and fists): a punch with the other arm each time
   punch() { this.punchT = 0.45; this.punchArm = -this.punchArm; }
 
+  // sitting in a vehicle. st.sit: { wheel (hands on the wheel or bars), steer (-1..1), bike, look (head turn) }
+  sitPose(dt, S) {
+    this.breath += dt * 1.6;
+    this.hips.position.set(0, 0, 5 + Math.sin(this.breath) * 0.15);
+    this.hips.rotation.set(0, 0, 0);
+    for (const L of this.legs) {
+      L.hip.rotation.y = S.bike ? -1.25 : -1.5;
+      L.hip.rotation.x = L.s * (S.bike ? 0.28 : 0.1);
+      L.knee.rotation.y = S.bike ? 1.7 : 1.45;
+      L.foot.rotation.y = S.bike ? -0.45 : 0.05;
+      L.foot.rotation.x = 0;
+    }
+    this.torso.rotation.set(0, S.bike ? 0.35 : -0.12, -S.steer * 0.08);
+    this.head.rotation.set(0, S.bike ? -0.25 : 0.08 + Math.sin(this.breath) * 0.01, (S.look || 0) - S.steer * 0.15);
+    for (const A of this.arms) {
+      if (S.wheel) {
+        // both hands on the wheel, turning with it
+        A.upper.rotation.y = S.bike ? -1.25 : -1.0;
+        A.upper.rotation.x = A.s * -0.22 + S.steer * 0.35 * (S.bike ? 0.5 : 1);
+        A.fore.rotation.y = S.bike ? -0.35 : -0.75;
+      } else {
+        // a passenger: hands in the lap
+        A.upper.rotation.y = -0.45;
+        A.upper.rotation.x = A.s * -0.1;
+        A.fore.rotation.y = -1.25;
+      }
+    }
+  }
+
   // state: { speed, fwdSpeed, sideSpeed, ground, ducked, pitch (deg, + = down), alive, vz }
   animate(dt, st) {
+    if (st.sit) return this.sitPose(dt, st.sit);
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const run = Math.min(1, st.speed / 280);
     const moving = st.ground && st.speed > 10;
