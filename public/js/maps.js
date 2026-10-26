@@ -25,6 +25,8 @@ const PALETTES = {
   city: { concrete: '#a19d96', plate: '#3c3f44', metal: '#5e6670', panel: ['#a8705a', '#7c4e3e'], hazard: '#d8a820', neon: '#ffd890', grass: ['#4e7a36', '#3a5a28'] },
   pitch: { concrete: '#8f9298', plate: '#5c6066', metal: '#b8bec6', panel: ['#1f56b8', '#173f88'], hazard: '#e8c020', neon: '#fff4d8', grass: ['#3f8f3a', '#347a30'] },
   court: { concrete: '#8f9298', plate: '#5a5248', metal: '#c4cad2', panel: ['#b8401f', '#8a2f16'], hazard: '#ff6a1a', neon: '#fff4d8', grass: ['#3f8f3a', '#347a30'] },
+  arthouse: { concrete: '#a8a49c', plate: '#3a3a3c', metal: '#7c8590', panel: ['#ece6da', '#d8d0c0'], hazard: '#c8a040', neon: '#fff0c8', stone: ['#e0d8c8', '#c4b8a4'], brick: ['#8e5a48', '#b0a596'], wood: ['#5a3a24', '#3a2416'], marble: ['#f2eee6', '#d8d2c6'] },
+  mansion: { concrete: '#b8b0a0', plate: '#5a4a40', metal: '#7c8590', panel: ['#e8dcc4', '#d0c0a0'], hazard: '#c8a040', neon: '#ffe0a0', stone: ['#d8ccb4', '#b8a88c'], wood: ['#6a4428', '#4a2c18'], marble: ['#f0ece2', '#dcd4c4'], grass: ['#5a8a3a', '#3e6a2a'], stucco: '#efe2c8' },
   bank: { concrete: '#9a968f', plate: '#2f3236', metal: '#7c8590', panel: ['#cfc8b8', '#b4ab98'], hazard: '#c8a040', neon: '#ffd890', stone: ['#d8d0c2', '#b9ae9c'], brick: ['#8e4a38', '#b0a596'], wood: ['#6e4a2c', '#4e331e'], marble: ['#ece8e0', '#cfc8bc'] },
   asylum: { concrete: '#8f8c84', plate: '#4a4c4e', metal: '#7a8088', panel: ['#b8c0a8', '#8e9680'], hazard: '#b89a40', neon: '#d8f0ff', stone: ['#8a8478', '#6a6458'], wood: ['#6a5038', '#463424'], tile: ['#c8ccc0', '#a8ae9e'], grass: ['#4a5a32', '#3a3424'] },
   harvest: { concrete: '#a8a090', plate: '#5a5048', metal: '#8a8e90', panel: ['#b89a70', '#8a7050'], hazard: '#d8a040', neon: '#ffd890', stone: ['#9a9284', '#7a7264'], wood: ['#8a6440', '#5a4028'], grass: ['#8a8a3a', '#6a4a2c'], corn: ['#c8b058', '#8a7a34'], foliage: ['#d06a1e', '#8a2e10'] },
@@ -61,6 +63,23 @@ function waterMat() {
   return (water ||= new THREE.MeshStandardMaterial({ color: 0x24404e, metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.78 }));
 }
 
+// paintings hung on gallery walls: a gilt frame round a canvas of colour (one texture, varied by the box's uv)
+let gallery = null;
+function paintingWall() {
+  if (gallery) return gallery;
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 192;
+  const g = c.getContext('2d');
+  g.fillStyle = '#b08a3a'; g.fillRect(0, 0, 256, 192);
+  g.fillStyle = '#2a2420'; g.fillRect(12, 12, 232, 168);
+  let s = 7;
+  const R = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  for (let i = 0; i < 30; i++) { g.fillStyle = `hsla(${R() * 360},55%,${35 + R() * 40}%,.8)`; g.beginPath(); g.ellipse(16 + R() * 224, 16 + R() * 160, 6 + R() * 40, 5 + R() * 30, R() * 3, 0, 7); g.fill(); }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return (gallery = new THREE.MeshStandardMaterial({ map: t, roughness: 0.7 }));
+}
+
 function surf(mat, pal) {
   if (mat === 'neon') return neonMaterial(pal.neon);
   if (mat === 'line') return surfaceMaterial('concrete', { color: '#f4f4ee', bump: 0.2 });
@@ -83,6 +102,14 @@ function surf(mat, pal) {
   if (mat === 'pumpkin') return surfaceMaterial('clay', { color: '#e8761a' });
   if (mat === 'logs') return surfaceMaterial('wood', { color: '#7a5232', color2: '#4a3020', bump: 2.2 });
   if (mat === 'awning') return surfaceMaterial('hazard', { color: '#c03a2a' });
+  if (mat === 'stucco') return surfaceMaterial('clay', { color: pal.stucco || '#e8dcc4' });
+  if (mat === 'hedge') return surfaceMaterial('grass', { color: '#2f5a26', color2: '#244a1e', bump: 3 });
+  if (mat === 'palm') return surfaceMaterial('grass', { color: '#3f7a2a', color2: '#2a5a1e', bump: 2.5 });
+  if (mat === 'bark') return surfaceMaterial('wood', { color: '#6a4a30', color2: '#4a3020', bump: 2 });
+  if (mat === 'sand') return surfaceMaterial('dirt', { color: '#d8c290', color2: '#c2a878', bump: 0.8 });
+  if (mat === 'leather') return surfaceMaterial('clay', { color: '#5a3424' });
+  if (mat === 'gold') return new THREE.MeshStandardMaterial({ color: 0xe8b830, metalness: 1, roughness: 0.25 });
+  if (mat === 'painting') return paintingWall();
   if (mat === 'grass') return surfaceMaterial('grass', { color: (pal.grass || ['#4e7a36'])[0], color2: (pal.grass || [0, '#3a5a28'])[1] });
   if (mat === 'panel') return surfaceMaterial('panel', { color: pal.panel[0], color2: pal.panel[1] });
   if (mat === 'hazard') return surfaceMaterial('hazard', { color: pal.hazard });

@@ -1,5 +1,5 @@
 // Headless test of the heist rules and AI on the real bank map, without the network: robbers are moved by
-// hand; guards, cameras, staff and police run as on the server. Usage: node tools/smoke_heist.mjs
+// hand; guards, cameras, staff and police run as on the server. Usage: node tools/smoke_heist.mjs [bank|arthouse|mansion]
 import { CODE_MAPS } from '../public/js/mapdefs.js';
 import { BoxWorld } from '../public/js/collide.js';
 import { newPlayerState, BTN } from '../public/js/pmove.js';
@@ -7,7 +7,8 @@ import { buildNav } from '../public/js/nav.js';
 import { initLoadout } from '../public/js/sim.js';
 import { createHeist } from '../heist.js';
 
-const def = CODE_MAPS.bank;
+const def = CODE_MAPS[process.argv[2] || 'bank'];
+const HD = def.heist, VAN = HD.van.o;
 const nav = buildNav(def.boxes, def.pads, def.bounds, def.doors);
 const TICK = 1 / 60;
 
@@ -23,12 +24,12 @@ function setup(difficulty = 'normal', approach = 'stealth') {
     stat: () => {},
     damage: (p, dmg) => { p.ps.hp -= dmg; p.hurt = (p.hurt || 0) + dmg; if (p.ps.hp <= 0 && !H.down(p)) { p.ps.alive = false; H.died(p); p.respawnAt = R.time + H.respawnDelay(); } },
     kill: (p) => { p.ps.alive = false; },
-    respawn: (p) => { place(p, [-1100 + p.id * 60, -680, 1]); H.loadout(p); },
+    respawn: (p) => { place(p, [VAN[0] + p.id * 40, VAN[1] + 10, (def.spawns[0].origin[2] || 1)]); H.loadout(p); },
     plan: () => {},
     players: () => R.players.values(),
   };
   const H = createHeist(R, { ...def, heist: def.heist }, nav, doorBoxes, api);
-  const crew = [1, 2].map((id) => { const p = { id, name: 'Robber' + id, yaw: 0, buttons: 0 }; place(p, [-1100 + id * 60, -680, 1]); R.players.set(id, p); H.join(p); return p; });
+  const crew = [1, 2].map((id) => { const p = { id, name: 'Robber' + id, yaw: 0, buttons: 0 }; place(p, def.spawns[id].origin.slice()); R.players.set(id, p); H.join(p); return p; });
   H.message(crew[0], { k: 'set', difficulty, approach });
   H.message(crew[1], { k: 'ready', ready: true });
   H.message(crew[0], { k: 'start' });
@@ -50,8 +51,9 @@ const kinds = (H) => { const c = {}; for (const n of H.npcs.values()) c[n.kind] 
 {
   const { H, crew, events, run, press, place } = setup('normal');
   const [a, b] = crew;
-  place(a, [-110, -250, 1]); a.yaw = -90; // in front of the door guard, who looks north into the lobby
-  place(b, [-1000, -680, 1]);
+  const post = HD.guards.find((g) => g.post).o;
+  place(a, [post[0] + Math.cos(HD.guards.find((g) => g.post).yaw * Math.PI / 180) * 200, post[1] + Math.sin(HD.guards.find((g) => g.post).yaw * Math.PI / 180) * 200, 1]); a.yaw = 0; // right in front of a guard on a post
+  place(b, def.spawns[2].origin.slice());
   run(3);
   const calm = { alarm: H.alarm, det: Math.round(Math.max(0, ...[...H.npcs.values()].map((n) => n.det.get(a.id) || 0)) * 100) };
   press(a, BTN.MASK);
@@ -64,7 +66,8 @@ const kinds = (H) => { const c = {}; for (const n of H.npcs.values()) c[n.kind] 
 {
   const { H, crew, events, run, press, place } = setup('normal');
   const [a] = crew;
-  place(a, [-110, -250, 1]); a.yaw = -90;
+  const g0 = HD.guards.find((g) => g.post);
+  place(a, [g0.o[0] + Math.cos(g0.yaw * Math.PI / 180) * 200, g0.o[1] + Math.sin(g0.yaw * Math.PI / 180) * 200, 1]); a.yaw = 0;
   press(a, BTN.MASK);
   let alerted = null;
   run(6, () => { if (!alerted) alerted = [...H.npcs.values()].find((n) => n.state === 'alerted') || null; if (alerted && H.npcs.has(alerted.id)) H.hurt(alerted, a, 999, 'pistol', true, null); });
@@ -76,7 +79,7 @@ const kinds = (H) => { const c = {}; for (const n of H.npcs.values()) c[n.kind] 
 {
   const { H, crew, events, run, place, R } = setup('hard', 'loud');
   const [a, b] = crew;
-  place(a, [0, -300, 1]); place(b, [200, -350, 1]);
+  place(a, [HD.van.o[0] * 0.5, HD.van.o[1] * 0.5, 1]); place(b, [HD.van.o[0] * 0.5 + 60, HD.van.o[1] * 0.5, 1]);
   let maxPolice = 0, coverUsed = 0, peeks = 0, flankers = 0;
   const t0 = Date.now();
   run(90, () => {
@@ -98,22 +101,23 @@ const kinds = (H) => { const c = {}; for (const n of H.npcs.values()) c[n.kind] 
   for (const n of [...H.npcs.values()]) n.state = 'tied', n.kind === 'civ' || H.npcs.delete(n.id);
   for (const p of crew) press(p, BTN.MASK);
   const doHold = (p, at, sec) => { place(p, at); hold(p, BTN.USE); run(sec); hold(p, 0); };
-  doHold(a, [-80, 395, 1], 0.6); // the keycard on the manager's desk... from the corridor side? (teleported in)
+  const at = (o, dy = 0) => [o[0], o[1] + dy, (o[2] && o[2] < 30 ? o[2] : 0) + 1];
+  doHold(a, at(HD.keycard), 0.6); // stand on the keycard (teleported in)
   const card = a.hk.keycard;
-  doHold(a, [0, -18, 1], 1.5);
+  doHold(a, at(HD.doorUse.staff[0]), 1.5);
   const staff = H.doors[0].open;
-  doHold(b, [-520, 360, 1], 8);
+  doHold(b, at(HD.terminal), 8);
   const cams = H.camsLooped;
-  doHold(a, [270, 262, 1], 22);
+  doHold(a, at(HD.panel), 40);
   const vault = H.vault.open;
-  doHold(a, [170, 378, 1], 3);
-  doHold(b, [270, 418, 1], 3);
+  doHold(a, at(HD.carts[0]), 3);
+  doHold(b, at(HD.carts[1]), 3);
   const bags = [a.hk.bag, b.hk.bag];
-  doHold(a, [140, 330, 1], 2);
-  place(a, [-1050, -690, 1]); place(b, [-1060, -700, 1]);
+  doHold(a, at(HD.boxes[0]), 2);
+  place(a, at(VAN)); place(b, [VAN[0] + 10, VAN[1] - 10, 1]);
   run(0.5);
   const secured = H.secured;
-  doHold(a, [-1050, -690, 1], 2.5);
+  doHold(a, at(VAN), 2.5);
   out.job = { card, staff, cams, vault, bags, secured, cash: H.cash, phase: H.phase, result: H.result };
 }
 console.log(JSON.stringify(out, null, 1));

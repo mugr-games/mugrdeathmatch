@@ -32,6 +32,12 @@ export const ROLES = {
   lookout: { name: 'Lookout', about: 'Sees guards and cameras through walls, carries a sniper rifle.' },
 };
 const BAG_CASH = 30000, BOX_CASH = 3000, CIV_PENALTY = 5000;
+// what things are called (a map's heist data can rename them: paintings instead of cash, a boat instead of the van)
+export const LABELS = {
+  keycard: 'Take the keycard', cardWhere: 'manager\'s office, or the guard captain', staff: 'Open the staff door', back: 'Open the back door', nocard: 'Needs a keycard',
+  cams: 'Loop the cameras', camsWhere: 'security office', wires: 'Cut the alarm wiring', vault: 'the vault', hack: 'Hack the vault', drill: 'Set up the drill', fix: 'Fix the drill',
+  cart: 'Bag the cash', carts: 'the cash', box: 'Drill a deposit box', boxes: 'deposit boxes', escape: 'Get in the van and go', ride: 'the van', bagFull: 'Get it to the van (G throws it)', opened: 'THE VAULT IS OPEN',
+};
 
 // per difficulty: [easy, normal, hard]
 const DIFF = {
@@ -79,6 +85,8 @@ function coverNodes(nav, world) {
 //        respawn(p), plan(msg) (to everyone in the room), players() }
 export function createHeist(R, def, nav, doorBoxes, api) {
   const HD = def.heist;
+  const L = { ...LABELS, ...(HD.labels || {}) };
+  const bagCash = HD.bagCash || BAG_CASH, boxCash = HD.boxCash || BOX_CASH;
   const world = () => R.map.world;
   const H = {
     phase: 'planning', difficulty: 'normal', approach: 'stealth', host: 0,
@@ -114,7 +122,7 @@ export function createHeist(R, def, nav, doorBoxes, api) {
     setTimeout(() => H.sendPlan(), 0);
   };
   H.planState = () => ({
-    t: 'heist', k: 'plan', phase: H.phase, host: H.host, difficulty: H.difficulty, approach: H.approach, code: R.code, private: R.settings.private,
+    t: 'heist', k: 'plan', phase: H.phase, host: H.host, difficulty: H.difficulty, approach: H.approach, code: R.code, private: R.settings.private, map: R.map.id, title: HD.title || 'The Bank Job',
     crew: crew().map((p) => ({ id: p.id, name: p.name, role: p.hk?.role, ready: !!p.hk?.ready })), result: H.result,
   });
   H.sendPlan = () => api.plan(H.planState());
@@ -183,7 +191,7 @@ export function createHeist(R, def, nav, doorBoxes, api) {
     H.overAt = R.time + 14;
     const d = di();
     const stealth = !H.alarm;
-    let total = success ? H.secured * BAG_CASH + H.cash - H.civKills * CIV_PENALTY : 0;
+    let total = success ? H.secured * bagCash + H.cash - H.civKills * CIV_PENALTY : 0;
     total = Math.max(0, Math.round(total * DIFF.payout[d] * (stealth ? 1.5 : 1)));
     const each = crew().length ? Math.round(total / crew().length) : 0;
     const coins = Math.round(each / 1000);
@@ -514,10 +522,13 @@ export function createHeist(R, def, nav, doorBoxes, api) {
     if (goal) {
       const far = dist2(ps.origin, goal);
       if (far > 24) {
-        if (!n.path || t - n.pathAt > 0.9 || !n.pathGoal || dist2(n.pathGoal, goal) > 40) {
+        // plan again when the goal moves, now and then anyway, but not over and over for somewhere we can't get to
+        const moved = !n.pathGoal || dist2(n.pathGoal, goal) > 40;
+        if ((moved || !n.path || t - n.pathAt > 1.6) && t >= (n.noPathUntil || 0) && t - n.pathAt > (moved ? 0.25 : 0)) {
           n.pathAt = t;
           n.pathGoal = goal.slice();
-          n.path = findPath(nav, nearestNode(nav, ps.origin, true), nearestNode(nav, goal, true), npcOpen(n), 12000);
+          n.path = findPath(nav, nearestNode(nav, ps.origin, true), nearestNode(nav, goal, true), npcOpen(n), 6000);
+          if (!n.path) n.noPathUntil = t + 2 + Math.random();
         }
         while (n.path && n.path.length > 1 && Math.hypot(n.path[0].x - ps.origin[0], n.path[0].y - ps.origin[1]) < 26) n.path.shift();
         const wp = n.path && n.path[Math.min(1, n.path.length - 1)];
@@ -630,7 +641,9 @@ export function createHeist(R, def, nav, doorBoxes, api) {
   // alerted, alarm not raised yet: get to an alarm panel, or call it in on the radio. Killing them in time stops it.
   function guardAlerted(n, dt) {
     const t = R.time;
-    if (!n.radioPos) {
+    if (n.alertedAt === undefined || n.alertedAt < (n.calmAt || -1)) {
+      // just became sure: run for the nearest alarm panel, or get on the radio (once, not every tick)
+      n.alertedAt = t;
       const panel = !H.wiresCut && HD.alarms.map((a) => ({ a, d: dist2(a, n.ps.origin) })).sort((x, y) => x.d - y.d)[0];
       n.radioPos = panel && panel.d < 700 ? panel.a : null;
       n.radioAt = t + (n.radioPos ? 9 : DIFF.radioTime[di()]);
@@ -822,7 +835,7 @@ export function createHeist(R, def, nav, doorBoxes, api) {
       return;
     }
     // no idea where anyone is: guards hold the back of the bank, police head for the vault and the van
-    const fallback = n.kind === 'guard' ? (n.home?.o ? [n.home.o[0], n.home.o[1], 0] : [n.home?.route?.[0][0] || 0, n.home?.route?.[0][1] || 0, 0]) : (Math.floor(t / 20 + n.id) % 2 ? [300, 200, 0] : HD.van.o);
+    const fallback = n.kind === 'guard' ? (n.home?.o ? [n.home.o[0], n.home.o[1], 0] : [n.home?.route?.[0][0] || 0, n.home?.route?.[0][1] || 0, 0]) : (Math.floor(t / 20 + n.id) % 2 ? HD.panel : HD.van.o);
     steer(n, fallback, dt, { run: n.kind !== 'guard' });
   }
 
@@ -869,30 +882,30 @@ export function createHeist(R, def, nav, doorBoxes, api) {
     // a downed teammate first
     for (const q of crew()) if (q !== p && q.ps.alive && q.ps.downed && near(q.ps.origin, 72)) return { key: 'revive:' + q.id, label: `Revive ${q.name}`, need: 3, q };
     // the van: leave once there's something to show for it
-    if (near(HD.van.o, HD.van.r) && (H.secured > 0 || H.cash > 0)) return { key: 'escape', label: 'Get in the van and go', need: 2 };
+    if (near(HD.van.o, HD.van.r) && (H.secured > 0 || H.cash > 0)) return { key: 'escape', label: L.escape, need: 2 };
     if (!hk.masked) return null;
     for (const c of H.npcs.values()) {
       if (c.kind === 'civ' && c.state === 'down' && near(c.ps.origin, 80)) return { key: 'tie:' + c.id, label: 'Tie up', need: role === 'infiltrator' ? 0.8 : 1.6, c };
     }
-    for (const k of H.keycards) if (k.up && near(k.o, 80)) return { key: 'card:' + k.id, label: 'Take the keycard', need: 0.3, k };
+    for (const k of H.keycards) if (k.up && near(k.o, 80)) return { key: 'card:' + k.id, label: L.keycard, need: 0.3, k };
     for (const b of H.bags) if (!hk.bag && near(b.o, 70)) return { key: 'bag:' + b.id, label: 'Pick up the bag', need: 0.3, b };
     const staff = doorByName('staff');
-    if (!staff.open && HD.doorUse.staff.some((s) => near(s, 70))) return hk.keycard ? { key: 'staff', label: 'Open the staff door', need: 1 } : { key: 'nocard', label: 'Needs a keycard', need: Infinity };
+    if (!staff.open && HD.doorUse.staff.some((s) => near(s, 70))) return hk.keycard ? { key: 'staff', label: L.staff, need: 1 } : { key: 'nocard', label: L.nocard, need: Infinity };
     const back = doorByName('back');
-    if (!back.open && near(HD.doorUse.back[0], 70)) return { key: 'back', label: 'Open the back door', need: 0.5 };
-    if (!H.camsLooped && !H.alarm && near(HD.terminal, 75)) return { key: 'cams', label: 'Loop the cameras', need: role === 'hacker' ? 3 : 7 };
-    if (!H.wiresCut && near(HD.wiring, 75)) return { key: 'wires', label: 'Cut the alarm wiring', need: 4 };
+    if (!back.open && HD.doorUse.back.some((s) => near(s, 70))) return { key: 'back', label: L.back, need: HD.backNeed || 0.5 };
+    if (!H.camsLooped && !H.alarm && near(HD.terminal, 75)) return { key: 'cams', label: L.cams, need: role === 'hacker' ? 3 : 7 };
+    if (!H.wiresCut && near(HD.wiring, 75)) return { key: 'wires', label: L.wires, need: 4 };
     if (!H.vault.open && near(HD.panel, 80)) {
       if (H.alarm) {
-        if (!H.vault.drill) return { key: 'drill', label: 'Set up the drill', need: 2 };
-        if (H.vault.jam) return { key: 'fix', label: 'Fix the drill', need: role === 'hacker' ? 1 : 2.5 };
+        if (!H.vault.drill) return { key: 'drill', label: L.drill, need: 2 };
+        if (H.vault.jam) return { key: 'fix', label: L.fix, need: role === 'hacker' ? 1 : 2.5 };
         return null;
       }
-      return { key: 'hack', label: 'Hack the vault', need: DIFF.hack[di()] * (role === 'hacker' ? 0.55 : 1), keep: true };
+      return { key: 'hack', label: L.hack, need: DIFF.hack[di()] * (role === 'hacker' ? 0.55 : 1), keep: true };
     }
     if (H.vault.open) {
-      for (const c of H.carts) if (!c.taken && !hk.bag && near(c.o, 70)) return { key: 'cart:' + c.i, label: 'Bag the cash', need: 2.5, c };
-      for (const b of H.boxes) if (!b.taken && near(b.o, 55)) return { key: 'box:' + b.i, label: 'Drill a deposit box', need: 1.5, b };
+      for (const c of H.carts) if (!c.taken && !hk.bag && near(c.o, 70)) return { key: 'cart:' + c.i, label: L.cart, need: 2.5, c };
+      for (const b of H.boxes) if (!b.taken && near(b.o, 55)) return { key: 'box:' + b.i, label: L.box, need: 1.5, b };
     }
     return null;
   }
@@ -918,7 +931,7 @@ export function createHeist(R, def, nav, doorBoxes, api) {
     if (k === 'drill') { H.vault.drill = true; H.vault.jamAt = R.time + rnd(12, 22); ev({ e: 'hk', k: 'obj', what: 'drill', id: p.id }); noise(HD.panel, 2000, 'gunshot'); return; }
     if (k === 'fix') { H.vault.jam = false; H.vault.jamAt = R.time + rnd(12, 24); ev({ e: 'hk', k: 'obj', what: 'fix', id: p.id }); return; }
     if (k === 'cart') { a.c.taken = true; hk.bag = true; ev({ e: 'hk', k: 'cart', i: a.c.i, id: p.id }); return; }
-    if (k === 'box') { a.b.taken = true; H.cash += BOX_CASH; ev({ e: 'hk', k: 'box', i: a.b.i, id: p.id }); return; }
+    if (k === 'box') { a.b.taken = true; H.cash += boxCash; ev({ e: 'hk', k: 'box', i: a.b.i, id: p.id }); return; }
   }
 
   function openVault(p) {
@@ -1091,6 +1104,7 @@ export function createHeist(R, def, nav, doorBoxes, api) {
     doors: H.doors.map((d) => [d.i, d.name, d.mins, d.maxs]),
     cams: HD.cameras.map((c, i) => [i, c.o, c.min || 0]), van: HD.van, carts: HD.carts, boxes: HD.boxes, panel: HD.panel, terminal: HD.terminal, wiring: HD.wiring, alarms: HD.alarms,
     plan: H.planState(), roles: ROLES,
+    labels: L, loot: HD.loot || 'cash', boxLoot: HD.boxLoot || 'deposit', escape: HD.escape || 'van', cartDraw: HD.cartDraw || [0, 0], bagCash, boxCash, title: HD.title || 'The Bank Job',
   });
   H.reset = () => { resetWorld(); H.phase = 'planning'; };
   resetWorld();

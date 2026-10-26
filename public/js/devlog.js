@@ -2,6 +2,23 @@
 export const DEVLOG = [
   {
     date: '2026-10-25',
+    title: 'Planes, new heists and a more real world',
+    notes: [
+      'Mugr County is smaller and tighter (about 4 km across), with an airport and a military base.',
+      'Fly: planes wait at Mugr International. Steer with the mouse, W and S for throttle, look up on the runway to take off. Jump out in the air and a parachute opens. Buy planes in the phone\'s new Aero app; they\'re delivered to the airport.',
+      'Fort Talon Air Base: fighter jets with a cannon and missiles. Go over the fence and the soldiers come; steal a jet and the missile sites fire. Turn hard and use flares (Q) to get away.',
+      'Your phone: Contacts → Jamal makes the police forget you for $1,000. Garage → Save this vehicle keeps whatever you\'re driving, and anything you own can be brought to you again (planes to the airport).',
+      'M opens the big map of the whole county (the wheel zooms in on you).',
+      'GTA touches: WASTED when you die, the name of the area comes up as you drive into it, head bob as you walk and run.',
+      'People in cars are real characters now, sitting with their hands on the wheel.',
+      'New car bodies: rounded panels, flared arches, headlight housings, mirrors, door lines, spoked wheels with brake discs, and bodies that lean in corners and dip under braking.',
+      'Two new heists, picked in the Heist menu: The Art House (a museum: cut the private collection from its frames, smash the jewel cases) and The Compound (a walled estate by the sea: come ashore, cut through the drainage grate, empty the gold vault and the safes, escape by boat).',
+      'Heists run much faster on the server, and fixed a guard who called the alarm in over and over without ever getting through.',
+      'Guns, crates and trees remade: real surface detail (stippled polymer, worn steel, wood grain), more parts on the guns, plank crates, fuller trees.',
+    ],
+  },
+  {
+    date: '2026-10-25',
     title: 'Free Roam: Mugr County',
     notes: [
       'New: Free Roam on the main menu. Mugr County is about 6 km across, the size of San Andreas: the cities of Port Halcyon, Bayreach and Sundown, the towns of Pinecrest, Dustwater and Millbrook, farms, woods, desert, beaches, Mirror Lake and Mount Mugr, joined by highways.',

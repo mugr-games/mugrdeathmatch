@@ -18,6 +18,24 @@ const LOOK = [
   { color: -1, model: 3, slot: null }, // staff and customers
 ];
 const money = (n) => '$' + Math.round(n).toLocaleString();
+// a painting for the art heist: a few soft shapes on a coloured ground, different for each one
+const paintings = new Map();
+function paintingMat(seed) {
+  const k = Math.abs(Math.round(seed)) % 7;
+  if (paintings.has(k)) return paintings.get(k);
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 96;
+  const g = c.getContext('2d');
+  let s = k * 9301 + 49297;
+  const R = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  g.fillStyle = `hsl(${R() * 360},40%,${30 + R() * 30}%)`; g.fillRect(0, 0, 128, 96);
+  for (let i = 0; i < 9; i++) { g.fillStyle = `hsla(${R() * 360},60%,${30 + R() * 50}%,.75)`; g.beginPath(); g.ellipse(R() * 128, R() * 96, 8 + R() * 30, 6 + R() * 24, R() * 3, 0, 7); g.fill(); }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.8 });
+  paintings.set(k, m);
+  return m;
+}
 
 function iconSprite() {
   const c = document.createElement('canvas');
@@ -137,19 +155,34 @@ export class HeistView {
       root.add(pivot);
       o.cams[i] = pivot;
     }
-    // the van: a white box van, and a green ring where bags count as safe
-    {
+    // the getaway: a white box van, or a speedboat at the dock; a green ring where bags count as safe
+    if (hw.escape === 'boat') {
+      const boat = new THREE.Group();
+      const hull = new THREE.Mesh(new THREE.CylinderGeometry(55, 30, 300, 16, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).rotateX(Math.PI), mat(0xf2f2ee, { roughness: 0.3 }));
+      hull.scale.set(1, 1, 0.7);
+      hull.position.set(0, 0, 40);
+      boat.add(hull);
+      boat.add(boxMesh(120, 90, 4, mat(0x9a7a5a), -30, 0, 42));
+      boat.add(boxMesh(40, 80, 40, mat(0x1c2a36, { metalness: 0.6, roughness: 0.1, transparent: true, opacity: 0.7 }), 40, 0, 62));
+      boat.add(boxMesh(30, 40, 50, mat(0x222222), -150, 0, 40));
+      boat.position.set(hw.van.o[0] - 230, hw.van.o[1], 0);
+      root.add(boat);
+      o.boat = boat;
+    } else {
       const van = new THREE.Group();
       const white = mat(0xe9ecef, { roughness: 0.4 });
-      van.add(boxMesh(220, 100, 90, white, -1050, -800, 67));
-      van.add(boxMesh(60, 96, 50, white, -930, -800, 45));
-      van.add(boxMesh(4, 70, 30, mat(0x223344, { metalness: 0.8, roughness: 0.1 }), -899, -800, 56));
-      for (const [x, y] of [[-1120, -850], [-980, -850], [-1120, -750], [-980, -750]]) {
+      const vx = hw.van.o[0], vy = hw.van.o[1] - 110;
+      van.add(boxMesh(220, 100, 90, white, vx, vy, 67));
+      van.add(boxMesh(60, 96, 50, white, vx + 120, vy, 45));
+      van.add(boxMesh(4, 70, 30, mat(0x223344, { metalness: 0.8, roughness: 0.1 }), vx + 151, vy, 56));
+      for (const [x, y] of [[-70, -50], [70, -50], [-70, 50], [70, 50]]) {
         const w = new THREE.Mesh(new THREE.CylinderGeometry(15, 15, 10, 16), mat(0x111111));
-        w.position.set(x, y, 15);
+        w.position.set(vx + x, vy + y, 15);
         van.add(w);
       }
       root.add(van);
+    }
+    {
       const ring = new THREE.Mesh(new THREE.RingGeometry(hw.van.r - 8, hw.van.r, 48), new THREE.MeshBasicMaterial({ color: 0x3ddc6a, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }));
       ring.position.set(hw.van.o[0], hw.van.o[1], 2);
       root.add(ring);
@@ -159,17 +192,40 @@ export class HeistView {
     for (const c of hw.carts) {
       const grp = new THREE.Group();
       const cash = new THREE.Group();
-      for (let k = 0; k < 6; k++) cash.add(boxMesh(18, 12, 7, mat(0x4f8a3a, { roughness: 0.9 }), -14 + (k % 3) * 14, k < 3 ? -6 : 6, 39 + ((k * 7) % 3) * 6));
+      if (hw.loot === 'painting') {
+        // a framed painting on an easel
+        const frame = mat(0xb08a3a, { metalness: 0.6, roughness: 0.4 });
+        cash.add(boxMesh(4, 70, 54, frame, 0, 0, 92));
+        const canvas = new THREE.Mesh(new THREE.BoxGeometry(5, 60, 44), paintingMat(c[0] + c[1]));
+        canvas.position.set(-1, 0, 92);
+        cash.add(canvas);
+        cash.rotation.z = Math.PI / 2;
+      } else if (hw.loot === 'gold') {
+        const gold = mat(0xe8b830, { metalness: 1, roughness: 0.25 });
+        for (let k = 0; k < 12; k++) cash.add(boxMesh(16, 8, 5, gold, -16 + (k % 3) * 16, (Math.floor(k / 3) % 2) * 9 - 4, 22 + Math.floor(k / 6) * 5));
+      } else for (let k = 0; k < 6; k++) cash.add(boxMesh(18, 12, 7, mat(0x4f8a3a, { roughness: 0.9 }), -14 + (k % 3) * 14, k < 3 ? -6 : 6, 39 + ((k * 7) % 3) * 6));
       grp.add(cash);
-      grp.position.set(c[0], c[1] + 52, 0);
+      const off = hw.cartDraw || [0, 52];
+      grp.position.set(c[0] + off[0], c[1] + off[1], 0);
       grp.userData.cash = cash;
       root.add(grp);
       o.carts.push(grp);
     }
     for (const b of hw.boxes) {
-      const handle = boxMesh(4, 10, 3, mat(0xd8c070, { metalness: 1, roughness: 0.3 }), b[0] < 300 ? b[0] - 18 : b[0] + 18, b[1], 70);
-      root.add(handle);
-      o.boxes.push(handle);
+      let item;
+      if (hw.boxLoot === 'case') {
+        // a glass case with a jewel on a velvet cushion
+        item = new THREE.Group();
+        item.add(boxMesh(30, 30, 3, mat(0x6a1020), b[0], b[1], 36));
+        const gem = new THREE.Mesh(new THREE.OctahedronGeometry(5), mat(0x7fe0ff, { metalness: 0.2, roughness: 0.05, emissive: 0x204060 }));
+        gem.position.set(b[0], b[1], 44);
+        item.add(gem);
+        item.add(new THREE.Mesh(new THREE.BoxGeometry(34, 34, 22), mat(0xbfe0ff, { transparent: true, opacity: 0.25, metalness: 0.8, roughness: 0.05 })).translateX(b[0]).translateY(b[1]).translateZ(47));
+      } else if (hw.boxLoot === 'safe') {
+        item = boxMesh(14, 3, 14, mat(0xb8b0a0, { metalness: 0.9, roughness: 0.25 }), b[0], b[1] - 27, 30); // the dial
+      } else item = boxMesh(4, 10, 3, mat(0xd8c070, { metalness: 1, roughness: 0.3 }), b[0] < 300 ? b[0] - 18 : b[0] + 18, b[1], 70);
+      root.add(item);
+      o.boxes.push(item);
     }
     // the alarm panels, the monitors, the hack panel
     for (const a of hw.alarms) root.add(boxMesh(10, 18, 24, new THREE.MeshStandardMaterial({ color: 0xaa1111, emissive: 0x660000 }), a[0] < 0 && Math.abs(a[0]) > 570 ? a[0] - 32 : a[0], a[1] > 400 ? a[1] + 34 : a[1], 100));
@@ -177,6 +233,7 @@ export class HeistView {
     g.scene.add(root);
     this.objs = o;
     this.hw = hw;
+    this.L = hw.labels || {};
     this.plan = hw.plan;
     this.onPlan?.(this.plan);
     $('heist-hud').hidden = false;
@@ -275,16 +332,16 @@ export class HeistView {
       case 'card': if (ev.id === me) say('GOT THE KEYCARD', 'Open the staff door'); g.sound.pickup('battery'); break;
       case 'obj':
         g.sound.pickup('battery');
-        if (ev.what === 'vault') say('THE VAULT IS OPEN', 'Bag the cash and get it to the van', 4);
+        if (ev.what === 'vault') say(this.L.opened, `${this.L.cart} and get it to ${this.L.ride}`, 4);
         else if (ev.what === 'cams') say('CAMERAS LOOPED', 'They see nothing now');
         else if (ev.what === 'wires') say('ALARM WIRING CUT', 'No alarm panels · police take longer');
         else if (ev.what === 'staff') say('STAFF DOOR OPEN', `${who(ev.id)} used the card`);
         else if (ev.what === 'drill') say('DRILL RUNNING', 'Keep it going · it jams', 3);
         break;
       case 'jam': say('THE DRILL JAMMED', 'Fix it at the vault', 3); g.sound.ui(240); break;
-      case 'cart': if (ev.id === me) say('BAG FULL', 'Get it to the van (G throws it)'); g.sound.pickup('ammo'); break;
+      case 'cart': if (ev.id === me) say('BAG FULL', this.L.bagFull); g.sound.pickup('ammo'); break;
       case 'box': g.sound.pickup('ammo'); break;
-      case 'secured': say('BAG SECURED', `${ev.n} in the van`); g.sound.pickup('megahealth'); break;
+      case 'secured': say('BAG SECURED', `${ev.n} in ${this.L.ride}`); g.sound.pickup('megahealth'); break;
       case 'civ': if (ev.s === 'calling') say('SOMEONE\'S CALLING THE POLICE', 'Stop them!', 3); break;
       case 'msg': say('', ev.text, 3); break;
       case 'over':
@@ -401,15 +458,16 @@ export class HeistView {
     const rows = [];
     if (s.ph === 1) {
       if (!masked && !s.al) rows.push(`<li>${done(false)} Look around unmasked · <b>G</b> to mask up</li>`);
-      rows.push(`<li>${done(anyCard)} Get a keycard <small>(manager's office, or the guard captain)</small></li>`);
-      rows.push(`<li>${done(s.doors[0])} Open the staff door</li>`);
-      if (!s.al) rows.push(`<li class="opt">${done(!s.cams)} Loop the cameras <small>(security office, optional)</small></li>`);
-      rows.push(`<li class="opt">${done(s.wires)} Cut the alarm wiring <small>(optional)</small></li>`);
-      rows.push(`<li>${done(s.vault[0])} ${s.al ? 'Drill' : 'Hack'} the vault${s.vault[0] ? '' : ` <b>${s.vault[1]}%</b>${s.vault[3] ? ' <b class="bad">JAMMED</b>' : ''}`}</li>`);
+      const L = this.L;
+      rows.push(`<li>${done(anyCard)} Get a keycard <small>(${esc(L.cardWhere)})</small></li>`);
+      rows.push(`<li>${done(s.doors[0])} ${esc(L.staff)}</li>`);
+      if (!s.al) rows.push(`<li class="opt">${done(!s.cams)} ${esc(L.cams)} <small>(${esc(L.camsWhere)}, optional)</small></li>`);
+      rows.push(`<li class="opt">${done(s.wires)} ${esc(L.wires)} <small>(optional)</small></li>`);
+      rows.push(`<li>${done(s.vault[0])} ${s.al ? 'Drill' : 'Crack'} ${esc(L.vault)}${s.vault[0] ? '' : ` <b>${s.vault[1]}%</b>${s.vault[3] ? ' <b class="bad">JAMMED</b>' : ''}`}</li>`);
       const bagged = s.carts.filter(Boolean).length;
-      rows.push(`<li>${done(bagged === s.carts.length)} Bag the cash <b>${bagged}/${s.carts.length}</b> · deposit boxes <b>${s.boxes.filter(Boolean).length}/${s.boxes.length}</b></li>`);
-      rows.push(`<li>${done(s.sec > 0)} Get bags to the van <b>${s.sec}</b> secured</li>`);
-      rows.push(`<li>${done(false)} Everyone to the van · hold <b>E</b> to go</li>`);
+      rows.push(`<li>${done(bagged === s.carts.length)} Take ${esc(L.carts)} <b>${bagged}/${s.carts.length}</b> · ${esc(L.boxes)} <b>${s.boxes.filter(Boolean).length}/${s.boxes.length}</b></li>`);
+      rows.push(`<li>${done(s.sec > 0)} Get bags to ${esc(L.ride)} <b>${s.sec}</b> secured</li>`);
+      rows.push(`<li>${done(false)} Everyone to ${esc(L.ride)} · hold <b>E</b> to go</li>`);
     }
     let status;
     if (s.ph !== 1) status = '';
@@ -417,7 +475,7 @@ export class HeistView {
     else if (s.pol) status = `<div class="st alarm">ALARM · police in ${s.pol}s</div>`;
     else if (s.as === 1) status = `<div class="st alarm">POLICE ASSAULT · wave ${s.wave} · ${s.asT}s</div>`;
     else status = `<div class="st break">POLICE REGROUPING · ${s.asT}s</div>`;
-    const take = s.sec * 30000 + s.cash - s.civ * 5000;
+    const take = s.sec * (this.hw?.bagCash || 30000) + s.cash - s.civ * 5000;
     const html = `${status}<ul>${rows.join('')}</ul><div class="take">${money(Math.max(0, take))}${s.ph === 1 ? ` · ${Math.floor(s.time / 60)}:${String(s.time % 60).padStart(2, '0')}` : ''}</div>`;
     if (html !== this.hudHtml) { this.hudHtml = html; $('hz-obj').innerHTML = html; }
     // the prompt: what E does here
@@ -426,7 +484,7 @@ export class HeistView {
     else if (s.ph === 1 && !masked) prompt = '<b>G</b> Put on your mask <small>(no weapons or objectives until you do)</small>';
     else if (bag) prompt = 'Carrying a bag · <b>G</b> throw it';
     if (bleed) prompt = `<span class="no">DOWNED · ${bleed}s · a teammate can hold E to revive you</span>`;
-    if (custody) prompt = custody < 0 ? '<span class="no">IN CUSTODY until the job ends</span>' : `<span class="no">IN CUSTODY · back at the van in ${custody}s</span>`;
+    if (custody) prompt = custody < 0 ? '<span class="no">IN CUSTODY until the job ends</span>' : `<span class="no">IN CUSTODY · back at ${esc(this.L.ride || 'the van')} in ${custody}s</span>`;
     if (prompt !== this.promptHtml) { this.promptHtml = prompt; $('hz-prompt').innerHTML = prompt; $('hz-prompt').hidden = !prompt; }
     // the detection arc: which way the trouble is, and how close they are to spotting you
     const arc = $('hz-detect');

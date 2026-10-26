@@ -126,37 +126,50 @@ export function flowField(g, sources, open = () => true) {
   return dist;
 }
 
-// Shortest path of nodes from a to b (A*), or null. maxVisit caps the work on huge maps.
+// Shortest path of nodes from a to b (A*, leaning a little toward the goal), or null. maxVisit caps the work.
+// The search arrays live on the graph and are reused (a stamp says which entries belong to this search), so a
+// path costs only the nodes it looks at, not the size of the map.
 export function findPath(g, a, b, open = () => true, maxVisit = 40000) {
   if (!a || !b) return null;
   const N = g.nodes.length;
-  const gs = new Float32Array(N).fill(Infinity), from = new Int32Array(N).fill(-1), closed = new Uint8Array(N);
-  const heap = [], f = new Float32Array(N);
-  const h = (n) => Math.hypot(n.x - b.x, n.y - b.y, n.z - b.z);
-  const push = (i) => { heap.push(i); let c = heap.length - 1; while (c > 0) { const p = (c - 1) >> 1; if (f[heap[p]] <= f[heap[c]]) break; [heap[p], heap[c]] = [heap[c], heap[p]]; c = p; } };
+  let S = g._search;
+  if (!S || S.gs.length !== N) S = g._search = { gs: new Float32Array(N), f: new Float32Array(N), from: new Int32Array(N), seen: new Uint32Array(N), closed: new Uint32Array(N), heap: new Int32Array(N * 4 + 16), stamp: 0 };
+  const stamp = ++S.stamp;
+  const { gs, f, from, seen, closed } = S;
+  let heap = S.heap, size = 0;
+  const bx = b.x, by = b.y, bz = b.z;
+  const h = (n) => Math.hypot(n.x - bx, n.y - by, n.z - bz) * 1.25;
+  const push = (i) => {
+    if (size >= heap.length) { const bigger = new Int32Array(heap.length * 2); bigger.set(heap); heap = S.heap = bigger; }
+    let c = size++;
+    heap[c] = i;
+    while (c > 0) { const p = (c - 1) >> 1; if (f[heap[p]] <= f[heap[c]]) break; const t = heap[p]; heap[p] = heap[c]; heap[c] = t; c = p; }
+  };
   const pop = () => {
-    const top = heap[0], last = heap.pop();
-    if (heap.length) { heap[0] = last; let c = 0; for (;;) { const l = c * 2 + 1, r = l + 1; let m = c; if (l < heap.length && f[heap[l]] < f[heap[m]]) m = l; if (r < heap.length && f[heap[r]] < f[heap[m]]) m = r; if (m === c) break; [heap[m], heap[c]] = [heap[c], heap[m]]; c = m; } }
+    const top = heap[0];
+    heap[0] = heap[--size];
+    let c = 0;
+    for (;;) { const l = c * 2 + 1, r = l + 1; let m = c; if (l < size && f[heap[l]] < f[heap[m]]) m = l; if (r < size && f[heap[r]] < f[heap[m]]) m = r; if (m === c) break; const t = heap[m]; heap[m] = heap[c]; heap[c] = t; c = m; }
     return top;
   };
-  gs[a.i] = 0; f[a.i] = h(a); push(a.i);
+  seen[a.i] = stamp; gs[a.i] = 0; from[a.i] = -1; f[a.i] = h(a); push(a.i);
   let visited = 0;
-  while (heap.length && visited++ < maxVisit) {
+  while (size && visited++ < maxVisit) {
     const i = pop();
-    if (closed[i]) continue;
+    if (closed[i] === stamp) continue;
     if (i === b.i) {
       const path = [];
       for (let c = i; c !== -1; c = from[c]) path.push(g.nodes[c]);
       return path.reverse();
     }
-    closed[i] = 1;
+    closed[i] = stamp;
     const n = g.nodes[i], ed = g.edgeDoor && g.edgeDoor[i];
     for (let k = 0; k < n.n.length; k++) {
       const j = n.n[k];
-      if (closed[j] || (ed && ed[k] >= 0 && !open(ed[k]))) continue;
+      if (closed[j] === stamp || (ed && ed[k] >= 0 && !open(ed[k]))) continue;
       const m = g.nodes[j];
       const cost = gs[i] + Math.hypot(m.x - n.x, m.y - n.y) + Math.max(0, m.z - n.z);
-      if (cost < gs[j]) { gs[j] = cost; from[j] = i; f[j] = cost + h(m); push(j); }
+      if (seen[j] !== stamp || cost < gs[j]) { seen[j] = stamp; gs[j] = cost; from[j] = i; f[j] = cost + h(m); push(j); }
     }
   }
   return null;

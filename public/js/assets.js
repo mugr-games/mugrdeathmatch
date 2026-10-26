@@ -177,12 +177,58 @@ function orientWeapon(holder, size) {
 
 // ------------------------------------------------------------------ stand-ins (until the real files exist)
 // Built from simple parts in the game's frame: +X forward (muzzle), +Z up, sized in game units.
+// Surface detail drawn once into small textures: stippled polymer, brushed and parkerized steel with fine
+// scratches, wood grain, woven fabric. Each becomes a normal map (from a height field) and a roughness map.
+const DETAIL = new Map();
+function detail(kind) {
+  if (DETAIL.has(kind)) return DETAIL.get(kind);
+  const S = 128, hgt = new Float32Array(S * S), alb = new Float32Array(S * S);
+  let seed = { stipple: 3, brushed: 7, park: 11, grain: 13, fabric: 17 }[kind] || 1;
+  const R = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const lattice = Array.from({ length: 32 * 32 }, R);
+  const vn = (x, y) => { const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, L = (a, b) => lattice[((a & 31) * 32 + (b & 31))]; const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy); return L(i, j) * (1 - sx) * (1 - sy) + L(i + 1, j) * sx * (1 - sy) + L(i, j + 1) * (1 - sx) * sy + L(i + 1, j + 1) * sx * sy; };
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const k = y * S + x, u = (x / S) * 32, v = (y / S) * 32;
+    let h = 0.5, a = 1;
+    if (kind === 'stipple') { h = vn(u * 2, v * 2) * 0.6 + R() * 0.4; a = 0.9 + 0.1 * vn(u * 0.3, v * 0.3); }
+    else if (kind === 'brushed') { h = vn(u * 0.08, v * 6) * 0.7 + R() * 0.15; a = 0.85 + 0.15 * vn(u * 0.2, v * 0.4); }
+    else if (kind === 'park') { h = vn(u * 3, v * 3) * 0.5 + R() * 0.5; a = 0.85 + 0.15 * vn(u * 0.25, v * 0.25); }
+    else if (kind === 'grain') { const w = v * 0.35 + vn(u * 0.15, v * 0.15) * 4; h = 0.5 + 0.5 * Math.sin(w * 6 + vn(u * 2, v * 0.3) * 2); a = 0.75 + 0.25 * h; }
+    else if (kind === 'fabric') { h = (Math.sin(u * 12) * Math.sin(v * 12) * 0.5 + 0.5) * 0.7 + R() * 0.3; a = 0.88 + 0.12 * vn(u * 0.4, v * 0.4); }
+    hgt[k] = h; alb[k] = a;
+  }
+  // scratches on metal
+  if (kind === 'brushed' || kind === 'park') for (let n = 0; n < 40; n++) { let x = R() * S, y = R() * S; const a = R() * Math.PI, len = 6 + R() * 30; for (let t = 0; t < len; t++) { x += Math.cos(a); y += Math.sin(a); const k = ((y | 0) & (S - 1)) * S + ((x | 0) & (S - 1)); hgt[k] -= 0.35; alb[k] = Math.min(1.15, alb[k] + 0.3); } }
+  const nc = document.createElement('canvas'), rc = document.createElement('canvas'), ac = document.createElement('canvas');
+  for (const c of [nc, rc, ac]) c.width = c.height = S;
+  const nd = nc.getContext('2d').createImageData(S, S), rd = rc.getContext('2d').createImageData(S, S), ad = ac.getContext('2d').createImageData(S, S);
+  const H = (x, y) => hgt[((y + S) % S) * S + ((x + S) % S)];
+  const strength = kind === 'grain' ? 1.5 : kind === 'brushed' ? 2 : 3;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = (H(x + 1, y) - H(x - 1, y)) * strength, dy = (H(x, y + 1) - H(x, y - 1)) * strength;
+    const l = Math.hypot(dx, dy, 1), k = (y * S + x) * 4;
+    nd.data[k] = (-dx / l * 0.5 + 0.5) * 255; nd.data[k + 1] = (-dy / l * 0.5 + 0.5) * 255; nd.data[k + 2] = (1 / l * 0.5 + 0.5) * 255; nd.data[k + 3] = 255;
+    const r = Math.max(0, Math.min(255, (0.55 + (0.5 - hgt[y * S + x]) * 0.5) * 255));
+    rd.data[k] = rd.data[k + 1] = rd.data[k + 2] = r; rd.data[k + 3] = 255;
+    const a = Math.max(0, Math.min(255, alb[y * S + x] * 220));
+    ad.data[k] = ad.data[k + 1] = ad.data[k + 2] = a; ad.data[k + 3] = 255;
+  }
+  nc.getContext('2d').putImageData(nd, 0, 0); rc.getContext('2d').putImageData(rd, 0, 0); ac.getContext('2d').putImageData(ad, 0, 0);
+  const tex = (c, srgb) => { const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2, 2); if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
+  const out = { normal: tex(nc), rough: tex(rc), albedo: tex(ac, true) };
+  DETAIL.set(kind, out);
+  return out;
+}
+function detailed(kind, o, scale = 0.6) {
+  const d = detail(kind);
+  return new THREE.MeshStandardMaterial({ ...o, normalMap: d.normal, normalScale: new THREE.Vector2(scale, scale), roughnessMap: d.rough, map: d.albedo });
+}
 const M = {
-  polymer: () => new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.75, metalness: 0.05 }),
-  steel: () => new THREE.MeshStandardMaterial({ color: 0x6c7178, roughness: 0.32, metalness: 0.9 }),
-  dark: () => new THREE.MeshStandardMaterial({ color: 0x2f3237, roughness: 0.4, metalness: 0.75 }),
-  wood: () => new THREE.MeshStandardMaterial({ color: 0x6e4b2c, roughness: 0.65, metalness: 0 }),
-  olive: () => new THREE.MeshStandardMaterial({ color: 0x4e5a3a, roughness: 0.8, metalness: 0.05 }),
+  polymer: () => detailed('stipple', { color: 0x2a2d33, roughness: 0.85, metalness: 0.05 }, 0.5),
+  steel: () => detailed('brushed', { color: 0x8a9098, roughness: 0.42, metalness: 0.92 }, 0.35),
+  dark: () => detailed('park', { color: 0x3a3d43, roughness: 0.7, metalness: 0.8 }, 0.45),
+  wood: () => detailed('grain', { color: 0x8a5e36, roughness: 0.7, metalness: 0 }, 0.4),
+  olive: () => detailed('fabric', { color: 0x5a6644, roughness: 0.9, metalness: 0.05 }, 0.6),
   paint: (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, metalness: 0.2 }),
   glass: () => new THREE.MeshStandardMaterial({ color: 0x0b1820, roughness: 0.05, metalness: 0.2, emissive: new THREE.Color(0.1, 0.35, 0.5), emissiveIntensity: 1.5 }),
 };
@@ -257,6 +303,14 @@ const BUILD = {
     triggerGuard(g, 0.2, -0.6, poly);
     g.add(part(new THREE.BoxGeometry(0.5, 0.6, 0.6), steel, 4.4, 0, 2.95)); // front sight
     g.add(part(new THREE.BoxGeometry(0.6, 1.2, 0.6), steel, -3.2, 0, 2.95)); // rear sight
+    const white = new THREE.MeshBasicMaterial({ color: 0xf0f0e8 });
+    g.add(part(new THREE.BoxGeometry(0.62, 0.22, 0.22), white, 4.4, 0, 3.05)); // sight dots
+    for (const s of [-0.38, 0.38]) g.add(part(new THREE.BoxGeometry(0.62, 0.2, 0.2), white, -3.2, s, 3.05));
+    g.add(part(new THREE.BoxGeometry(2.4, 0.1, 1), M.polymer(), 1.2, 1.02, 1.85)); // ejection port
+    g.add(part(new THREE.BoxGeometry(1.6, 0.25, 0.4), M.steel(), -0.4, 1.0, 0.75)); // slide stop
+    g.add(part(rbox(2.9, 2.4, 0.5, 0.2), poly, -3.4, 0, -4.9, 0, -0.28, 0)); // magazine baseplate
+    for (let i = 0; i < 3; i++) g.add(part(new THREE.BoxGeometry(0.4, 1.95, 0.25), steel, 2 + i * 0.7, 0, -0.75)); // accessory rail
+    g.add(part(new THREE.CircleGeometry(0.28, 12).rotateY(Math.PI / 2), M.polymer(), 6.12, 0, 1.6)); // the bore
   },
   revolver(g) {
     const steel = M.steel(), wood = M.wood(), dark = M.dark();
@@ -284,6 +338,9 @@ const BUILD = {
     g.add(part(rbox(5, 1.2, 2.2, 0.3), poly, -8.5, 0, 0.6)); // folded stock
     g.add(part(new THREE.BoxGeometry(2.4, 1.6, 1.6), steel, -1, 0, 3.4)); // red dot
     g.add(part(new THREE.CircleGeometry(0.55, 12).rotateY(Math.PI / 2), M.glass(), 0.25, 0, 3.4));
+    g.add(part(new THREE.BoxGeometry(1.4, 1.4, 0.6), steel, 3.5, 1.5, 1.9)); // charging handle
+    g.add(part(new THREE.CylinderGeometry(0.35, 0.35, 0.4, 8).rotateX(Math.PI / 2), M.steel(), -2.2, 1.4, 0.6)); // selector
+    g.add(part(new THREE.TorusGeometry(0.6, 0.15, 6, 12), steel, -10.8, 0, 1.4, Math.PI / 2, 0, 0)); // sling loop
   },
   rifle(g) {
     const poly = M.polymer(), steel = M.dark(), acc = M.paint(0x3f6f8f);
@@ -292,11 +349,19 @@ const BUILD = {
     for (let i = 0; i < 4; i++) g.add(part(new THREE.BoxGeometry(1.2, 3.3, 0.5), steel, 4.5 + i * 2.2, 0, 1.6)); // vents
     barrel(g, 0.55, 6, 13, 0.9, steel);
     rail(g, -4, 14, 2.6, steel);
-    g.add(part(rbox(2, 1.8, 7, 0.3), steel, 2.5, 0, -3.6, 0, 0.18, 0)); // curved-ish magazine
+    // a curved magazine: segments tipping forward as they go down
+    for (let i = 0; i < 4; i++) g.add(part(rbox(2.1, 1.8, 2.1, 0.25), steel, 2.5 + i * 0.55, 0, -1.3 - i * 1.9, 0, 0.12 + i * 0.09, 0));
     grip(g, -2.4, -0.9, 4.8, poly);
     triggerGuard(g, -0.4, -1, poly);
-    g.add(part(rbox(9, 2.2, 3.8, 0.6), poly, -10, 0, 0.2)); // stock
+    g.add(part(tube(1.0, 7), M.dark(), -7.5, 0, 1.4)); // buffer tube
+    g.add(part(rbox(5.5, 2.2, 3.8, 0.6), poly, -11.5, 0, 0.6)); // adjustable stock
+    g.add(part(rbox(1.2, 2.3, 4.4, 0.4), M.polymer(), -14.4, 0, 0.4)); // butt pad
     optic(g, 1, 4.6, 6, 1.0, steel, M.glass());
+    g.add(part(new THREE.CylinderGeometry(0.55, 0.55, 0.6, 10).rotateZ(Math.PI / 2), steel, -2.6, 1.55, 1.6)); // forward assist
+    g.add(part(new THREE.BoxGeometry(1.6, 3.4, 0.6), steel, -5.2, 0, 2.3)); // charging handle
+    g.add(part(new THREE.BoxGeometry(3, 0.1, 1.1), M.polymer(), 0.5, 1.42, 1.3)); // dust cover
+    g.add(part(tube(0.85, 2.4, 10), steel, 19.6, 0, 0.9)); // muzzle brake
+    for (const s of [-1, 1]) g.add(part(new THREE.BoxGeometry(1.2, 0.2, 0.5), M.polymer(), 19.6, s * 0.8, 0.9)); // its ports
   },
   shotgun(g) {
     const steel = M.dark(), wood = M.wood();
@@ -308,6 +373,11 @@ const BUILD = {
     triggerGuard(g, -4.5, -0.8, steel);
     g.add(part(rbox(11, 2.2, 3.6, 0.8), wood, -12.5, 0, -0.4, 0, 0.12, 0)); // stock
     g.add(part(new THREE.SphereGeometry(0.4, 8, 6), steel, 21.5, 0, 2.5)); // bead sight
+    // spare shells on a side saddle: red hulls with brass heads
+    const hull = new THREE.MeshStandardMaterial({ color: 0xa8231c, roughness: 0.55 }), brass = new THREE.MeshStandardMaterial({ color: 0xc9a04a, metalness: 0.9, roughness: 0.3 });
+    g.add(part(rbox(5, 0.5, 2.4, 0.2), M.polymer(), -3.6, 1.35, 1.0));
+    for (let i = 0; i < 4; i++) { g.add(part(new THREE.CylinderGeometry(0.42, 0.42, 2.2, 10), hull, -5.2 + i * 1.05, 1.75, 1.15)); g.add(part(new THREE.CylinderGeometry(0.44, 0.44, 0.5, 10), brass, -5.2 + i * 1.05, 1.75, -0.05)); }
+    g.add(part(new THREE.BoxGeometry(3, 1.4, 0.1), M.polymer(), -3.2, 0, -0.72)); // loading port
   },
   crossbow(g) {
     const poly = M.polymer(), steel = M.steel(), acc = M.paint(0x8a3324);
@@ -339,6 +409,11 @@ const BUILD = {
     g.add(part(rbox(2, 1.6, 4, 0.3), steel, 1.5, 0, -2.3)); // box magazine
     optic(g, 1, 4.4, 13, 1.25, steel, M.glass());
     for (const sgn of [-1, 1]) g.add(part(new THREE.CylinderGeometry(0.3, 0.3, 7, 6), steel, 12, sgn * 1.4, -2.8, sgn * 0.25, 0, 0)); // bipod legs
+    g.add(part(new THREE.CylinderGeometry(0.7, 0.7, 1.2, 12), M.steel(), 1, 0, 6.1)); // elevation turret
+    g.add(part(new THREE.CylinderGeometry(0.7, 0.7, 1.2, 12).rotateX(Math.PI / 2), M.steel(), 1, 1.85, 4.4)); // windage turret
+    g.add(part(tube(1.0, 3, 10), steel, 33, 0, 1.4)); // muzzle brake
+    for (let i = 0; i < 3; i++) for (const s of [-1, 1]) g.add(part(new THREE.BoxGeometry(0.5, 0.2, 0.6), M.polymer(), 32 + i * 0.9, s * 0.95, 1.4));
+    g.add(part(new THREE.SphereGeometry(0.75, 10, 8), steel, 0.2, 2.6, 1.0)); // bolt knob
   },
   rocket(g) {
     const tube1 = M.olive(), steel = M.dark(), acc = M.paint(0x9a8a4a);
@@ -459,8 +534,19 @@ const BUILD = {
     }
   },
   crate(g) {
-    g.add(part(rbox(40, 40, 40, 2), M.wood(), 0, 0, 20));
-    for (const z of [3, 37]) g.add(part(rbox(41, 41, 3, 0.6), M.dark(), 0, 0, z));
+    // a wooden crate: a dark core, planks on every face with gaps between them, cross braces, steel corners
+    const wood = M.wood(), dark = M.dark();
+    g.add(part(new THREE.BoxGeometry(38, 38, 38), new THREE.MeshStandardMaterial({ color: 0x2a1c10, roughness: 1 }), 0, 0, 20));
+    for (let i = 0; i < 4; i++) {
+      const z = 4.8 + i * 9.6;
+      for (const s of [-1, 1]) { g.add(part(rbox(39.6, 1.6, 8.8, 0.4), wood, 0, s * 19.2, z)); g.add(part(rbox(1.6, 39.6, 8.8, 0.4), wood, s * 19.2, 0, z)); }
+    }
+    for (let i = 0; i < 4; i++) g.add(part(rbox(9.4, 39.6, 1.6, 0.4), wood, -14.4 + i * 9.6, 0, 39.2));
+    for (const s of [-1, 1]) {
+      const brace = part(rbox(50, 1.2, 4, 0.3), wood, 0, s * 20.2, 20); brace.rotation.x = 0; brace.rotation.y = 0.78; g.add(brace);
+      const brace2 = part(rbox(1.2, 50, 4, 0.3), wood, s * 20.2, 0, 20); brace2.rotation.x = 0.78; g.add(brace2);
+    }
+    for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [1.5, 38.5]) g.add(part(new THREE.BoxGeometry(5, 5, 3), dark, x * 18.6, y * 18.6, z));
   },
   barrels(g) {
     const b = part(new THREE.CylinderGeometry(12, 12, 36, 24).rotateX(Math.PI / 2), M.paint(0x3d6e9e), 0, 0, 18);

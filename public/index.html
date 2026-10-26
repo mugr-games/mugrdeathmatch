@@ -336,6 +336,11 @@ body.touch #netinfo { display: none; }
 #pl-result.win { border-left: 3px solid #3ddc6a; } #pl-result.lose { border-left: 3px solid #e0473a; }
 @media (max-width: 760px) { .pl-body { grid-template-columns: 1fr; } }
 #heist-hud { position: absolute; inset: 0; pointer-events: none; }
+#hz-jobs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 14px; }
+#hz-jobs button { text-align: left; padding: 10px; border-radius: 6px; background: var(--panel-dark); border: 2px solid rgba(255,255,255,.1); color: #fff; cursor: pointer; font: inherit; }
+#hz-jobs button.on { border-color: var(--accent); background: rgba(255,176,0,.1); }
+#hz-jobs b { display: block; margin-bottom: 4px; } #hz-jobs small { color: var(--text-dim); font-size: 11px; line-height: 1.35; }
+@media (max-width: 600px) { #hz-jobs { grid-template-columns: 1fr; } }
 /* free roam */
 #fp-hud { position: absolute; inset: 0; pointer-events: none; font-family: var(--ui); }
 #fp-money { position: absolute; right: 20px; top: 54px; text-align: right; }
@@ -822,8 +827,13 @@ html, body { font: 14px/1.45 var(--ui); }
 </div>
 
 <div class="dialog" id="dlg-heist" hidden role="dialog" aria-labelledby="dlg-heist-title">
-  <h2 id="dlg-heist-title">The Bank Job</h2>
-  <p>Rob a small branch bank with a crew of 2 to 4. Plan it, pick your roles, then go in quietly or loud: get a keycard, open the staff door, crack the vault, bag the cash and get it to the van. The guards notice things, the staff call the police, and the police come in waves.</p>
+  <h2 id="dlg-heist-title">Heists</h2>
+  <p>Pick a job, get a crew of 2 to 4, plan it, then go in quietly or loud. Guards notice things, staff call the police, and the police come in waves.</p>
+  <div id="hz-jobs">
+    <button type="button" data-job="bank" class="on"><b>The Bank Job</b><small>A branch bank on a busy street. Keycard, staff door, the vault, cash carts and deposit boxes, out to the van.</small></button>
+    <button type="button" data-job="arthouse"><b>The Art House</b><small>A museum. Slip through the galleries, into the strongroom: cut the paintings from their frames and smash the jewel cases.</small></button>
+    <button type="button" data-job="mansion"><b>The Compound</b><small>A walled estate by the sea. Come ashore, cut through the drainage grate, past the patrols to the gold vault, and back to the boat.</small></button>
+  </div>
   <div class="hz-choices">
     <button type="button" class="btn primary" id="hz-find">Find a crew</button>
     <button type="button" class="btn" id="hz-host">Host a private crew</button>

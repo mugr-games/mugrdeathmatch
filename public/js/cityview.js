@@ -173,10 +173,10 @@ function parts() {
   const lam = (c, o = {}) => (P ? new THREE.MeshLambertMaterial({ color: c, ...o }) : new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, ...o }));
   PARTS = {
     trunk: new THREE.CylinderGeometry(0.6, 1, 1, 6).rotateX(Math.PI / 2).translate(0, 0, 0.5),
-    oak: new THREE.IcosahedronGeometry(1, 1),
-    pine: new THREE.ConeGeometry(1, 1, 8).rotateX(Math.PI / 2).translate(0, 0, 0.5),
-    palm: new THREE.ConeGeometry(1, 0.25, 7).rotateX(-Math.PI / 2),
-    barkM: lam(0x5a4030), leafM: lam(0xffffff), pineM: lam(0x24402a), palmM: lam(0x4a7a2a),
+    oak: leafy(),
+    pine: pine(),
+    palm: palmCrown(),
+    barkM: lam(0x5a4030), leafM: lam(0xffffff, { vertexColors: true }), pineM: lam(0x2a4a2e, { vertexColors: true }), palmM: lam(0x5a8a32, { vertexColors: true }),
     pole: new THREE.CylinderGeometry(3, 4, 300, 6).rotateX(Math.PI / 2).translate(0, 0, 150),
     arm: new THREE.BoxGeometry(70, 4, 4).translate(-35, 0, 296),
     head: new THREE.BoxGeometry(24, 12, 5).translate(-66, 0, 292),
@@ -190,6 +190,42 @@ function parts() {
   return PARTS;
 }
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _c = new THREE.Color(), _e = new THREE.Euler();
+// tree shapes in a unit box (scaled per tree): lumpy, with shade toward the bottom and the inside (vertex colours)
+function shade(geo, lo = 0.55) {
+  geo.computeBoundingBox();
+  const b = geo.boundingBox, p = geo.attributes.position, c = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) { const k = lo + (1 - lo) * ((p.getZ(i) - b.min.z) / Math.max(1e-6, b.max.z - b.min.z)); c[i * 3] = c[i * 3 + 1] = c[i * 3 + 2] = k; }
+  geo.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  return geo;
+}
+function lumpy(geo, amt, seed) {
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); const n = 1 + amt * Math.sin(x * 7.1 + seed) * Math.sin(y * 6.3 + seed * 2) * Math.sin(z * 5.7 + seed * 3); p.setXYZ(i, x * n, y * n, z * n); }
+  geo.computeVertexNormals();
+  return geo;
+}
+function leafy() {
+  const blobs = [[0, 0, 0, 1], [0.45, 0.2, -0.15, 0.7], [-0.4, 0.3, -0.1, 0.68], [0.1, -0.45, -0.12, 0.7], [-0.15, 0, 0.45, 0.62]];
+  const geos = blobs.map(([x, y, z, r], k) => lumpy(new THREE.IcosahedronGeometry(r, 2), 0.12, k).translate(x, y, z).toNonIndexed());
+  geos.forEach((g) => g.deleteAttribute('uv'));
+  return shade(mergeGeometries(geos), 0.45);
+}
+function pine() {
+  const geos = [];
+  for (let k = 0; k < 4; k++) { const g = new THREE.ConeGeometry(1 - k * 0.2, 0.42, 10).rotateX(Math.PI / 2).translate(0, 0, 0.2 + k * 0.22); lumpy(g, 0.06, k); geos.push(g.toNonIndexed()); }
+  geos.forEach((g) => g.deleteAttribute('uv'));
+  return shade(mergeGeometries(geos), 0.5);
+}
+function palmCrown() {
+  const geos = [];
+  for (let k = 0; k < 8; k++) {
+    const leaf = new THREE.SphereGeometry(1, 8, 4).scale(0.9, 0.16, 0.05).translate(0.85, 0, -0.18);
+    leaf.rotateY(0.35).rotateZ((k / 8) * Math.PI * 2);
+    geos.push(leaf.toNonIndexed());
+  }
+  geos.forEach((g) => g.deleteAttribute('uv'));
+  return shade(mergeGeometries(geos), 0.6);
+}
 
 // ------------------------------------------------------------------ the view
 export class CityView {

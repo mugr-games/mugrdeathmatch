@@ -4,6 +4,7 @@ import { pmove, newPlayerState } from '../public/js/pmove.js';
 import { CODE_MAPS } from '../public/js/mapdefs.js';
 const HULL = [[-16, -16, 0], [16, 16, 72]];
 for (const [id, m] of Object.entries(CODE_MAPS)) {
+  if (m.stream) continue; // free roam is built a cell at a time (tools/check_city_same.mjs)
   const w = new BoxWorld(m.boxes, m.pads);
   const issues = [];
   const stuck = (o, mins = HULL[0], maxs = HULL[1]) => w.trace(o, o, mins, maxs).startsolid;

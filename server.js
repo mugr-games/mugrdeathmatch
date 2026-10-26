@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { BoxWorld, MASK_SHOT } from './public/js/collide.js';
-import { CODE_MAPS, MODE_MAPS } from './public/js/mapdefs.js';
+import { CODE_MAPS, MODE_MAPS, HEIST_MAPS } from './public/js/mapdefs.js';
 import { pmove, newPlayerState, BTN } from './public/js/pmove.js';
 import { WEAPONS, WEAPON_INDEX, ITEMS, LOADOUTS, ITEM_ROTATION, ZOMBIE } from './public/js/weapons.js';
 import { initLoadout, zombieLoadout, giveWeapon, weaponThink, spreadDirs, eyePos, viewDir, hitTest, applyDamage, fallDamage, packOwn, MAX_HP, MAX_ARMOR } from './public/js/sim.js';
@@ -107,7 +107,7 @@ function sanitize(s = {}) {
     name: clean(s.name).slice(0, 32) || 'Untitled game',
     mode,
     caplimit: Math.round(num(s.caplimit, 1, 30, mode === 'soccer' ? 5 : mode === 'mugrball' ? 10 : 3)),
-    map: MODE_MAPS[mode] || (s.map === 'rotation' || MAP_IDS.includes(s.map) ? s.map : 'rotation'),
+    map: mode === 'heist' ? (HEIST_MAPS.includes(s.map) ? s.map : 'bank') : MODE_MAPS[mode] || (s.map === 'rotation' || MAP_IDS.includes(s.map) ? s.map : 'rotation'),
     maxPlayers: mode === 'heist' ? 4 : Math.round(num(s.maxPlayers, 2, 16, mode === 'freeplay' ? 16 : 12)),
     fraglimit: mode === 'heist' || mode === 'freeplay' ? 0 : Math.round(num(s.fraglimit, 0, 200, 30)),
     // infection always has a round timer (the survivors win when it runs out); zombies goes on until everyone's down
@@ -1665,10 +1665,11 @@ wss.on('connection', (ws, req) => {
         } else {
           const key = String(m.room || '').trim().toUpperCase();
           if (key === 'HEIST') {
-            R = [...rooms.values()].find((r) => r.heist && !r.settings.private && r.heist.phase === 'planning' && humanCount(r) < 4);
+            const job = HEIST_MAPS.includes(m.job) ? m.job : 'bank';
+            R = [...rooms.values()].find((r) => r.heist && !r.settings.private && r.settings.map === job && r.heist.phase === 'planning' && humanCount(r) < 4);
             if (!R) {
               if (rooms.size >= MAX_ROOMS) return fail('The server has too many games running. Try again in a minute.');
-              R = createRoom({ mode: 'heist', name: 'Heist crew' });
+              R = createRoom({ mode: 'heist', name: 'Heist crew', map: job });
             }
           } else if (key === 'FREEROAM') {
             R = [...rooms.values()].filter((r) => r.fp && !r.settings.private && humanCount(r) < r.settings.maxPlayers).sort((a, b) => humanCount(b) - humanCount(a))[0];

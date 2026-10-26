@@ -22,8 +22,10 @@ export class HeistMenu {
     this.plan = null;
     $('btn-heist').onclick = () => { this.o.game()?.sound.start(); $('hz-err').textContent = ''; $('dlg-heist').hidden = false; };
     $('hz-close').onclick = () => { $('dlg-heist').hidden = true; };
-    $('hz-find').onclick = () => this.o.play({ t: 'join', room: 'HEIST' }, $('hz-err'));
-    $('hz-host').onclick = () => this.o.play({ t: 'create', settings: { mode: 'heist', private: true, name: `${this.o.name()}'s crew` } }, $('hz-err'));
+    this.job = 'bank';
+    for (const b of document.querySelectorAll('#hz-jobs button')) b.onclick = () => { this.job = b.dataset.job; for (const o of document.querySelectorAll('#hz-jobs button')) o.classList.toggle('on', o === b); };
+    $('hz-find').onclick = () => this.o.play({ t: 'join', room: 'HEIST', job: this.job }, $('hz-err'));
+    $('hz-host').onclick = () => this.o.play({ t: 'create', settings: { mode: 'heist', map: this.job, private: true, name: `${this.o.name()}'s crew` } }, $('hz-err'));
     $('hz-code-form').onsubmit = (e) => {
       e.preventDefault();
       const code = $('hz-code').value.trim().toUpperCase();
@@ -84,6 +86,7 @@ export class HeistMenu {
     if (!p || !g) return;
     const host = p.host === g.myId, me = this.mine();
     $('pl-code').textContent = `${p.private ? 'private crew' : 'public crew'} · code ${p.code}`;
+    $('dlg-plan-title').firstChild.textContent = `Planning: ${p.title || 'The Bank Job'} `;
     const rows = p.crew.map((c) => `<li><b>${esc(c.name)}</b>${c.id === p.host ? ' <small>(host)</small>' : ''} <span class="role">${esc(ROLES[c.role]?.[0] || '')}</span><span class="rd${c.ready || c.id === p.host ? ' on' : ''}">${c.id === p.host ? 'HOST' : c.ready ? 'READY' : 'not ready'}</span></li>`);
     for (let i = p.crew.length; i < 4; i++) rows.push(`<li class="empty">${i < 2 ? 'Waiting for a robber…' : 'Open slot'}</li>`);
     $('pl-crew').innerHTML = rows.join('');
@@ -120,9 +123,9 @@ export class HeistMenu {
 
   // the blueprint: walls from the map, then guards and their routes, cameras and what you'll need
   board() {
-    const def = CODE_MAPS.bank, H = def.heist, c = $('pl-board'), x = c.getContext('2d');
+    const def = CODE_MAPS[this.plan?.map] || CODE_MAPS.bank, H = def.heist, c = $('pl-board'), x = c.getContext('2d');
     const d = ['easy', 'normal', 'hard'].indexOf(this.plan?.difficulty || 'normal');
-    const lo = [-1250, -1000], hi = [900, 560];
+    const lo = H.board?.lo || [-1250, -1000], hi = H.board?.hi || [900, 560];
     const sc = Math.min(c.width / (hi[0] - lo[0]), c.height / (hi[1] - lo[1]));
     const X = (v) => (v - lo[0]) * sc, Y = (v) => c.height - (v - lo[1]) * sc;
     x.fillStyle = '#0e2a4a';
@@ -130,8 +133,8 @@ export class HeistMenu {
     // a faint grid
     x.strokeStyle = 'rgba(120,170,230,.12)';
     x.lineWidth = 1;
-    for (let gx = -1200; gx <= 900; gx += 100) { x.beginPath(); x.moveTo(X(gx), 0); x.lineTo(X(gx), c.height); x.stroke(); }
-    for (let gy = -1000; gy <= 600; gy += 100) { x.beginPath(); x.moveTo(0, Y(gy)); x.lineTo(c.width, Y(gy)); x.stroke(); }
+    for (let gx = Math.ceil(lo[0] / 100) * 100; gx <= hi[0]; gx += 100) { x.beginPath(); x.moveTo(X(gx), 0); x.lineTo(X(gx), c.height); x.stroke(); }
+    for (let gy = Math.ceil(lo[1] / 100) * 100; gy <= hi[1]; gy += 100) { x.beginPath(); x.moveTo(0, Y(gy)); x.lineTo(c.width, Y(gy)); x.stroke(); }
     // walls and furniture (tall things solid, low things outlined)
     for (const b of def.boxes) {
       if (b.mat === 'clip' || b.maxs[2] <= 1 || b.mins[2] > 160) continue;
@@ -145,7 +148,7 @@ export class HeistMenu {
     // rooms
     x.fillStyle = 'rgba(200,225,255,.45)';
     x.font = 'italic 11px system-ui, sans-serif';
-    for (const [t, px, py] of [['LOBBY', -80, -380], ['TELLERS', -80, -90], ['CORRIDOR', -80, 70], ['SECURITY', -560, 470], ['MANAGER', -200, 470], ['VAULT', 300, 470], ['STREET', -300, -820], ['ALLEY', 700, 300]]) x.fillText(t, X(px), Y(py));
+    for (const [t, px, py] of H.board?.rooms || [['LOBBY', -80, -380], ['TELLERS', -80, -90], ['CORRIDOR', -80, 70], ['SECURITY', -560, 470], ['MANAGER', -200, 470], ['VAULT', 300, 470], ['STREET', -300, -820], ['ALLEY', 700, 300]]) x.fillText(t, X(px), Y(py));
     // cameras: little cones
     for (const cam of H.cameras) {
       if ((cam.min || 0) > d) continue;
@@ -176,14 +179,14 @@ export class HeistMenu {
     for (const s of H.staff) if ((s.min || 0) <= d) dot(s.o[0], s.o[1], 'rgba(255,255,255,.7)', 3);
     // what you're after
     x.fillStyle = '#6ac8ff'; x.fillRect(X(H.keycard[0]) - 4, Y(H.keycard[1]) - 4, 8, 8); label('keycard', H.keycard[0], H.keycard[1], '#6ac8ff');
-    label('vault', H.panel[0], H.panel[1] + 60, '#e0e0e0');
+    label(H.escape === 'boat' ? 'vault' : H.loot === 'painting' ? 'strongroom' : 'vault', H.panel[0], H.panel[1] + 60, '#e0e0e0');
     label('monitors', H.terminal[0], H.terminal[1], '#ffd23a');
     label('alarm wiring', H.wiring[0], H.wiring[1] - 30, '#ffb000');
     for (const a of H.alarms) { x.fillStyle = '#ff4040'; x.beginPath(); x.moveTo(X(a[0]), Y(a[1]) - 6); x.lineTo(X(a[0]) + 5, Y(a[1]) + 4); x.lineTo(X(a[0]) - 5, Y(a[1]) + 4); x.fill(); }
     for (const ph of H.phones) dot(ph[0], ph[1], 'rgba(255,90,200,.8)', 2.5);
     x.strokeStyle = '#5aff8a'; x.lineWidth = 2;
     x.beginPath(); x.arc(X(H.van.o[0]), Y(H.van.o[1]), H.van.r * sc, 0, Math.PI * 2); x.stroke();
-    label('getaway van', H.van.o[0], H.van.o[1] - 60, '#5aff8a');
+    label(H.escape === 'boat' ? 'getaway boat' : 'getaway van', H.van.o[0], H.van.o[1] - 60, '#5aff8a');
     x.lineWidth = 1;
   }
 }

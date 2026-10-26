@@ -859,6 +859,7 @@ const bank = (() => {
       { mins: [622, 40, 0], maxs: [638, 120, 140], name: 'back' },
     ],
     heist: {
+      title: 'The Bank Job', loot: 'cash', boxLoot: 'deposit', escape: 'van', cartDraw: [0, 52],
       inside: [[-620, -500, 0], [620, 500, H]],
       restricted: [[-620, -125, 0], [620, 500, H]], // behind the counter and everything past it
       van: { o: [-1050, -690, 0], r: 170 },
@@ -1187,6 +1188,263 @@ const hollow = (() => {
 
 export const MODE_MAPS = { soccer: 'pitch', parkour: 'course', mugrball: 'court', heist: 'bank', freeplay: 'county' };
 
+// ------------------------------------------------------------------ The Art House (heist): a museum on a city street
+// Lobby with the ticket desk → three galleries (paintings, sculptures, display cases) → the staff door (keycard)
+// → the back corridor: security room (monitors, alarm wiring), the curator's office (a keycard on the desk) and the
+// strongroom behind a vault door, where the private collection is: paintings to cut from their frames and cases of
+// jewels to smash. A back door opens onto the loading dock in the alley; the van waits on the street.
+const arthouse = (() => {
+  const { B, box } = builder();
+  const D = [];
+  const deco = (x0, y0, z0, x1, y1, z1, mat) => D.push({ mins: [Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)], maxs: [Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)], mat });
+  const H = 300;
+  box(-1500, -1400, -64, 1500, 1100, 0, 'concrete');
+  deco(-1500, -1300, 0, 1500, -760, 0.4, 'asphalt');
+  for (let x = -1450; x < 1500; x += 220) deco(x, -1034, 0.4, x + 110, -1026, 0.8, 'line');
+  deco(-1500, -760, 0, 1500, -748, 6, 'concrete');
+  box(-1500, -520, 0, -760, 1000, 420, 'brick');
+  box(900, -520, 0, 1500, 1000, 460, 'brick');
+  box(-1500, 1000, 0, 1500, 1100, 300, 'brick');
+  box(-1500, -1400, 0, 1500, -1310, 460, 'panel');
+  box(-1520, -1400, 0, -1500, 1100, 700, 'clip'); box(1500, -1400, 0, 1520, 1100, 700, 'clip');
+  box(-1520, -1420, 700, 1520, 1120, 720, 'clip');
+  for (const [x, y] of [[-480, -900], [300, -960], [820, -880], [-200, -1180], [1150, -1160]]) box(x - 85, y - 40, 0, x + 85, y + 40, 58, 'metal');
+  box(-1160, -850, 0, -900, -750, 112, 'clip'); // the van
+  // ---- the museum: a stone front with columns, glass windows, a tall entrance
+  box(-700, -540, 0, -80, -520, H, 'stone'); box(80, -540, 0, 700, -520, H, 'stone'); box(-80, -540, 200, 80, -520, H, 'stone');
+  for (const x of [-560, 300]) deco(x, -542, 60, x + 260, -540, 220, 'glass');
+  for (const x of [-640, -330, 330, 640]) box(x - 18, -600, 0, x + 18, -560, H, 'marble'); // the portico
+  box(-700, -620, H - 20, 700, -540, H, 'marble');
+  deco(-160, -620, H + 4, 160, -600, H + 40, 'neon');
+  box(-700, 600, 0, 700, 620, H, 'stone');
+  box(-700, -520, 0, -680, 600, H, 'stone');
+  box(680, -520, 0, 700, 340, H, 'stone'); box(680, 430, 0, 700, 600, H, 'stone'); box(680, 340, 150, 700, 430, H, 'stone');
+  box(-720, -560, H, 720, 640, H + 20, 'plate');
+  deco(-680, -520, 0, 680, 600, 0.5, 'marble');
+  // lobby: the ticket desk, benches, two sculptures on plinths, columns
+  box(-200, -300, 0, 200, -270, 46, 'wood'); deco(-204, -304, 46, 204, -266, 50, 'marble');
+  for (const x of [-420, 420]) box(x - 70, -440, 0, x + 70, -416, 22, 'wood');
+  for (const x of [-480, 480]) { box(x - 30, -330, 0, x + 30, -270, 70, 'marble'); deco(x - 14, -314, 70, x + 14, -286, 150, 'stone'); }
+  for (const x of [-300, 300]) box(x - 20, -220, 0, x + 20, -180, H, 'marble');
+  // the wall between the lobby and the galleries (three openings)
+  for (const [x0, x1] of [[-680, -520], [-400, -60], [60, 400], [520, 680]]) box(x0, -140, 0, x1, -120, H, 'panel');
+  for (const [x0, x1] of [[-520, -400], [-60, 60], [400, 520]]) box(x0, -140, 200, x1, -120, H, 'panel');
+  // galleries: two partitions with doorways, a centre plinth, cases, paintings on every wall
+  for (const x of [-260, 240]) { box(x, -120, 0, x + 20, 40, H, 'panel'); box(x, 140, 0, x + 20, 300, H, 'panel'); box(x, 40, 200, x + 20, 140, H, 'panel'); }
+  box(-60, 40, 0, 60, 160, 50, 'marble'); deco(-24, 76, 50, 24, 124, 190, 'stone');
+  for (const x of [-470, 470]) { box(x - 60, 60, 0, x + 60, 100, 38, 'wood'); deco(x - 56, 62, 38, x + 56, 98, 60, 'glass'); }
+  const art = (x0, y0, x1, y1) => deco(x0, y0, 90, x1, y1, 200, 'painting');
+  for (const y of [-100, 60, 200]) { art(-679, y, -676, y + 80); art(676, y, 679, y + 80); }
+  for (const x of [-620, -420, -180, 120, 420, 600]) art(x - 50, 296, x + 50, 299);
+  for (const y of [-80, 180]) { art(-239, y, -236, y + 70); art(236, y, 239, y + 70); art(-264, y, -261, y + 70); art(261, y, 264, y + 70); }
+  // the staff door (keycard) into the back corridor
+  box(-680, 300, 0, -40, 320, H, 'panel'); box(40, 300, 0, 680, 320, H, 'panel'); box(-40, 300, 150, 40, 320, H, 'panel');
+  // the corridor's north wall: doorways to the security room and the office, the strongroom's vault door
+  for (const [x0, x1] of [[-680, -500], [-430, -160], [-90, 300], [420, 680]]) box(x0, 440, 0, x1, 460, H, [x0 >= 420 || x1 === 300 ? 'metal' : 'panel'][0]);
+  for (const [x0, x1] of [[-500, -430], [-160, -90]]) box(x0, 440, 140, x1, 460, H, 'panel');
+  box(300, 440, 160, 420, 460, H, 'metal');
+  box(256, 434, 40, 284, 440, 90, 'hazard'); // the lock panel
+  box(-260, 460, 0, -240, 600, H, 'panel');
+  box(60, 460, 0, 80, 600, H, 'metal');
+  // security room: monitor desk and the alarm wiring
+  box(-660, 500, 0, -600, 580, 40, 'metal'); deco(-670, 500, 40, -660, 580, 100, 'neon');
+  box(-680, 470, 70, -664, 510, 120, 'hazard');
+  // the curator's office
+  box(-160, 505, 0, 0, 550, 38, 'wood');
+  art(-239, 480, -236, 560);
+  // the strongroom: easels with the private collection and glass cases of jewels
+  for (const [x, y] of [[220, 510], [330, 550], [440, 550], [540, 510]]) box(x - 12, y + 22, 0, x + 12, y + 34, 60, 'wood');
+  for (const [x, y] of [[110, 490], [110, 560], [650, 490], [650, 560]]) box(x - 18, y - 18, 0, x + 18, y + 18, 34, 'wood');
+  const items = [
+    { kind: 'ammo', o: [-1180, -660, 0] }, { kind: 'health', o: [-1100, -620, 0] }, { kind: 'battery', o: [-1020, -620, 0] },
+    { kind: 'ammo', o: [-560, 380, 0] }, { kind: 'health', o: [560, 380, 0] },
+  ];
+  const spawns = [[-1180, -690], [-1100, -680], [-1020, -680], [-940, -690]].map(([x, y]) => ({ origin: [x, y, 1], yaw: 30 }));
+  return {
+    name: 'The Art House', boxes: B, decor: D, sun: [0.4, 0.3, 0.85], bounds: [[-1500, -1400, -40], [1500, 1100, 420]], killZ: -500, pads: [],
+    spawns, items, props: [],
+    doors: [
+      { mins: [-40, 302, 0], maxs: [40, 318, 150], name: 'staff' },
+      { mins: [300, 442, 0], maxs: [420, 458, 160], name: 'vault' },
+      { mins: [682, 340, 0], maxs: [698, 430, 150], name: 'back' },
+    ],
+    heist: {
+      title: 'The Art House',
+      labels: {
+        keycard: 'Take the curator\'s keycard', cardWhere: 'curator\'s office, or the head of security', staff: 'Open the staff door', back: 'Open the loading dock door',
+        cams: 'Loop the cameras', camsWhere: 'security room', wires: 'Cut the alarm wiring', vault: 'the strongroom', hack: 'Hack the strongroom lock', drill: 'Set up the thermal drill',
+        cart: 'Cut the painting from its frame', carts: 'the paintings', box: 'Smash the display case', boxes: 'jewel cases', escape: 'Get in the van and go', ride: 'the van', bagFull: 'Get it to the van (G throws it)', opened: 'THE STRONGROOM IS OPEN',
+      },
+      loot: 'painting', boxLoot: 'case', escape: 'van', bagCash: 42000, boxCash: 4500, cartDraw: [0, 16],
+      board: { lo: [-1250, -1000], hi: [900, 660], rooms: [['LOBBY', -80, -420], ['WEST GALLERY', -560, 250], ['GRAND GALLERY', -110, 250], ['EAST GALLERY', 300, 250], ['CORRIDOR', -80, 400], ['SECURITY', -620, 590], ['CURATOR', -200, 590], ['STRONGROOM', 300, 590], ['STREET', -300, -820], ['ALLEY', 760, 300]] },
+      inside: [[-680, -520, 0], [680, 600, H]],
+      restricted: [[-680, 300, 0], [680, 600, H]],
+      van: { o: [-1050, -690, 0], r: 170 },
+      alarms: [[-650, -300, 0], [-640, 380, 0]],
+      phones: [[-150, -250, 0], [150, -250, 0], [-80, 575, 0]],
+      exits: [[0, -700, 0], [780, 385, 0]],
+      keycard: [-80, 528, 40],
+      terminal: [-570, 540, 0],
+      wiring: [-620, 480, 0],
+      panel: [270, 405, 0],
+      doorUse: { staff: [[0, 280, 0], [0, 340, 0]], back: [[650, 385, 0]], vault: [[360, 420, 0]] },
+      carts: [[220, 510, 0], [330, 550, 0], [440, 550, 0], [540, 510, 0]],
+      boxes: [[150, 490, 0], [150, 560, 0], [610, 490, 0], [610, 560, 0]],
+      guards: [
+        { o: [-120, -470], yaw: 90, post: true, look: [60, 130] },
+        { route: [[-550, -360], [550, -360], [550, -200], [-550, -200]] },
+        { route: [[-450, -50], [-450, 250], [0, 220], [450, 250], [450, -50], [0, -40]] },
+        { o: [100, 270], yaw: 250, post: true, look: [-40, 60] },
+        { route: [[-600, 380], [600, 380]], min: 1 },
+        { o: [-560, 540], yaw: 180, post: true, look: [150, 210], cams: true, min: 1 },
+        { route: [[-650, -660], [780, -660], [780, 700], [780, -660]], min: 2 },
+        { route: [[-300, -250], [300, -250], [0, -60], [0, 220], [-500, 220], [0, 220]], captain: true, min: 1 },
+      ],
+      cameras: [
+        { o: [-660, -500, 250], yaw: 45, sweep: 35 },
+        { o: [660, -500, 250], yaw: 135, sweep: 35 },
+        { o: [0, -110, 250], yaw: 90, sweep: 50 },
+        { o: [-660, -100, 250], yaw: 45, sweep: 25 },
+        { o: [660, -100, 250], yaw: 135, sweep: 25, min: 1 },
+        { o: [-660, 330, 250], yaw: 0, sweep: 20, min: 1 },
+      ],
+      staff: [
+        { o: [0, -250], yaw: -90, kind: 'teller' },
+        { o: [-80, 575], yaw: -90, kind: 'manager' },
+        { o: [-450, 0], kind: 'customer', route: [[-450, 0], [-450, 220], [0, 220], [450, 220], [450, 0], [0, -360]] },
+        { o: [300, -350], kind: 'customer', route: [[300, -350], [0, 220], [-450, 150], [-300, -350]] },
+        { o: [100, 0], kind: 'customer', route: [[100, 0], [450, 150], [-200, -380]], min: 1 },
+      ],
+      police: [[1450, -1100], [1450, -880], [780, 960], [-300, 960], [-1440, -1240]],
+    },
+  };
+})();
+
+// ------------------------------------------------------------------ The Compound (heist): a walled estate by the sea
+// A raid in the spirit of the island-mansion jobs: the crew comes ashore at the dock, west of the walls. In through
+// the drainage grate under the west wall (cut it) or round to the guarded main gate on the south side. Grounds with
+// patrols, a fountain and a pool; the house: the foyer, the office wing behind a keycard door (security room, the
+// boss's study with his keycard, the vault full of gold and a row of safes). Out the same way to the boat.
+const mansion = (() => {
+  const { B, box } = builder();
+  const D = [];
+  const deco = (x0, y0, z0, x1, y1, z1, mat) => D.push({ mins: [Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)], maxs: [Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)], mat });
+  const W = 320, H = 280;
+  box(-1700, -1100, -64, 1300, 1200, 0, 'grass');
+  deco(-1700, -1100, 0, -1300, 1200, 3, 'water'); // the shallows by the dock
+  deco(-1300, -1100, 0, -1060, 1200, 0.5, 'sand');
+  deco(-1300, -900, 0, 1300, -700, 0.5, 'asphalt'); // the coast road
+  box(-1720, -1100, 0, -1700, 1200, 700, 'clip'); box(1300, -1100, 0, 1320, 1200, 700, 'clip');
+  box(-1700, -1120, 0, 1300, -1100, 700, 'clip'); box(-1700, 1200, 0, 1300, 1220, 700, 'clip');
+  box(-1720, -1120, 700, 1320, 1220, 720, 'clip');
+  // the dock and the getaway boat (drawn by the heist view)
+  box(-1400, 40, 0, -1100, 240, 12, 'wood');
+  box(-1560, 80, 0, -1410, 200, 60, 'clip');
+  // ---- the walls, a gate on the south side, the drainage grate (a door) in the west wall
+  box(-900, -520, 0, -100, -500, W, 'stucco'); box(100, -520, 0, 900, -500, W, 'stucco');
+  for (const x of [-120, 100]) box(x, -540, 0, x + 20, -480, W + 40, 'stone'); // gate posts
+  box(-900, 880, 0, 900, 900, W, 'stucco');
+  box(900, -520, 0, 920, 900, W, 'stucco');
+  box(-920, -520, 0, -900, 100, W, 'stucco'); box(-920, 180, 0, -900, 900, W, 'stucco'); box(-920, 100, 140, -900, 180, W, 'stucco');
+  box(150, -620, 0, 280, -540, 150, 'stucco'); // gatehouse outside
+  // ---- the grounds: a fountain, palms, the pool, an outbuilding, hedges
+  box(-90, -340, 0, 90, -160, 30, 'stone'); deco(-80, -330, 30, 80, -170, 32, 'water'); deco(-12, -262, 30, 12, -238, 110, 'stone');
+  deco(520, -320, 0, 860, -40, 2, 'water'); box(500, -340, 0, 880, -320, 12, 'stone'); box(500, -40, 0, 880, -20, 12, 'stone');
+  box(-860, -460, 0, -600, -260, 240, 'stucco'); deco(-870, -470, 240, -590, -250, 270, 'roof');
+  for (const [x0, y0, x1, y1] of [[-860, 640, -600, 680], [600, 640, 860, 680], [-860, 260, -760, 560], [760, 260, 860, 560]]) box(x0, y0, 0, x1, y1, 70, 'hedge');
+  for (const [x, y] of [[-620, -180], [-400, -330], [400, -420], [700, 100], [-700, 760], [700, 760], [-300, 760], [300, 760]]) { box(x - 10, y - 10, 0, x + 10, y + 10, 320, 'bark'); deco(x - 90, y - 90, 300, x + 90, y + 90, 330, 'palm'); }
+  // ---- the house
+  box(-520, 0, 0, -70, 20, H, 'stucco'); box(70, 0, 0, 520, 20, H, 'stucco'); box(-70, 0, 200, 70, 20, H, 'stucco');
+  for (const x of [-420, -250, 250, 420]) deco(x - 50, -2, 80, x + 50, 0, 200, 'glass');
+  for (const x of [-140, 140]) box(x - 18, -110, 0, x + 18, -74, H, 'marble'); // porch columns
+  box(-180, -120, H - 16, 180, 0, H, 'stucco');
+  box(-520, 600, 0, 520, 620, H, 'stucco');
+  box(-520, 0, 0, -500, 600, H, 'stucco'); box(500, 0, 0, 520, 600, H, 'stucco');
+  box(-540, -20, H, 540, 640, H + 20, 'roof');
+  deco(-500, 20, 0, 500, 600, 0.5, 'marble');
+  // foyer: columns, sofas, a statue
+  for (const x of [-250, 250]) box(x - 22, 118, 0, x + 22, 162, H, 'marble');
+  for (const x of [-400, 400]) box(x - 80, 60, 0, x + 80, 100, 30, 'leather');
+  box(-30, 130, 0, 30, 190, 50, 'marble'); deco(-14, 146, 50, 14, 174, 150, 'gold');
+  // the office wing door (keycard), the corridor, its rooms
+  box(-500, 260, 0, -40, 280, H, 'stucco'); box(40, 260, 0, 500, 280, H, 'stucco'); box(-40, 260, 150, 40, 280, H, 'stucco');
+  for (const [x0, x1] of [[-500, -380], [-310, -130], [-60, 260], [380, 500]]) box(x0, 400, 0, x1, 420, H, x0 >= 380 ? 'metal' : 'stucco');
+  for (const [x0, x1] of [[-380, -310], [-130, -60]]) box(x0, 400, 140, x1, 420, H, 'stucco');
+  box(260, 400, 160, 380, 420, H, 'metal');
+  box(216, 394, 40, 244, 400, 90, 'hazard');
+  box(-200, 420, 0, -180, 600, H, 'stucco');
+  box(100, 420, 0, 120, 600, H, 'metal');
+  box(-480, 460, 0, -420, 560, 40, 'metal'); deco(-490, 460, 40, -480, 560, 100, 'neon');
+  box(-500, 440, 70, -484, 480, 120, 'hazard');
+  box(-120, 500, 0, 40, 550, 38, 'wood');
+  deco(-179, 460, 90, -176, 560, 200, 'painting');
+  // the vault: gold stacked on pallets, safes along the walls
+  for (const x of [170, 270, 370, 460]) box(x - 26, 556, 0, x + 26, 584, 20, 'wood');
+  for (const x of [140, 480]) box(x - 16, 433, 0, x + 16, 457, 50, 'metal');
+  const items = [
+    { kind: 'ammo', o: [-1200, -40, 0] }, { kind: 'health', o: [-1200, 320, 0] }, { kind: 'battery', o: [-1150, 380, 0] },
+    { kind: 'ammo', o: [-450, 340, 0] }, { kind: 'health', o: [450, 340, 0] },
+  ];
+  const spawns = [[-1220, 60], [-1220, 120], [-1220, 180], [-1220, 240]].map(([x, y]) => ({ origin: [x, y, 13], yaw: 0 }));
+  return {
+    name: 'The Compound', boxes: B, decor: D, sun: [0.5, 0.25, 0.8], bounds: [[-1700, -1100, -40], [1300, 1200, 420]], killZ: -500, pads: [], mood: 'day',
+    spawns, items, props: [],
+    doors: [
+      { mins: [-40, 262, 0], maxs: [40, 278, 150], name: 'staff' },
+      { mins: [260, 402, 0], maxs: [380, 418, 160], name: 'vault' },
+      { mins: [-918, 100, 0], maxs: [-902, 180, 140], name: 'back' },
+    ],
+    heist: {
+      title: 'The Compound',
+      labels: {
+        keycard: 'Take the boss\'s keycard', cardWhere: 'the boss\'s study, or the head of security', staff: 'Open the office wing', back: 'Cut through the drainage grate',
+        cams: 'Loop the cameras', camsWhere: 'security room', wires: 'Cut the alarm wiring', vault: 'the vault', hack: 'Crack the vault', drill: 'Set up the drill',
+        cart: 'Bag the gold', carts: 'the gold', box: 'Crack the safe', boxes: 'safes', escape: 'Get on the boat and go', ride: 'the boat', bagFull: 'Get it to the boat (G throws it)', opened: 'THE VAULT IS OPEN',
+      },
+      loot: 'gold', boxLoot: 'safe', escape: 'boat', bagCash: 52000, boxCash: 9000, cartDraw: [0, 55], backNeed: 4,
+      board: { lo: [-1450, -760], hi: [1000, 940], rooms: [['DOCK', -1340, 300], ['GROUNDS', -700, 0], ['GATE', -60, -600], ['FOYER', -80, 220], ['CORRIDOR', -80, 360], ['SECURITY', -470, 590], ['STUDY', -140, 590], ['VAULT', 240, 590], ['POOL', 620, -180]] },
+      inside: [[-900, -500, 0], [900, 880, 400]],
+      restricted: [[-900, -500, 0], [900, 880, 400]],
+      van: { o: [-1250, 140, 0], r: 200 },
+      alarms: [[-480, 40, 0], [-470, 578, 0]],
+      phones: [[-60, 570, 0], [400, 40, 0]],
+      exits: [[0, -700, 0], [-1000, 140, 0]],
+      keycard: [-40, 525, 40],
+      terminal: [-390, 510, 0],
+      wiring: [-440, 440, 0],
+      panel: [230, 365, 0],
+      doorUse: { staff: [[0, 240, 0], [0, 300, 0]], back: [[-950, 140, 0], [-860, 140, 0]], vault: [[320, 380, 0]] },
+      carts: [[170, 515, 0], [270, 515, 0], [370, 515, 0], [460, 515, 0]],
+      boxes: [[140, 485, 0], [480, 485, 0]],
+      guards: [
+        { o: [-60, -570], yaw: -90, post: true, look: [-150, -30] },
+        { o: [60, -570], yaw: -90, post: true, look: [-150, -30] },
+        { route: [[-560, -420], [800, -420], [800, 800], [-800, 800], [-800, -150]] },
+        { o: [0, 230], yaw: -90, post: true, look: [-150, -30] },
+        { route: [[-700, -100], [-700, 700], [700, 700], [700, -100]], min: 1 },
+        { route: [[-450, 340], [450, 340]], min: 1 },
+        { o: [-360, 545], yaw: 180, post: true, look: [150, 210], cams: true },
+        { route: [[-560, -460], [850, -460], [850, 850], [-850, 850], [-850, -200]], min: 2 },
+        { route: [[-300, 100], [300, 100], [0, 230], [0, 340], [-400, 340], [0, 340]], captain: true },
+      ],
+      cameras: [
+        { o: [-880, -480, 300], yaw: 45, sweep: 35 },
+        { o: [880, -480, 300], yaw: 135, sweep: 35 },
+        { o: [0, 30, 240], yaw: 90, sweep: 45 },
+        { o: [-490, 290, 240], yaw: 0, sweep: 20, min: 1 },
+        { o: [-880, 860, 300], yaw: -45, sweep: 30, min: 1 },
+        { o: [880, 860, 300], yaw: -135, sweep: 30, min: 2 },
+      ],
+      staff: [
+        { o: [-60, 570], yaw: -90, kind: 'manager' },
+        { o: [300, 120], kind: 'customer', route: [[300, 120], [-300, 120], [-300, 200], [300, 200]] },
+        { o: [600, -200], kind: 'customer', route: [[600, -200], [200, -350], [-300, -300], [200, -350]] },
+      ],
+      police: [[1200, -1000], [0, -1000], [-600, -1000], [1200, 1100]],
+    },
+  };
+})();
+
 // ------------------------------------------------------------------ Mugr County (free roam): built a cell at a time by citygen.js
 const county = {
   name: 'Mugr County', boxes: [], stream: true, pads: [], items: [], props: [], flags: null, killZ: -160, mood: 'city', sun: [0.45, 0.3, 0.84],
@@ -1194,4 +1452,6 @@ const county = {
   spawns: HOSPITALS.flatMap((h) => h.spawns),
 };
 
-export const CODE_MAPS = { county, foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court, bank, asylum, harvest, hollow };
+// the jobs you can pick in the Heist menu (each map carries its own heist data)
+export const HEIST_MAPS = ['bank', 'arthouse', 'mansion'];
+export const CODE_MAPS = { county, arthouse, mansion, foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court, bank, asylum, harvest, hollow };
