@@ -1021,6 +1021,7 @@ export class CityView {
     let p = '';
     if (rob > 0) p = `<span>Emptying the till… keep aiming</span><span class="bar"><span style="width:${rob}%"></span></span>`;
     else if (prompt) { const [k, text] = prompt.split('|'); p = (k ? `<b>${esc(k)}</b>` : '') + esc(text); }
+    else if (this.g.ps.car && VEHICLES[this.g.ps.car.k].heli) p = '<small><b>W</b>/<b>S</b> forward and back · <b>A</b>/<b>D</b> slide · <b>Space</b> up · <b>C</b> down · turn with the mouse · <b>E</b> get out</small>';
     else if (this.g.ps.car && VEHICLES[this.g.ps.car.k].air) p = `<small><b>W</b>/<b>S</b> throttle · steer with the mouse · <b>A</b>/<b>D</b> rudder · <b>Q</b> flares${VEHICLES[this.g.ps.car.k].guns ? ' · <b>click</b> cannon · <b>right click</b> missile' : ''} · <b>E</b> bail out</small>`;
     else if (this.g.ps.car || this.g.ps.seat) p = `<small><b>E</b> get out · <b>F</b> ${this.firstPerson ? 'chase camera' : 'first person'}${this.g.ps.car ? ' · <b>Space</b> handbrake · <b>H</b> horn' : ''}</small>`;
     const pe = $('fp-prompt');

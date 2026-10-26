@@ -295,7 +295,43 @@ function fin(x, len, h, sweep, z, thick = 3) {
   g.translate(0, thick / 2, z);
   return g;
 }
+// a helicopter: a rounded cabin with a big bubble windscreen, a tail boom with a fin and tail rotor, skids, and
+// the main rotor on a mast (spun by the model)
+function buildHeli(V) {
+  const hx = V.hx, R = V.hy * 1.15, zc = V.h * 0.5;
+  const paint = [], glass = [], trim = [], chrome = [];
+  const cabin = lathe([[hx * 0.55, R * 0.4], [hx * 0.45, R * 0.85], [hx * 0.2, R], [-hx * 0.15, R * 0.95], [-hx * 0.35, R * 0.6]], 18);
+  cabin.translate(0, 0, zc);
+  paint.push(cabin);
+  const bubble = new THREE.SphereGeometry(1, 18, 12, -Math.PI / 2, Math.PI, 0, Math.PI);
+  bubble.scale(R * 0.95, R * 0.92, R * 0.85).rotateZ(-Math.PI / 2).translate(hx * 0.42, 0, zc + 4);
+  glass.push(bubble);
+  for (const s of [-1, 1]) glass.push(box(hx * 0.3, 1, R * 0.7, hx * 0.05, s * (R * 0.94), zc + R * 0.2));
+  const boom = new THREE.CylinderGeometry(R * 0.18, R * 0.32, hx * 1.05, 10).rotateZ(Math.PI / 2);
+  boom.translate(-hx * 0.85, 0, zc + R * 0.35);
+  paint.push(boom);
+  paint.push(fin(-hx * 1.25, hx * 0.22, R * 1.6, hx * 0.1, zc + R * 0.35));
+  paint.push(wing(R * 1.8, 0, hx * 0.16, hx * 0.1, 4, zc + R * 0.4, -hx * 1.15, 2));
+  // engine cowling and the rotor mast
+  paint.push(box(hx * 0.45, R * 1.2, R * 0.5, -hx * 0.1, 0, zc + R * 1.05));
+  chrome.push(new THREE.CylinderGeometry(4, 5, R * 0.6, 10).rotateX(Math.PI / 2).translate(0, 0, zc + R * 1.5));
+  // skids
+  for (const s of [-1, 1]) {
+    const skid = new THREE.CylinderGeometry(2.4, 2.4, hx * 1.25, 8).rotateZ(Math.PI / 2);
+    skid.translate(hx * 0.05, s * R * 0.95, 3);
+    trim.push(skid);
+    for (const x of [hx * 0.3, -hx * 0.2]) trim.push(strut([x, 3], [x * 0.8, zc - R * 0.7], s * R * 0.85, 3, 3));
+  }
+  const nonIdx = (list) => mergeGeometries(list.map((g) => { const n = g.index ? g.toNonIndexed() : g; if (n.attributes.uv) n.deleteAttribute('uv'); return n; }));
+  const out = { air: true, heli: true, paint: nonIdx(paint), glass: nonIdx(glass), trim: nonIdx(trim), chrome: nonIdx(chrome), head: null, tail: null, wheels: [], wheel: null, r: 10,
+    rotor: { z: zc + R * 1.8, r: V.span / 2 }, tailRotor: { x: -hx * 1.32, y: R * 0.25, z: zc + R * 1.1, r: R * 0.9 }, prop: null,
+    lod: mergeGeometries([box(hx * 1.2, R * 2, R * 2, 0, 0, zc), box(hx * 1.1, 8, 8, -hx * 0.85, 0, zc + R * 0.35)]), roof: zc + R };
+  for (const k of ['paint', 'glass', 'trim', 'chrome']) out[k].computeVertexNormals();
+  return out;
+}
+
 function buildPlane(V) {
+  if (V.heli) return buildHeli(V);
   const hx = V.hx, span = V.span, st = V.style;
   const jet = !!V.jet, fighter = st === 'fighter', biz = st === 'bizjet', bi = st === 'biplane';
   const R = fighter ? 34 : biz ? 46 : 28; // fuselage radius
@@ -418,6 +454,20 @@ export class CarModel {
       doors.position.set(0, 0, V.h * 0.38);
       this.body3.add(doors);
     }
+    if (S.rotor) {
+      // the main rotor: four blades and a blur disc; the tail rotor
+      this.rotor = new THREE.Group();
+      this.rotor.position.set(0, 0, S.rotor.z);
+      for (let k = 0; k < 4; k++) { const b = new THREE.Mesh(new THREE.BoxGeometry(S.rotor.r, 7, 1.2), M.trim); b.position.x = S.rotor.r / 2; const arm = new THREE.Group(); arm.rotation.z = (k / 4) * Math.PI * 2; arm.add(b); this.rotor.add(arm); }
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(S.rotor.r, 32), new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide }));
+      this.rotor.add(disc);
+      this.rotor.userData.disc = disc;
+      this.body3.add(this.rotor);
+      this.tailRotor = new THREE.Group();
+      this.tailRotor.position.set(S.tailRotor.x, S.tailRotor.y, S.tailRotor.z);
+      for (let k = 0; k < 2; k++) { const b = new THREE.Mesh(new THREE.BoxGeometry(3, 1, S.tailRotor.r * 2), M.trim); b.rotation.y = k * Math.PI / 2; this.tailRotor.add(b); }
+      this.body3.add(this.tailRotor);
+    }
     if (S.prop) {
       this.prop = new THREE.Group();
       this.prop.position.set(S.prop.x, 0, S.prop.z);
@@ -509,6 +559,7 @@ export class CarModel {
       this.far.material = M.burnt;
     }
     if (lod) return;
+    if (this.rotor) { const k = st.thr || 0; this.rotor.rotation.z += dt * k * 28; this.tailRotor.rotation.y += dt * k * 60; this.rotor.userData.disc.material.opacity = 0.05 + k * 0.18; }
     if (this.prop) { this.prop.rotation.x += dt * (8 + (st.thr || 0) * 70); this.prop.userData.disc.material.opacity = 0.08 + (st.thr || 0) * 0.25; }
     if (this.flame) { const k = st.thr || 0; this.flame.visible = k > 0.05; this.flame.scale.set(0.4 + k * 0.9 + Math.random() * 0.1, 1, 1); }
     // wheels roll with the speed, the front ones turn with the steering

@@ -33,6 +33,9 @@ export const VEHICLES = [
   { id: 'spark', name: 'Spark E-Bike', style: 'bmx', shop: 'bikes', bike: true, pedal: true, price: 1500, top: 352, accel: 260, hx: 34, hy: 10, h: 42, wb: 54, seats: 1, hp: 220, mass: 0.35, blurb: 'Electric bike. 20 mph, silent.' },
   { id: 'volt', name: 'Volt E-Bike', style: 'bmx', shop: 'bikes', bike: true, pedal: true, price: 6500, top: 880, accel: 420, hx: 36, hy: 11, h: 42, wb: 56, seats: 1, hp: 260, mass: 0.4, blurb: 'Fast electric bike. 50 mph.' },
   { id: 'surge', name: 'Surge E-Moto', style: 'scooter', shop: 'bikes', bike: true, pedal: true, price: 18000, top: 1408, accel: 700, hx: 40, hy: 12, h: 44, wb: 60, seats: 2, hp: 360, mass: 0.55, blurb: 'Electric motorbike. 80 mph, no noise.' },
+  // helicopters: top (forward speed), climb (up and down speed), turn (degrees a second)
+  { id: 'kite', name: 'Kite 300', style: 'heli', air: true, heli: true, shop: 'planes', price: 380000, top: 1700, climb: 700, turn: 80, hx: 130, hy: 34, h: 96, span: 380, wb: 160, seats: 2, hp: 700, mass: 2, blurb: 'Light helicopter. Hovers anywhere.' },
+  { id: 'atlas', name: 'Atlas Utility', style: 'heli', air: true, heli: true, shop: 'planes', price: 760000, top: 2000, climb: 800, turn: 65, hx: 190, hy: 46, h: 120, span: 520, wb: 220, seats: 4, hp: 1100, mass: 3, blurb: 'Big twin-engine helicopter for four.' },
 ];
 export const VEHICLE_INDEX = Object.fromEntries(VEHICLES.map((v, i) => [v.id, i]));
 // paint for bought cars and traffic
@@ -199,6 +202,7 @@ const SKY_LIMIT = 98000; // past the coast: the plane turns itself back toward l
 const angTo = (a, b) => ((b - a) % 360 + 540) % 360 - 180;
 export function amove(world, c, cmd, dt) {
   const V = VEHICLES[c.k];
+  if (V.heli) return hmove(world, c, cmd, dt);
   const res = { hit: 0, dyn: null, n: null, crash: false };
   const dead = !!c.dead;
   c.pitch ||= 0; c.roll ||= 0; c.thr ||= 0;
@@ -259,6 +263,47 @@ export function amove(world, c, cmd, dt) {
     else if (Math.hypot(c.v[0], c.v[1]) > 30) { c.g = false; }
   }
   if (c.o[2] > 26000) { c.o[2] = 26000; if (c.v[2] > 0) c.v[2] = 0; }
+  return res;
+}
+
+// Helicopters: the rotor spins up while someone flies it. W/S fly forward and back, A/D slide sideways, Space
+// climbs, C (or Ctrl) comes down, and the nose turns to where you look. Land gently or crash.
+export function hmove(world, c, cmd, dt) {
+  const V = VEHICLES[c.k];
+  const res = { hit: 0, dyn: null, n: null, crash: false };
+  const dead = !!c.dead;
+  c.thr = clamp((c.thr || 0) + clamp((dead ? 0 : 1) - (c.thr || 0), -0.35 * dt, 0.5 * dt), 0, 1);
+  const lift = c.thr > 0.7;
+  const yr = c.yaw * DEG, fx = Math.cos(yr), fy = Math.sin(yr);
+  const up = dead ? -1 : (cmd.buttons & BTN.JUMP ? 1 : 0) - (cmd.buttons & BTN.DUCK ? 1 : 0);
+  const fwd = dead ? 0 : clamp(cmd.fwd || 0, -0.5, 1), side = dead ? 0 : clamp(cmd.side || 0, -1, 1);
+  // the speed you want, eased toward
+  let tv = [fx * fwd * V.top + fy * side * V.top * 0.5, fy * fwd * V.top - fx * side * V.top * 0.5, up * V.climb];
+  if (!lift) tv = [c.v[0], c.v[1], -900 * (1 - c.thr / 0.7)];
+  if (c.g && up <= 0) tv = [0, 0, 0];
+  const k = Math.min(1, dt * (lift ? 1.6 : 0.6));
+  for (let i = 0; i < 3; i++) c.v[i] += (tv[i] - c.v[i]) * (i === 2 && !lift ? Math.min(1, dt * 2) : k);
+  if (c.g && up > 0 && lift) { c.g = false; c.o[2] += 2; }
+  if (!dead && lift) c.yaw = wrap(c.yaw + clamp(angTo(c.yaw, cmd.yaw) * 2.5, -V.turn, V.turn) * dt);
+  // lean into where it's going (just for looks)
+  const lf = (c.v[0] * fx + c.v[1] * fy) / V.top, ls = (c.v[0] * fy - c.v[1] * fx) / V.top;
+  c.pitch += (-lf * 14 - c.pitch) * Math.min(1, dt * 3);
+  c.roll += (ls * 18 - c.roll) * Math.min(1, dt * 3);
+  if (c.g) { c.pitch = 0; c.roll = 0; }
+  const d = [c.v[0] * dt, c.v[1] * dt, c.v[2] * dt];
+  const r = sweep(world, c, V, fx, fy, d, SW);
+  c.o[0] += d[0] * r.f; c.o[1] += d[1] * r.f; c.o[2] += d[2] * r.f;
+  if (r.f < 1) {
+    const n = r.n, into = -(c.v[0] * n[0] + c.v[1] * n[1] + c.v[2] * n[2]);
+    if (n[2] > 0.7 && into < V.climb + 150) { c.g = true; c.v = [0, 0, 0]; } // coming straight down at full rate is still a landing
+    else if (into > 450) { res.crash = true; res.hit = into; res.dyn = r.dyn; c.v = [0, 0, 0]; c.dead = true; }
+    else { c.v[0] += n[0] * into; c.v[1] += n[1] * into; c.v[2] += n[2] * into; }
+  }
+  if (c.g) {
+    const drop = sweep(world, c, V, fx, fy, [0, 0, -2], SW);
+    if (drop.f >= 1) c.g = false;
+  }
+  if (c.o[2] > 20000) { c.o[2] = 20000; if (c.v[2] > 0) c.v[2] = 0; }
   return res;
 }
 

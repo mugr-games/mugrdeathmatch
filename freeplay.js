@@ -1161,7 +1161,7 @@ export function createFreeplay(R, api) {
         if (people.some((p) => dist2(p.ps.origin, s) < 2500 * 2500)) return;
         if ([...F.vehicles.values()].some((o) => dist2(o.s.o, s) < 500 * 500)) return;
         ensureAround(s[0], s[1], 1);
-        const kind = a.military ? 'talon' : ['skylark', 'skylark', 'duster', 'comet'][(Math.random() * 4) | 0];
+        const kind = a.military ? 'talon' : ['skylark', 'skylark', 'duster', 'comet', 'kite'][(Math.random() * 5) | 0];
         const nv = addVehicle(VEHICLE_INDEX[kind], s, s[3], a.military ? 'military' : 'parked', a.military ? 9 : undefined);
         a.parked.set(k, nv.id);
       });
