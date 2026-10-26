@@ -549,6 +549,7 @@ document.addEventListener('mousemove', (e) => {
   if (skipMouse > 0) { skipMouse--; return; }
   // drop impossible single-event jumps (a real flick is spread over many small events)
   if (Math.abs(e.movementX) > 400 || Math.abs(e.movementY) > 400) return;
+  if (game.fv.mapMouse(e.movementX, e.movementY)) return; // the big map's cursor
   const k = 0.022 * settings.sens * (game.zoomed ? game.zoomScale : 1);
   game.yaw = (game.yaw - e.movementX * k) % 360;
   game.pitch = Math.max(-89, Math.min(89, game.pitch + e.movementY * k));

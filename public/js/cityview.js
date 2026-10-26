@@ -25,6 +25,11 @@ const mph = (u) => Math.round(u * 0.0568);
 const lerp = (a, b, k) => a + (b - a) * k;
 const MAP_COL = { [D.OCEAN]: '#1d4a66', [D.LAKE]: '#2a5a7a', [D.CITY]: '#6a6a6c', [D.SUBURB]: '#56664a', [D.TOWN]: '#5e6450', [D.BEACH]: '#c8b080', [D.FARM]: '#6e6a3a', [D.FOREST]: '#2e4e26', [D.DESERT]: '#b49a68', [D.FIELD]: '#4a6a36', [D.MOUNTAIN]: '#8a7a68', [D.AIRPORT]: '#7a7e74', [D.AIRBASE]: '#7a6e5a' };
 const BLIP = { gas: '#ff5a3a', gun: '#ffd23a', hospital: '#ffffff', police: '#3a7aff' };
+// route cost of a road: highways are quicker than town streets
+function roadFromCost(i, j, d) {
+  const k = d === 0 ? roadH(i, j) : d === 1 ? roadV(i, j) : d === 2 ? roadH(i - 1, j) : roadV(i, j - 1);
+  return k === 2 ? 0.6 : 1;
+}
 // draw distance in chunks: detailed, then simple shapes
 const RANGE = { potato: [1, 3], low: [2, 5], medium: [2, 7], high: [3, 8] };
 const FOG = { potato: 0.00009, low: 0.00006, medium: 0.000042, high: 0.000036 };
@@ -840,6 +845,8 @@ export class CityView {
     if (this.bigMap && t - (this.bigMapAt || 0) > 0.25) { this.bigMapAt = t; this.drawBigMap(); }
     this.audio(!!ps.car && ps.alive);
     this.updateHud(t);
+    this.updateRoute(t);
+    $('fp-gps').hidden = !this.waypoint;
     if ((t - (this.radarAt || 0)) > 0.08) { this.radarAt = t; this.drawRadar(eye); }
   }
 
@@ -1086,6 +1093,13 @@ export class CityView {
       else if (c.flags & 64) blip(c.pose.o[0], c.pose.o[1], '#3adc7a', 95, 'sq');
     }
     if (this.mineFar) blip(this.mineFar[1], this.mineFar[2], '#3adc7a', 95, 'sq');
+    if (this.route) {
+      ctx.strokeStyle = '#c45cff'; ctx.lineWidth = 110; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 0);
+      for (const [x, y] of this.route) ctx.lineTo(x - eye[0], y - eye[1]);
+      ctx.stroke();
+      blip(this.waypoint[0], this.waypoint[1], '#c45cff', 120, 'sq');
+    }
     for (const pl of this.g.players.values()) if (pl.pos) blip(pl.pos[0], pl.pos[1], '#ff9a3a', 70);
     for (const n of this.peds.values()) if (n.kind === 1 && n.flags & 16) blip(n.pos[0], n.pos[1], '#3a7aff', 55);
     ctx.restore();
@@ -1171,7 +1185,11 @@ export class CityView {
   }
   drawBigMap() {
     const cv = $('fp-bigcanvas');
-    if (!cv || !cv.width) return;
+    if (!cv) return;
+    // keep the canvas the size it's shown at (the window can change while the map is shut)
+    const dpr = Math.min(2, devicePixelRatio), w = Math.round(cv.clientWidth * dpr), h = Math.round(cv.clientHeight * dpr);
+    if (w && h && (cv.width !== w || cv.height !== h)) { cv.width = w; cv.height = h; this.mapCur = null; }
+    if (!cv.width) return;
     const ctx = cv.getContext('2d');
     const W = cv.width, H = cv.height, n = N * 2;
     const o = this.g.ps.origin;
@@ -1179,6 +1197,7 @@ export class CityView {
     const s = (Math.max(W / n, H / n) * 0.98) * this.bigZoom;
     const cx = this.bigZoom > 1 ? o[0] / G + N : N, cy = this.bigZoom > 1 ? N - o[1] / G : N;
     const pt = (x, y) => [W / 2 + ((x / G + N) - cx) * s, H / 2 + ((N - y / G) - cy) * s];
+    this.mapXf = { W, H, s, cx, cy };
     // the land, roads and names only change with the zoom: drawn once and kept (zoomed in, it follows you)
     const key = `${W}x${H}x${this.bigZoom}` + (this.bigZoom > 1 ? `@${Math.round(cx * 4)},${Math.round(cy * 4)}` : '');
     if (this.mapBase?.key === key) { ctx.drawImage(this.mapBase.cv, 0, 0); return this.drawBlips(ctx, pt, s); }
@@ -1222,6 +1241,16 @@ export class CityView {
   // your vehicle, police, other players, you
   drawBlips(ctx, pt, s) {
     const r = Math.max(3, s * 0.18);
+    if (this.route) {
+      ctx.strokeStyle = '#c45cff'; ctx.lineWidth = Math.max(3, s * 0.3); ctx.lineJoin = 'round';
+      ctx.beginPath(); this.route.forEach(([x, y], k) => { const q = pt(x, y); k ? ctx.lineTo(...q) : ctx.moveTo(...q); }); ctx.stroke();
+    }
+    if (this.waypoint) { const [x, y] = pt(...this.waypoint); ctx.fillStyle = '#c45cff'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 8, y - 20); ctx.lineTo(x + 8, y - 20); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    if (this.mapCur) {
+      const [x, y] = this.mapCur;
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x - 14, y); ctx.lineTo(x - 4, y); ctx.moveTo(x + 4, y); ctx.lineTo(x + 14, y); ctx.moveTo(x, y - 14); ctx.lineTo(x, y - 4); ctx.moveTo(x, y + 4); ctx.lineTo(x, y + 14); ctx.stroke();
+    }
     const o = this.g.ps.origin;
     const mine = [...this.cars.values()].find((c) => c.flags & 64);
     const mp = mine?.pose ? mine.pose.o : this.mineFar ? [this.mineFar[1], this.mineFar[2]] : null;
@@ -1287,7 +1316,67 @@ export class CityView {
     this.key(dir > 0 ? 'ArrowDown' : 'ArrowUp');
     return true;
   }
+  // the big map: the mouse moves a cursor; click to set a waypoint, right click to clear it
+  mapMouse(dx, dy) {
+    if (!this.bigMap) return false;
+    const cv = $('fp-bigcanvas'), k = cv.width / Math.max(1, cv.clientWidth);
+    const [x, y] = this.mapCur || [cv.width / 2, cv.height / 2];
+    this.mapCur = [Math.max(0, Math.min(cv.width, x + dx * k)), Math.max(0, Math.min(cv.height, y + dy * k))];
+    this.drawBigMap();
+    return true;
+  }
+  mapClick(button) {
+    if (!this.bigMap || !this.mapXf) return false;
+    if (button === 2) { this.waypoint = null; this.route = null; this.g.sound.ui(500); this.drawBigMap(); return true; }
+    const { W, H, s, cx, cy } = this.mapXf, [px, py] = this.mapCur || [W / 2, H / 2];
+    this.setWaypoint([((px - W / 2) / s + cx - N) * G, (N - ((py - H / 2) / s + cy)) * G]);
+    this.drawBigMap();
+    return true;
+  }
+  setWaypoint(w) {
+    this.waypoint = w;
+    this.routeAt = 0;
+    this.planRoute();
+    this.g.sound.ui(1400);
+  }
+  // the quickest way there by road (A* over the junctions; highways count as shorter)
+  planRoute() {
+    if (!this.waypoint) return;
+    const o = this.g.ps.origin, w = this.waypoint;
+    const near = (x, y) => [Math.round(x / G), Math.round(y / G)];
+    const [si, sj] = near(o[0], o[1]), [ti, tj] = near(w[0], w[1]);
+    const key = (i, j) => (i + 100) * 1000 + (j + 100);
+    const open = [[0, si, sj]], g = new Map([[key(si, sj), 0]]), from = new Map();
+    const h = (i, j) => Math.hypot(i - ti, j - tj) * 0.7;
+    let found = false, steps = 0;
+    while (open.length && steps++ < 8000) {
+      let bi = 0;
+      for (let k = 1; k < open.length; k++) if (open[k][0] < open[bi][0]) bi = k;
+      const [, i, j] = open.splice(bi, 1)[0];
+      if (i === ti && j === tj) { found = true; break; }
+      const gc = g.get(key(i, j));
+      for (const d of exits(i, j)) {
+        const ni = i + DIRS[d][0], nj = j + DIRS[d][1], kk = key(ni, nj);
+        const cost = gc + (roadFromCost(i, j, d));
+        if (cost < (g.get(kk) ?? Infinity)) { g.set(kk, cost); from.set(kk, [i, j]); open.push([cost + h(ni, nj), ni, nj]); }
+      }
+    }
+    if (!found) { this.route = [[o[0], o[1]], w]; return; }
+    const pts = [w];
+    for (let c = [ti, tj]; c; c = from.get(key(c[0], c[1]))) pts.push([c[0] * G, c[1] * G]);
+    this.route = pts.reverse();
+  }
+  updateRoute(t) {
+    if (!this.waypoint) return;
+    const o = this.g.ps.origin;
+    const d = Math.hypot(this.waypoint[0] - o[0], this.waypoint[1] - o[1]);
+    if (d < 700) { this.waypoint = null; this.route = null; this.note('You\'ve arrived.'); this.g.sound.pickup('battery'); return; }
+    if (t - (this.routeAt || 0) > 1.5) { this.routeAt = t; this.planRoute(); }
+    $('fp-gps').textContent = d > 4000 ? `${(d * 0.0254 / 1000).toFixed(1)} km` : `${Math.round(d * 0.0254)} m`;
+  }
+
   click(button) {
+    if (this.mapClick(button)) return true;
     if (!this.phone && !this.shop) return false;
     this.key(button === 2 ? 'Backspace' : 'Enter');
     return true;

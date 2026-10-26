@@ -353,6 +353,7 @@ body.touch #netinfo { display: none; }
 #fp-radar-box { position: absolute; left: 22px; bottom: 92px; width: 180px; }
 body.fp-on #timer { display: none; }
 #fp-radar { width: 180px; height: 180px; display: block; border-radius: 50%; box-shadow: 0 4px 18px rgba(0,0,0,.5); }
+#fp-gps { margin-top: 3px; text-align: center; font: 800 12px var(--num); color: #e0a8ff; text-shadow: 0 1px 3px #000; }
 #fp-zone { margin-top: 6px; text-align: center; font: 700 12px var(--ui); letter-spacing: .12em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 3px #000; }
 body.fp-on #voice-hud { bottom: 310px; }
 #fp-prompt { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); padding: 8px 16px; border-radius: 6px; background: rgba(0,0,0,.62); color: #fff; font: 14px var(--ui); text-align: center; white-space: nowrap; }
@@ -662,7 +663,7 @@ html, body { font: 14px/1.45 var(--ui); }
   <div id="voice-hud" hidden></div>
   <div id="fp-hud" hidden>
     <div id="fp-money"><div id="fp-cash">$0</div><div id="fp-stars" hidden></div></div>
-    <div id="fp-radar-box"><canvas id="fp-radar" width="200" height="200"></canvas><div id="fp-zone"></div></div>
+    <div id="fp-radar-box"><canvas id="fp-radar" width="200" height="200"></canvas><div id="fp-zone"></div><div id="fp-gps" hidden></div></div>
     <div id="fp-prompt" hidden></div>
     <div id="fp-note" hidden></div>
     <div id="fp-speed" hidden></div>
@@ -671,7 +672,7 @@ html, body { font: 14px/1.45 var(--ui); }
     <div id="fp-help"><b>P</b> phone · <b>M</b> map · <b>E</b> get in / use</div>
     <div id="fp-area"></div>
     <div id="fp-lock" hidden>MISSILE LOCK · <b>Q</b> flares</div>
-    <div id="fp-bigmap" hidden><canvas id="fp-bigcanvas"></canvas><div class="legend"><b>M</b> close · wheel to zoom · <i style="background:#ff5a3a"></i>Gas <i style="background:#ffd23a"></i>Guns <i style="background:#fff"></i>Hospital <i style="background:#3a7aff"></i>Police <i style="background:#3adc7a"></i>Your vehicle</div></div>
+    <div id="fp-bigmap" hidden><canvas id="fp-bigcanvas"></canvas><div class="legend"><b>M</b> close · wheel to zoom · <b>click</b> set a waypoint · <b>right click</b> clear it · <i style="background:#ff5a3a"></i>Gas <i style="background:#ffd23a"></i>Guns <i style="background:#fff"></i>Hospital <i style="background:#3a7aff"></i>Police <i style="background:#3adc7a"></i>Your vehicle</div></div>
     <div id="fp-wasted" hidden><span>WASTED</span></div>
   </div>
   <div id="heist-hud" hidden>
