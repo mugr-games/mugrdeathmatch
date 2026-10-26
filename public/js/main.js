@@ -17,9 +17,14 @@ const $ = (id) => document.getElementById(id);
 const canvas = $('view');
 
 // ------------------------------------------------------------------ settings
-const DEFAULTS = { name: '', color: Math.floor(Math.random() * 8), model: Math.floor(Math.random() * MODELS.length), sens: 3, fov: 90, volume: 0.7, quality: isTouch() ? 'low' : 'medium' };
+// school Chromebooks and other small machines start on the lightest graphics (Options can change it)
+const CHROMEBOOK = /CrOS/.test(navigator.userAgent || '');
+const LOW_END = CHROMEBOOK || (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
+const DEFAULTS = { name: '', color: Math.floor(Math.random() * 8), model: Math.floor(Math.random() * MODELS.length), sens: 3, fov: 90, volume: 0.7, quality: CHROMEBOOK ? 'potato' : LOW_END || isTouch() ? 'low' : 'medium' };
 let settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('arena.settings') || '{}')); } catch {}
+// once: a Chromebook that was saved on a heavy setting drops to low
+if (CHROMEBOOK && !settings.cbAuto) { settings.cbAuto = 1; if (settings.quality === 'medium' || settings.quality === 'high') settings.quality = 'low'; }
 if (!settings.name) settings.name = 'Player' + Math.floor(100 + Math.random() * 900);
 const save = () => { try { localStorage.setItem('arena.settings', JSON.stringify(settings)); } catch {} };
 

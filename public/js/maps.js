@@ -81,6 +81,22 @@ function paintingWall() {
   return (gallery = new THREE.MeshStandardMaterial({ map: t, roughness: 0.7 }));
 }
 
+// the bank's name in gold on green over its door
+let bankSignMat = null;
+function bankSign() {
+  if (bankSignMat) return bankSignMat;
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 72;
+  const g = c.getContext('2d');
+  g.fillStyle = '#123a2a'; g.fillRect(0, 0, 512, 72);
+  g.strokeStyle = '#d8b040'; g.lineWidth = 4; g.strokeRect(4, 4, 504, 64);
+  g.fillStyle = '#f0c850'; g.font = '800 38px Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('MUGR SAVINGS & LOAN', 256, 38, 480);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return (bankSignMat = new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: 0xffffff, emissiveIntensity: 0.5, roughness: 0.5 }));
+}
+
 function surf(mat, pal) {
   if (mat === 'neon') return neonMaterial(pal.neon);
   if (mat === 'line') return surfaceMaterial('concrete', { color: '#f4f4ee', bump: 0.2 });
@@ -111,6 +127,7 @@ function surf(mat, pal) {
   if (mat === 'leather') return surfaceMaterial('clay', { color: '#5a3424' });
   if (mat === 'gold') return new THREE.MeshStandardMaterial({ color: 0xe8b830, metalness: 1, roughness: 0.25 });
   if (mat === 'painting') return paintingWall();
+  if (mat === 'banksign') return bankSign();
   // the liner
   if (mat === 'deck') return surfaceMaterial('wood', { color: '#a8865a', color2: '#7a5c3a', bump: 1 });
   if (mat === 'hull') return surfaceMaterial('metal', { color: '#16171a' });

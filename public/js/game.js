@@ -2007,7 +2007,8 @@ export class Game {
     if (this.slowT < 1.5 || document.hidden) return;
     this.slowT = 0;
     const prev = this.resScale;
-    if (this.dtAvg > 1 / 42 && this.resScale > 0.55) this.resScale = Math.max(0.55, this.resScale * 0.88);
+    const floor = this.q.potato ? 0.4 : 0.55; // potato may go lower still to hold its frame rate
+    if (this.dtAvg > 1 / 42 && this.resScale > floor) this.resScale = Math.max(floor, this.resScale * 0.88);
     else if (this.dtAvg < 1 / 70 && this.resScale < 1) this.resScale = Math.min(1, this.resScale * 1.08);
     if (this.resScale !== prev) this.resize();
   }

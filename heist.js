@@ -1107,7 +1107,7 @@ export function createHeist(R, def, nav, doorBoxes, api) {
     doors: H.doors.map((d) => [d.i, d.name, d.mins, d.maxs]),
     cams: HD.cameras.map((c, i) => [i, c.o, c.min || 0]), van: HD.van, carts: HD.carts, boxes: HD.boxes, panel: HD.panel, terminal: HD.terminal, wiring: HD.wiring, alarms: HD.alarms,
     plan: H.planState(), roles: ROLES,
-    labels: L, loot: HD.loot || 'cash', boxLoot: HD.boxLoot || 'deposit', escape: HD.escape || 'van', cartDraw: HD.cartDraw || [0, 0], bagCash, boxCash, title: HD.title || 'The Bank Job',
+    labels: L, loot: HD.loot || 'cash', boxLoot: HD.boxLoot || 'deposit', escape: HD.escape || 'van', cartDraw: HD.cartDraw || [0, 0], parked: HD.parked || [], bagCash, boxCash, title: HD.title || 'The Bank Job',
   });
   H.reset = () => { resetWorld(); H.phase = 'planning'; };
   resetWorld();

@@ -800,7 +800,9 @@ const bank = (() => {
   for (const [x0, x1] of [[-1500, 1500]]) { box(x0 - 20, -1400, 0, x0, 1100, 600, 'clip'); box(x1, -1400, 0, x1 + 20, 1100, 600, 'clip'); }
   box(-1520, -1420, 600, 1520, 1120, 620, 'clip');
   // parked cars to hide behind, and the getaway van
-  for (const [x, y] of [[-480, -900], [300, -960], [820, -880], [-200, -1180], [1150, -1160]]) box(x - 85, y - 40, 0, x + 85, y + 40, 58, 'metal');
+  // (drawn as real cars by the heist view; these invisible boxes are what you hide behind)
+  const parked = [[-480, -900, 0, 'meridian', 4], [300, -960, 180, 'bastion', 1], [820, -880, 0, 'fjord', 2], [-200, -1180, 180, 'cab', 6], [1150, -1160, 0, 'aurora', 3]];
+  for (const [x, y] of parked) box(x - 85, y - 40, 0, x + 85, y + 40, 58, 'clip');
   box(-1160, -850, 0, -900, -750, 112, 'clip'); // the van (drawn by the heist view)
   // ---- the bank: stone walls, a glass front, a flat roof
   box(-640, -520, 0, -70, -500, H, 'stone');
@@ -813,7 +815,12 @@ const bank = (() => {
   box(620, 120, 0, 640, 500, H, 'stone');
   box(620, 40, 140, 640, 120, H, 'stone');
   box(-640, -520, H, 640, 520, H + 20, 'plate');
-  deco(-120, -560, 160, 120, -522, 200, 'neon'); // the sign over the door
+  // the front: stone columns, a cornice, the bank's name over the door, lamps along the kerb
+  for (const x of [-620, -520, -310, -190, 190, 310, 520, 620]) box(x - 15, -548, 0, x + 15, -520, H, 'stone');
+  deco(-660, -562, H - 10, 660, -500, H + 28, 'stone');
+  deco(-640, -556, 0, 640, -520, 8, 'stone');
+  deco(-160, -563, 158, 160, -560, 202, 'banksign');
+  for (let x = -1300; x <= 1300; x += 520) { deco(x - 3, -746, 0, x + 3, -740, 300, 'metal'); deco(x - 14, -760, 300, x + 14, -726, 312, 'neon'); }
   deco(-620, -500, 0, 620, 500, 0.5, 'marble');
   // lobby: pillars, benches, the teller counter (you can jump over it) and the gate at its end
   for (const x of [-300, 300]) box(x - 22, -282, 0, x + 22, -238, H, 'stone');
@@ -859,7 +866,7 @@ const bank = (() => {
       { mins: [622, 40, 0], maxs: [638, 120, 140], name: 'back' },
     ],
     heist: {
-      title: 'The Bank Job', reward: 20000, loot: 'cash', boxLoot: 'deposit', escape: 'van', cartDraw: [0, 52],
+      title: 'The Bank Job', reward: 20000, loot: 'cash', boxLoot: 'deposit', escape: 'van', cartDraw: [0, 52], parked,
       inside: [[-620, -500, 0], [620, 500, H]],
       restricted: [[-620, -125, 0], [620, 500, H]], // behind the counter and everything past it
       van: { o: [-1050, -690, 0], r: 170 },
@@ -1208,7 +1215,9 @@ const arthouse = (() => {
   box(-1500, -1400, 0, 1500, -1310, 460, 'panel');
   box(-1520, -1400, 0, -1500, 1100, 700, 'clip'); box(1500, -1400, 0, 1520, 1100, 700, 'clip');
   box(-1520, -1420, 700, 1520, 1120, 720, 'clip');
-  for (const [x, y] of [[-480, -900], [300, -960], [820, -880], [-200, -1180], [1150, -1160]]) box(x - 85, y - 40, 0, x + 85, y + 40, 58, 'metal');
+  // (drawn as real cars by the heist view; these invisible boxes are what you hide behind)
+  const parked = [[-480, -900, 0, 'meridian', 4], [300, -960, 180, 'bastion', 1], [820, -880, 0, 'fjord', 2], [-200, -1180, 180, 'cab', 6], [1150, -1160, 0, 'aurora', 3]];
+  for (const [x, y] of parked) box(x - 85, y - 40, 0, x + 85, y + 40, 58, 'clip');
   box(-1160, -850, 0, -900, -750, 112, 'clip'); // the van
   // ---- the museum: a stone front with columns, glass windows, a tall entrance
   box(-700, -540, 0, -80, -520, H, 'stone'); box(80, -540, 0, 700, -520, H, 'stone'); box(-80, -540, 200, 80, -520, H, 'stone');
@@ -1269,7 +1278,7 @@ const arthouse = (() => {
       { mins: [682, 340, 0], maxs: [698, 430, 150], name: 'back' },
     ],
     heist: {
-      title: 'The Art House',
+      title: 'The Art House', parked,
       labels: {
         keycard: 'Take the curator\'s keycard', cardWhere: 'curator\'s office, or the head of security', staff: 'Open the staff door', back: 'Open the loading dock door',
         cams: 'Loop the cameras', camsWhere: 'security room', wires: 'Cut the alarm wiring', vault: 'the strongroom', hack: 'Hack the strongroom lock', drill: 'Set up the thermal drill',

@@ -6,6 +6,8 @@
 import * as THREE from 'three';
 import { WEAPON_SLOT } from './assets.js';
 import { esc } from './hud.js';
+import { CarModel } from './carmodels.js';
+import { VEHICLE_INDEX } from './vehicle.js';
 
 const DEG = Math.PI / 180;
 const angDiff = (a, b) => ((b - a) % 360 + 540) % 360 - 180;
@@ -87,6 +89,14 @@ function drawIcon(s, level, through) {
 }
 
 const mat = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.2, ...o });
+// a car from free roam, parked (drawn once, never moves)
+function parkedCar(id, paint, x, y, yaw) {
+  const m = new CarModel(VEHICLE_INDEX[id], paint);
+  m.root.matrix.makeRotationZ(yaw * DEG).setPosition(x, y, 0);
+  m.root.matrixWorldNeedsUpdate = true;
+  m.update(0, 0, { speed: 0, steer: 0, lod: false });
+  return m.root;
+}
 const boxMesh = (sx, sy, sz, m, x = 0, y = 0, z = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m); b.position.set(x, y, z); b.castShadow = true; b.receiveShadow = true; return b; };
 
 export class HeistView {
@@ -169,19 +179,11 @@ export class HeistView {
       root.add(boat);
       o.boat = boat;
     } else {
-      const van = new THREE.Group();
-      const white = mat(0xe9ecef, { roughness: 0.4 });
-      const vx = hw.van.o[0], vy = hw.van.o[1] - 110;
-      van.add(boxMesh(220, 100, 90, white, vx, vy, 67));
-      van.add(boxMesh(60, 96, 50, white, vx + 120, vy, 45));
-      van.add(boxMesh(4, 70, 30, mat(0x223344, { metalness: 0.8, roughness: 0.1 }), vx + 151, vy, 56));
-      for (const [x, y] of [[-70, -50], [70, -50], [-70, 50], [70, 50]]) {
-        const w = new THREE.Mesh(new THREE.CylinderGeometry(15, 15, 10, 16), mat(0x111111));
-        w.position.set(vx + x, vy + y, 15);
-        van.add(w);
-      }
-      root.add(van);
+      // the getaway van: the box van from free roam, in white
+      root.add(parkedCar('courier', 2, hw.van.o[0], hw.van.o[1] - 110, 0));
     }
+    // cars parked along the street
+    for (const [x, y, yaw, id, paint] of hw.parked || []) root.add(parkedCar(id, paint, x, y, yaw));
     {
       const ring = new THREE.Mesh(new THREE.RingGeometry(hw.van.r - 8, hw.van.r, 48), new THREE.MeshBasicMaterial({ color: 0x3ddc6a, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }));
       ring.position.set(hw.van.o[0], hw.van.o[1], 2);
@@ -203,7 +205,14 @@ export class HeistView {
       } else if (hw.loot === 'gold') {
         const gold = mat(0xe8b830, { metalness: 1, roughness: 0.25 });
         for (let k = 0; k < 12; k++) cash.add(boxMesh(16, 8, 5, gold, -16 + (k % 3) * 16, (Math.floor(k / 3) % 2) * 9 - 4, 22 + Math.floor(k / 6) * 5));
-      } else for (let k = 0; k < 6; k++) cash.add(boxMesh(18, 12, 7, mat(0x4f8a3a, { roughness: 0.9 }), -14 + (k % 3) * 14, k < 3 ? -6 : 6, 39 + ((k * 7) % 3) * 6));
+      } else {
+        // bundles of notes with paper bands round them
+        const note = mat(0x5f9a4a, { roughness: 0.9 }), band = mat(0xf0ece0, { roughness: 0.8 });
+        for (let k = 0; k < 9; k++) {
+          const x = -15 + (k % 3) * 15, y = Math.floor(k / 3) % 2 ? 6 : -6, z = 39 + Math.floor(k / 6) * 7 + ((k * 7) % 3) * 2;
+          cash.add(boxMesh(14, 11, 6, note, x, y, z), boxMesh(3, 11.6, 6.6, band, x, y, z));
+        }
+      }
       grp.add(cash);
       const off = hw.cartDraw || [0, 52];
       grp.position.set(c[0] + off[0], c[1] + off[1], 0);
@@ -360,6 +369,8 @@ export class HeistView {
     if (!this.objs) return;
     const rt = g.renderTime;
     const lookout = this.me?.[7] === 'lookout';
+    const me = g.ps.origin, potato = !!g.q?.potato;
+    this.frame = (this.frame || 0) + 1;
     for (const n of this.npcs.values()) {
       const sn = n.snaps;
       if (!sn.length) continue;
@@ -375,9 +386,17 @@ export class HeistView {
       n.icon.visible = n.alert > 0 || through;
       n.icon.position.set(o[0], o[1], o[2] + ((n.flags & 4) ? 62 : 92));
       if (!n.obj) continue;
+      // far away: not drawn at all on potato, and animated less often (the saved-up time is caught up)
+      const far = Math.hypot(o[0] - me[0], o[1] - me[1]);
+      n.obj.root.visible = far < (potato ? 2600 : 6000);
+      if (!n.obj.root.visible) continue;
+      n.acc = (n.acc || 0) + dt;
+      const every = far > 1800 ? 3 : far > 900 && potato ? 2 : 1;
+      const now = !((this.frame + Math.abs(n.id)) % every), step = n.acc;
+      if (now) n.acc = 0;
       const v = b.v, speed = Math.hypot(v[0], v[1]), yr = yaw * DEG;
       const down = !!(n.flags & 24);
-      n.obj.animate(dt, { speed, fwdSpeed: v[0] * Math.cos(yr) + v[1] * Math.sin(yr), sideSpeed: v[0] * Math.sin(yr) - v[1] * Math.cos(yr), ground: true, ducked: !!(n.flags & 4) || down, pitch: 0, alive: true });
+      if (now) n.obj.animate(step, { speed, fwdSpeed: v[0] * Math.cos(yr) + v[1] * Math.sin(yr), sideSpeed: v[0] * Math.sin(yr) - v[1] * Math.cos(yr), ground: true, ducked: !!(n.flags & 4) || down, pitch: 0, alive: true });
       n.obj.root.matrix.makeRotationZ(yr).setPosition(o[0], o[1], o[2]);
       n.obj.root.matrixWorldNeedsUpdate = true;
       n.obj.root.updateMatrixWorld(true);
@@ -408,13 +427,33 @@ export class HeistView {
     O.boxes.forEach((b, i) => { b.visible = !s.boxes[i]; });
     O.ring.material.opacity = 0.35 + Math.sin(t * 3) * 0.2;
     this.syncList(O.cards, s.cards, () => { const card = boxMesh(10, 6, 1, new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x3aa0ff, emissiveIntensity: 1.5 })); return card; }, (m, x, y, z) => { m.position.set(x, y, z + 2 + Math.sin(t * 3) * 2); m.rotation.z = t; });
-    this.syncList(O.bags, s.bags, () => { const bag = new THREE.Group(); bag.add(boxMesh(34, 18, 18, mat(0x1d1f22, { roughness: 0.95 }), 0, 0, 9)); bag.add(boxMesh(26, 2, 10, mat(0x4f8a3a), 0, 0, 19)); return bag; }, (m, x, y, z) => m.position.set(x, y, z));
+    this.syncList(O.bags, s.bags, () => {
+      // a black duffel bag stuffed with loot: two handles and a zip
+      const bag = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(9, 18, 4, 12).rotateZ(Math.PI / 2), mat(0x1d1f22, { roughness: 0.95 }));
+      body.position.z = 9;
+      body.scale.set(1, 1, 0.85);
+      body.castShadow = true;
+      bag.add(body);
+      for (const s2 of [-1, 1]) { const h = new THREE.Mesh(new THREE.TorusGeometry(5, 0.9, 6, 12, Math.PI), mat(0x2a2c30)); h.rotation.x = Math.PI / 2; h.position.set(s2 * 6, 0, 16); bag.add(h); }
+      bag.add(boxMesh(22, 1.5, 1, mat(0xb0b4b8, { metalness: 0.8 }), 0, 0, 17.2));
+      bag.add(boxMesh(10, 1, 6, mat(0x4f8a3a), 0, 9, 10));
+      return bag;
+    }, (m, x, y, z) => m.position.set(x, y, z));
     // the drill at the vault
     const drilling = s.vault[2] && !s.vault[0];
     if (drilling && !O.drill) {
+      // a heavy drill on a stand, its bit against the vault door
       O.drill = new THREE.Group();
-      O.drill.add(boxMesh(30, 40, 30, mat(0xd8a020, { metalness: 0.4 }), 0, 0, 0));
-      O.drill.add(boxMesh(6, 30, 6, mat(0x888888, { metalness: 1 }), 0, 30, 0));
+      const yellow = mat(0xd8a020, { metalness: 0.4, roughness: 0.45 }), steel = mat(0x9a9ea4, { metalness: 1, roughness: 0.3 });
+      for (const s2 of [-1, 1]) { const leg = boxMesh(4, 4, 80, steel, s2 * 16, -10, -40); leg.rotation.x = 0.25; O.drill.add(leg); }
+      const motor = new THREE.Mesh(new THREE.CylinderGeometry(14, 14, 44, 16), yellow);
+      motor.castShadow = true;
+      O.drill.add(motor, boxMesh(34, 20, 22, yellow, 0, -18, 0), boxMesh(10, 6, 10, mat(0x1a1a1a), 0, -30, 12));
+      const bit = new THREE.Mesh(new THREE.CylinderGeometry(2, 4, 36, 10), steel);
+      bit.position.y = 38;
+      O.drill.add(bit);
+      O.drill.add(boxMesh(4, 2, 4, new THREE.MeshBasicMaterial({ color: 0x22ff55 }), 12, -28, 10));
       O.drill.position.set(this.hw.panel[0] + 90, this.hw.panel[1] + 6, 80);
       O.root.add(O.drill);
     }
