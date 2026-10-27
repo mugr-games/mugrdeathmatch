@@ -477,6 +477,21 @@ function buildHat(id, ht, g, mats) {
     // a band round the head with the message scrolling all the way round
     const band = new THREE.CylinderGeometry(8.4, 8.4, 3.4, 40, 1, true).rotateX(Math.PI / 2);
     add(at(band, 0, 0, 8), textMat('(You could NEVER guess it, MOD.)  ★  ', '#101820', '#5ff2ff', 1024, 64, 1.2)).material.side = THREE.DoubleSide;
+  } else if (id === 'maska') {
+    // a heavy steel dome with a flat armoured face plate across the front, an eye slit cut through it (the
+    // visor's glow shows through), pivot bolts at the sides
+    const steel = cmat('#4a4f4b', 0.55, 0.55), dark = cmat('#232624', 0.6, 0.4);
+    add(at(halfSphere(8.9), 0, 0, 8.4, 0, 0, 0, 1.06, 1.02, 1.08), steel); // the dome
+    add(at(new THREE.TorusGeometry(8.9, 0.6, 8, 28), 0, 0, 8.6, 0, 0, 0, 1.06, 1.02, 1), steel); // the rim
+    add(at(cyl(8.6, 8.9, 5.2, 24), 0, 0, 6, 0, 0, 0, 1.06, 1.02, 1), steel); // down over the ears and the back
+    const plate = (h, z) => new THREE.CylinderGeometry(9.8, 9.8, h, 20, 1, true, Math.PI / 2 - 1.05, 2.1).rotateX(Math.PI / 2).translate(0, 0, z);
+    add(plate(5.4, 11.3), steel).material.side = THREE.DoubleSide; // the plate above the slit
+    add(plate(6.4, 4.1), steel); // and below it
+    for (const s of [-1, 1]) {
+      add(at(cyl(1.1, 1.1, 0.8, 12), 0.5, s * 9.6, 9, Math.PI / 2), dark); // pivot bolts
+      add(at(rbox(1.2, 0.8, 9, 0.3), 4.6, s * 8.6, 7.6, 0, 0, s * 0.5), steel); // the plate's side arms
+    }
+    for (const y of [-2.2, 2.2]) add(at(sph(0.32, 8, 6), 9.85, y, 12.8), dark); // rivets
   } else if (id === 'crown') {
     const gold = cmat('#e8b021', 0.25, 1);
     add(at(cyl(6.3, 6.3, 3.6, 24), 0, 0, ht + 0.4), gold);
@@ -667,6 +682,18 @@ export class Avatar {
     const ok = (slot) => (COSMETIC[cos?.[slot]]?.slot === slot ? cos[slot] : null);
     if (ok('hat')) Object.assign(this.cos, buildHat(cos.hat, HEAD_TOP[this.model] ?? 14, this.head, this.matSet));
     if (ok('back')) Object.assign(this.cos, buildBack(cos.back, BACK_X[this.model] ?? -12, this.torso, cos.img));
+    if (ok('body') && cos.body === 'big_butt') {
+      // two big round cheeks on the back of the hips, in the suit's own material, that jiggle as you move
+      const g = new THREE.Group();
+      g.position.set(-5.2, 0, -1.5);
+      for (const s of [-1, 1]) {
+        const m = new THREE.Mesh(at(sph(6.2, 20, 14), -1.2, s * 4.3, 0, 0, 0, 0, 1, 0.92, 1.08), this.matSet.suit);
+        m.castShadow = true;
+        g.add(m);
+      }
+      this.hips.add(g);
+      this.cos.butt = g;
+    }
     const glow = ok('glow') && COSMETIC[cos.glow].color;
     if (glow === 'rainbow') this.cos.rainbow = true;
     else if (glow) this.matSet.visor.emissive.set(glow);
@@ -831,6 +858,10 @@ export class Avatar {
     if (C.halo) { C.halo.position.z = HEAD_TOP[this.model] + 5 + Math.sin(this.breath * 1.5) * 0.6; C.halo.rotation.z += dt; }
     if (C.wings) for (const { w, s } of C.wings) w.rotation.x = s * (st.ground ? Math.sin(this.breath) * 0.04 : Math.sin(this.breath * 6) * 0.3);
     if (C.rainbow) this.matSet.visor.emissive.setHSL((this.breath * 0.08) % 1, 1, 0.55);
+    if (C.butt) {
+      const j = Math.sin(this.phase * 2 + 0.6) * (moving ? 0.07 * (0.5 + run) : 0) + Math.sin(this.breath * 3) * 0.01;
+      C.butt.scale.set(1 - j * 0.5, 1 + j * 0.3, 1 + j);
+    }
   }
 
   // sliding (blended in by k): hips down near the ground, leaning back, the front leg out straight and the

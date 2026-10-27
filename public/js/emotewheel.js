@@ -6,9 +6,10 @@ import { esc } from './hud.js';
 const TAU = Math.PI * 2;
 
 export class EmoteWheel {
-  // pick(id): start that emote
-  constructor(pick) {
+  // pick(id): start that emote; owns(id): whether you have it (the others show locked, with their price)
+  constructor(pick, owns = () => true) {
     this.pick = pick;
+    this.owns = owns;
     this.open = false;
     this.cur = -1;
     this.vx = this.vy = 0;
@@ -30,6 +31,11 @@ export class EmoteWheel {
   toggle(on = !this.open) {
     this.open = on;
     this.el.hidden = !on;
+    if (on) this.el.querySelectorAll('.ew-item').forEach((b, i) => {
+      const E = EMOTES[i], locked = !this.owns(E.id);
+      b.classList.toggle('locked', locked);
+      b.innerHTML = `<b>${i + 1}</b>${esc(E.name)}${locked ? `<small>🔒 ${E.price} coins</small>` : ''}`;
+    });
     this.vx = this.vy = 0;
     this.highlight(-1);
   }

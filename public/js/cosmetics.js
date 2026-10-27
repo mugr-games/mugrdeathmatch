@@ -4,7 +4,7 @@
 export const COIN_KILL = 10;
 export const COIN_TEAM_WIN = 100;
 
-export const COS_SLOTS = { hat: 'Hats', back: 'Back', glow: 'Visor glow', skin: 'Suit skins', wskin: 'Gun skins', charm: 'Gun charms', menu: 'Menu theme' };
+export const COS_SLOTS = { hat: 'Hats', back: 'Back', glow: 'Visor glow', skin: 'Suit skins', wskin: 'Gun skins', charm: 'Gun charms', menu: 'Menu theme', emote: 'Emotes', body: 'Body' };
 
 export const COSMETICS = [
   // helmets take the wearer's suit colours; free to pick up in the shop
@@ -20,6 +20,9 @@ export const COSMETICS = [
   { id: 'tophat', slot: 'hat', name: 'Top hat', price: 300 },
   { id: 'halo', slot: 'hat', name: 'Halo', price: 600 },
   { id: 'crown', slot: 'hat', name: 'Crown', price: 1000 },
+  { id: 'maska', slot: 'hat', name: 'Heavy visor helmet', price: 1200 },
+  // body extras: in the wearer's own suit colour (or suit skin)
+  { id: 'big_butt', slot: 'body', name: 'Big butt', price: 300 },
   { id: 'cape', slot: 'back', name: 'Cape', price: 200 },
   { id: 'banner', slot: 'back', name: 'Back banner', price: 300 },
   { id: 'jetpack', slot: 'back', name: 'Jetpack', price: 450 },
@@ -90,14 +93,20 @@ export const COSMETICS = [
 
 export const COSMETIC = Object.fromEntries(COSMETICS.map((c) => [c.id, c]));
 
-// Emotes: free for everyone, picked from the wheel (0). bpm: the music's tempo, which the moves keep to;
-// loop: dances go on until you move, the others play once (len seconds); song: its music, a file in
-// sounds/emotes/ (without one, or if it won't load, a loop made by the synth plays). The moves are in emotes.js.
+// Emotes, picked from the wheel (0). Bought in the shop (price in coins; 0: everyone has it). bpm: the music's
+// tempo, which the moves keep to; loop: dances go on until you move, the others play once (len seconds);
+// song: its music, a file in sounds/emotes/ (without one, or if it won't load, a loop made by the synth
+// plays). The moves are in emotes.js.
 export const EMOTES = [
-  { id: 'griddy', name: 'The Griddy', bpm: 140, loop: true },
-  { id: 'clark', name: 'Captain Clark', bpm: 103.4, loop: true, song: 'clark.mp3' },
-  { id: 'verity', name: 'Lord Verity', bpm: 105.2, loop: true, song: 'verity.mp3' },
-  { id: 'wave', name: 'Wave', bpm: 120, len: 2.6 },
-  { id: 'dab', name: 'Dab', bpm: 120, len: 2.2 },
+  { id: 'griddy', name: 'The Griddy', price: 400, bpm: 140, loop: true },
+  { id: 'clark', name: 'Captain Clark', price: 600, bpm: 103.4, loop: true, song: 'clark.mp3' },
+  { id: 'verity', name: 'Lord Verity', price: 600, bpm: 105.2, loop: true, song: 'verity.mp3' },
+  { id: 'architect', name: 'The Architect', price: 800, bpm: 117.5, loop: true, song: 'architect.mp3' },
+  { id: 'wave', name: 'Wave', price: 0, bpm: 120, len: 2.6 },
+  { id: 'dab', name: 'Dab', price: 200, bpm: 120, len: 2.2 },
 ];
 export const EMOTE = Object.fromEntries(EMOTES.map((e) => [e.id, e]));
+// in the shop as emote_<id>; owned: the profile's owned items. Staff and the owner have them all.
+for (const e of EMOTES) if (e.price) COSMETICS.push({ id: 'emote_' + e.id, slot: 'emote', name: e.name, price: e.price });
+for (const c of COSMETICS) if (c.slot === 'emote') COSMETIC[c.id] = c;
+export const hasEmote = (id, owned = [], staff = false) => !!EMOTE[id] && (!EMOTE[id].price || staff || owned.includes('emote_' + id));

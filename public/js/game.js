@@ -1493,6 +1493,7 @@ export class Game {
   emote(id) {
     const ps = this.ps;
     if (id && (!this.connected || !ps.alive || ps.car || ps.seat || !ps.onGround || this.fv.phoneOpen?.())) return;
+    if (id && this.ownsEmote && !this.ownsEmote(id)) { this.sound.ui(300); this.onLockedEmote?.(id); return; }
     if (id && id === this.myEmote) id = null;
     if (!id && !this.myEmote) return;
     this.myEmoteMusic?.stop();

@@ -9,13 +9,18 @@ import { GamepadInput } from './gamepad.js';
 import { Social } from './social.js';
 import { Voice } from './voice.js';
 import { HeistMenu } from './planning.js';
-import { COSMETICS, COSMETIC } from './cosmetics.js';
+import { COSMETICS, COSMETIC, hasEmote, EMOTE } from './cosmetics.js';
 import { EmoteWheel } from './emotewheel.js';
 import { DEVLOG } from './devlog.js';
 import { api, pageUrl, SERVER } from './net.js';
 
 // the emote wheel (0)
-const wheel = new EmoteWheel((id) => game?.emote(id));
+const wheel = new EmoteWheel((id) => game?.emote(id), (id) => ownsEmote(id));
+// emotes you can do: the free ones, the ones you've bought, or all of them for staff and the owner
+function ownsEmote(id) {
+  const p = locker?.profile || {};
+  return hasEmote(id, p.owned || [], !!p.role || p.name === 'watermelon');
+}
 
 // A menu theme from the shop: the orange of the menus and HUD swapped for its colour (null: the orange).
 // Remembered in this browser too, so it's there straight away next time.
@@ -84,6 +89,8 @@ async function boot() {
   if (!serverInfo) { status('Can\'t reach the game server.'); return; }
   setAvailable(serverInfo.models);
   game = new Game(canvas, settings);
+  game.ownsEmote = (id) => ownsEmote(id);
+  game.onLockedEmote = (id) => status(`${EMOTE[id].name} is in the shop (Emotes) for ${EMOTE[id].price} coins.`);
   locker = new Locker({ settings, save, sound: game.sound, onLook: (color, model) => game.send({ t: 'color', color, model }), onTheme: menuTheme });
   game.token = locker.token;
   voice = new Voice({ game, account: () => account, signIn: () => $('btn-account').click() });

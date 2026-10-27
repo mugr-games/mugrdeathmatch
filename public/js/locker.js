@@ -260,6 +260,7 @@ export class Locker {
       const swatch = c.color ? `<i class="lk-sw" style="background:${c.color === 'rainbow' ? 'linear-gradient(90deg,#f33,#fd3,#3f6,#3cf,#a3f)' : c.color}"></i>` : '';
       let action;
       if (this.tab === 'shop') action = owned ? '<span class="lk-own">Owned</span>' : `<button type="button" class="btn${P.coins >= c.price ? ' primary' : ''}" data-buy="${c.id}">${c.price ? `Buy · ${c.price}` : 'Get · Free'}</button>`;
+      else if (c.slot === 'emote') action = '<span class="lk-own">On your wheel (0)</span>';
       else action = worn ? `<button type="button" class="btn" data-off="${c.slot}">Take off</button>` : `<button type="button" class="btn primary" data-wear="${c.id}">Wear</button>`;
       return `<div class="lk-card${worn ? ' worn' : ''}" data-id="${c.id}">${swatch}<b>${esc(c.name)}</b><span class="lk-price">${this.tab === 'shop' && !owned ? (c.price ? `${c.price} coins` : 'Free') : worn ? 'Wearing' : ''}</span>${action}</div>`;
     });

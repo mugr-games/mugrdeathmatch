@@ -674,11 +674,11 @@ export class Synth {
   // a dancer's music (an emote id), from where they are (null: your own, not placed in the world). Returns
   // { move(pos), stop() }; the music starts as soon as it's rendered (the first time takes a moment).
   emote(id, pos) {
-    if (!this.ctx || !MUSIC[id]) return null;
-    const c = this.ctx, M = MUSIC[id];
+    if (!this.ctx || !(MUSIC[id] || EMOTE[id]?.song)) return null;
+    const c = this.ctx, M = MUSIC[id] || { vol: 0.85, loop: !!EMOTE[id].loop };
     this.music ||= {};
     const song = EMOTE[id]?.song;
-    const ready = (this.music[id] ||= (song ? loadSong(c, song).catch((e) => { console.warn('emote song failed, using the synth loop', e); return bakeMusic(id, c.sampleRate); }) : bakeMusic(id, c.sampleRate))
+    const ready = (this.music[id] ||= (song ? loadSong(c, song).catch((e) => { console.warn('emote song failed, using the synth loop', e); return MUSIC[id] ? bakeMusic(id, c.sampleRate) : null; }) : bakeMusic(id, c.sampleRate))
       .catch((e) => { console.warn('emote music failed', e); return null; }));
     const g = c.createGain();
     g.gain.value = M.vol * (pos ? 1 : 0.6);

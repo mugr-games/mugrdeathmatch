@@ -148,6 +148,42 @@ function wallTwerk(b0, b1) {
   return keys;
 }
 
+// The Architect's swagger walk: a step on every beat, one arm swinging out and across in front, the other
+// back by the side, shoulders turning with it
+function swagger(b0, b1) {
+  const keys = [];
+  for (let k = b0; k < b1; k++) {
+    const side = k % 2 ? 1 : -1; // +1: the left arm swings across
+    const across = [13, -5, 9], back = [-3, 13, -2];
+    keys.push([k, { ...RESET, hipZ: 36.2, hy: -2.5 * side, roll: -0.06 * side, tTwist: -0.32 * side, tLean: 0.12, nod: 0.08, turn: 0.1 * side,
+      fL: side > 0 ? [-3, 1.5, 1.5, 0.2] : [5, 1.5, 1.5, 0], fR: side > 0 ? [5, 1.5, 1.5, 0] : [-3, 1.5, 1.5, 0.2],
+      hL: side > 0 ? across : back, hR: side > 0 ? back : across }]);
+    keys.push([k + 0.5, { hipZ: 37.4, hy: 0, roll: 0, fL: side > 0 ? [0, 1.5, 4, 0.3] : [3, 1.5, 1.5, 0], fR: side > 0 ? [3, 1.5, 1.5, 0] : [0, 1.5, 4, 0.3] }]);
+  }
+  return keys;
+}
+// the signature: right fist cocked up by the head, hopping on the left foot and yanking the right knee
+// up high on every beat
+function kneeHops(b0, b1) {
+  const keys = [];
+  for (let k = b0; k < b1; k++) {
+    keys.push([k, { ...RESET, hipZ: 35.5, tLean: 0.18, nod: 0.12, tTwist: 0.1, roll: 0.04, hR: [4, 15, 33], hL: [8, 14, 4], fR: [1, 1.5, 1.5, 0], fL: [0, 1.5, 1.5, 0] }]);
+    keys.push([k + 0.5, { hipZ: 38.8, tLean: 0.28, nod: 0.05, tTwist: 0.2, roll: 0.1, hR: [5, 15, 35], hL: [10, 13, 7], fR: [8, 0, 19, 0.5], fL: [0, 1.5, 3.5, 0.2] }]);
+  }
+  return keys;
+}
+// side on in a wide, bouncing stance, both fists up in a guard; jabs on the last beats
+function guard(b0, b1, jabs = []) {
+  const keys = [];
+  for (let k = b0; k < b1; k++) {
+    const jab = jabs.includes(k);
+    keys.push([k, { ...RESET, yaw: 0.9, hipZ: 31, tLean: 0.22, tTwist: -0.35, nod: 0.15, turn: -0.5, roll: 0.05, fR: [-5, 8, 1.5, 0], fL: [7, 7, 1.5, 0],
+      hR: jab ? [24, 3, 23] : [13, 4, 22], hL: [15, 3, 25] }]);
+    keys.push([k + 0.5, { hipZ: 33.5, hR: [12, 5, 24], hL: [14, 4, 23] }]);
+  }
+  return keys;
+}
+
 const ROUTINES = {
   // "The Great Captain Clark": a hopping kick on the spot, a spin and a skip over to the wall, the wall
   // twerk, a "one second" finger up, the crane kick, the wall again, and a hop back out. 32 beats.
@@ -183,6 +219,15 @@ const ROUTINES = {
     [30.5, { yaw: 0.4, hipZ: 37 }],
     [31, { yaw: 0, hipZ: 38.5, fR: [2, 2, 1.5, 0], fL: [-6, 2, 8, 0.4] }],
     [31.5, { hipZ: 37, fL: [0, 1.5, 1.5, 0], hR: [2, 19, 8], hL: [2, 19, 8] }],
+  ]),
+  // The Architect: the swagger walk, the cocked-fist knee hops, then side on in a bouncing guard throwing
+  // jabs, and back round to the front. 24 beats.
+  architect: routine(24, [
+    ...swagger(0, 8),
+    ...kneeHops(8, 16),
+    ...guard(16, 23, [20, 22]),
+    [23, { ...RESET, yaw: 0.4, hipZ: 36, hR: [8, 14, 6], hL: [8, 14, 6] }],
+    [23.5, { yaw: 0, hipZ: 37 }],
   ]),
   // Lord Verity, "move dem hips": the hip walk with flat hands patting down, pointing at himself, the disco
   // point, the walk again, reaching out to you, pointing at himself, the disco point, a finger to the sky,
@@ -238,6 +283,7 @@ const POSES = {
   },
 
   clark(av, t, b) { play(av, ROUTINES.clark, b); },
+  architect(av, t, b) { play(av, ROUTINES.architect, b); },
   verity(av, t, b) { play(av, ROUTINES.verity, b); },
 
   // a friendly wave with the right hand, weight on one hip

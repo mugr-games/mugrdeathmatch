@@ -21,7 +21,7 @@ import { createFreeplay } from './freeplay.js';
 import { createProfiles, OWNER_NAME } from './profiles.js';
 import { checkText, badName } from './filter.js';
 import { createReporter } from './moderation.js';
-import { COIN_KILL, COIN_TEAM_WIN, COSMETIC, EMOTE } from './public/js/cosmetics.js';
+import { COIN_KILL, COIN_TEAM_WIN, COSMETIC, EMOTE, hasEmote } from './public/js/cosmetics.js';
 
 // Packed build (the standalone .exe, see tools/build_exe.mjs): game files are assets inside the executable,
 // keyed by their path from the project root ("public/index.html"). Models still load from a "models" folder beside it.
@@ -331,6 +331,7 @@ function cosOf(pr) {
 function emote(p, m) {
   const e = m.e === null ? null : EMOTE[m.e] ? m.e : undefined;
   if (e === undefined) return;
+  if (e && !hasEmote(e, p.profile?.owned, !!roleOf(p.ws))) return; // buy it in the shop first
   // at most 20 every 2 seconds (only spam is cut: normal picking and stopping always goes through)
   const now = Date.now();
   if (now - (p.emoteWin || 0) > 2000) { p.emoteWin = now; p.emoteN = 0; }

@@ -571,7 +571,7 @@ export function createProfiles(file) {
       if (pr.coins < item.price) return `You need ${item.price - pr.coins} more coins.`;
       pr.coins -= item.price;
       pr.owned.push(id);
-      pr.eq[item.slot] = id; // wear it straight away
+      if (item.slot !== 'emote') pr.eq[item.slot] = id; // wear it straight away (emotes just go on the wheel)
       touch(pr);
       return null;
     },
