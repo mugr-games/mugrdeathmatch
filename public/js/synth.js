@@ -17,6 +17,11 @@ const GUNS = {
   lmg: { punch: 115, body: 2800, crack: 1, len: 0.07, tail: 0.4, mech: 0.04, drive: 4, vol: 0.7 },
   autoshotgun: { punch: 85, body: 1800, crack: 1.2, len: 0.14, tail: 0.7, mech: 0.06, drive: 5, vol: 0.9 },
   railgun: { punch: 60, body: 1200, crack: 1.4, len: 0.2, tail: 1.2, mech: 0, drive: 3, vol: 1, rail: true },
+  deagle: { punch: 80, body: 2000, crack: 1.4, len: 0.14, tail: 0.9, mech: 0.06, drive: 6, vol: 1.05 },
+  uzi: { punch: 190, body: 3800, crack: 0.8, len: 0.045, tail: 0.22, mech: 0.03, drive: 2.2, vol: 0.55 },
+  ak: { punch: 100, body: 2300, crack: 1.15, len: 0.09, tail: 0.6, mech: 0.045, drive: 4.5, vol: 0.85 },
+  dmr: { punch: 85, body: 2200, crack: 1.4, len: 0.12, tail: 1.1, mech: 0.07, drive: 5, vol: 0.95 },
+  double: { punch: 70, body: 1400, crack: 1.4, len: 0.2, tail: 1.1, mech: 0, drive: 7, vol: 1.1 },
 };
 const SURFACES = ['stone', 'grass', 'metal', 'wood'];
 const VARIANTS = 3;
@@ -140,23 +145,39 @@ const DESIGNS = {
       hiss(c, out, at, 'lowpass', [600, 150], 0.6, [[0, 0.001], [0.06, rnd(0.2, 0.45)], [0.8, 0.001]]);
     }
   },
+  // A footstep: the heel lands (a soft thud through the body and the click of the sole), the foot rolls, and the
+  // toe pushes off with a short scuff. Each surface has its own character on top.
   step(c, out, surface) {
-    // heel then toe
-    for (const [at, v] of [[0, 1], [rnd(0.025, 0.04), 0.6]]) {
-      if (surface === 'grass') {
-        hiss(c, out, at, 'highpass', rnd(2500, 3500), 0.5, [[0, 0.001], [0.01, 0.5 * v], [0.09, 0.001]]);
-        hiss(c, out, at, 'lowpass', 400, 0.7, [[0, 0.001], [0.004, 0.5 * v], [0.06, 0.001]]);
-      } else if (surface === 'metal') {
-        hiss(c, out, at, 'bandpass', rnd(1800, 2600), 2, [[0, 0.001], [0.002, 0.7 * v], [0.04, 0.001]]);
-        for (const f of [rnd(480, 560), rnd(1250, 1400), rnd(2900, 3200)]) tone(c, out, at, 'sine', f, f * 0.99, [[0, 0.001], [0.002, 0.07 * v], [0.25, 0.001]]);
-      } else if (surface === 'wood') {
-        hiss(c, out, at, 'bandpass', rnd(500, 700), 2.5, [[0, 0.001], [0.002, 0.9 * v], [0.06, 0.001]]);
-        tone(c, out, at, 'sine', 210, 150, [[0, 0.001], [0.002, 0.4 * v], [0.07, 0.001]]);
-      } else {
-        hiss(c, out, at, 'bandpass', rnd(1100, 1600), 1.2, [[0, 0.001], [0.0015, 0.8 * v], [0.035, 0.001]]);
-        hiss(c, out, at + 0.004, 'highpass', 4000, 0.7, [[0, 0.001], [0.002, 0.15 * v], [0.05, 0.001]]); // grit
+    const roll = rnd(0.045, 0.075); // heel to toe
+    const body = (at, v, f) => tone(c, out, at, 'sine', f, f * 0.55, [[0, 0.001], [0.004, v], [0.05, v * 0.3], [0.11, 0.001]]);
+    if (surface === 'grass') {
+      // a muffled thud and the crackle of grass and dirt crushed under the sole
+      body(0, 0.45, rnd(85, 105));
+      hiss(c, out, 0, 'lowpass', 700, 0.7, [[0, 0.001], [0.006, 0.35], [0.08, 0.001]]);
+      for (let i = 0; i < 9; i++) {
+        const at = rnd(0, 0.13);
+        hiss(c, out, at, 'bandpass', rnd(2800, 6500), 1.5, [[0, 0.001], [0.001, rnd(0.08, 0.28)], [rnd(0.008, 0.02), 0.001]]);
       }
-      tone(c, out, at, 'sine', 95, 55, [[0, 0.001], [0.003, 0.5 * v], [0.06, 0.001]]);
+      hiss(c, out, roll, 'highpass', 2200, 0.6, [[0, 0.001], [0.025, 0.12], [0.12, 0.001]]); // the brush of leaves as the foot lifts
+    } else if (surface === 'metal') {
+      // a hard clank that rings, the sole squeaking on the plate
+      body(0, 0.4, rnd(110, 130));
+      hiss(c, out, 0, 'bandpass', rnd(2000, 2600), 3, [[0, 0.001], [0.0015, 0.75], [0.03, 0.001]]);
+      for (const f of [rnd(420, 500), rnd(1150, 1300), rnd(2600, 3000), rnd(4300, 4700)]) tone(c, out, 0, 'sine', f, f * 0.995, [[0, 0.001], [0.002, 0.06], [rnd(0.25, 0.4), 0.001]]);
+      hiss(c, out, roll, 'bandpass', rnd(1600, 2000), 2.5, [[0, 0.001], [0.002, 0.3], [0.03, 0.001]]);
+    } else if (surface === 'wood') {
+      // a hollow knock through the boards and a creak
+      body(0, 0.55, rnd(140, 170));
+      hiss(c, out, 0, 'bandpass', rnd(420, 560), 4, [[0, 0.001], [0.002, 0.9], [0.09, 0.001]]);
+      tone(c, out, 0, 'triangle', rnd(230, 270), rnd(200, 220), [[0, 0.001], [0.003, 0.18], [0.12, 0.001]]);
+      hiss(c, out, roll, 'bandpass', rnd(900, 1200), 3, [[0, 0.001], [0.003, 0.4], [0.05, 0.001]]);
+    } else {
+      // hard ground: a tight heel click, a little grit, then the rubber scuff of the toe pushing off
+      body(0, 0.5, rnd(100, 125));
+      hiss(c, out, 0, 'bandpass', rnd(1700, 2300), 2.2, [[0, 0.001], [0.0012, 0.75], [0.022, 0.001]]);
+      hiss(c, out, 0.002, 'highpass', 5000, 0.7, [[0, 0.001], [0.0015, 0.18], [0.03, 0.001]]); // grit under the sole
+      hiss(c, out, roll, 'bandpass', rnd(1200, 1700), 1.4, [[0, 0.001], [0.014, 0.28], [0.06, 0.001]]); // toe scuff
+      hiss(c, out, roll, 'highpass', 3200, 0.6, [[0, 0.001], [0.01, 0.06], [0.05, 0.001]]);
     }
   },
   land(c, out) {
@@ -526,6 +547,11 @@ export class Synth {
       // generic noise for the simple realtime sounds
       this.noise = noiseBuf(c);
       bakeAll(c.sampleRate).then((b) => { this.buf = b; }).catch((e) => console.warn('sound baking failed', e));
+      // the hit marker and kill sounds are recordings
+      this.sfx = {};
+      for (const [k, f] of [['hit', 'hitmarker.mp3'], ['crit', 'crit.mp3']]) {
+        fetch(api('/sounds/sfx/' + f)).then((r) => r.arrayBuffer()).then((a) => c.decodeAudioData(a)).then((b) => { this.sfx[k] = b; }).catch(() => {});
+      }
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
@@ -802,8 +828,21 @@ export class Synth {
   }
 
   // the "you hit someone" tick: two bright partials, short and clean
-  hitTick() {
+  // a recorded sound effect, not placed in the world; false when it isn't loaded
+  sfxPlay(k, vol) {
+    const b = this.sfx?.[k];
+    if (!b) return false;
+    const s = this.ctx.createBufferSource();
+    s.buffer = b;
+    s.connect(this.out(null, vol, 0));
+    s.start();
+    return true;
+  }
+
+  // you hit someone (head: a headshot, a touch higher)
+  hitTick(head = false) {
     if (!this.ctx) return;
+    if (this.sfxPlay('hit', head ? 0.75 : 0.6)) return;
     const t = this.ctx.currentTime, o = this.out(null, 0.22, 0);
     this.tone(o, t, 'sine', 2100, 2000, 0.05, 0.6, 0.001);
     this.tone(o, t, 'sine', 3300, 3200, 0.03, 0.25, 0.001);
@@ -821,6 +860,38 @@ export class Synth {
   }
 
   // round start: a low struck bell; round end: a short rising arpeggio
+  // a flashbang: a sharp, very loud crack with a short echo
+  flashbang(pos) {
+    if (!this.ctx) return;
+    this.play('gun:double', pos, 1.3, 0.05, 0.4);
+    this.play('explosion', pos, 0.5, 0.2, 0.3);
+  }
+
+  // ringing ears after a flashbang: a high tone that fades, the rest of the game muffled meanwhile
+  ringing(s) {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime, len = 1 + s * 4;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine';
+    o.frequency.value = 3600 + Math.random() * 400;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.12 * s + 0.02, t + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + len + 0.1);
+    // everything else dips and comes back
+    const m = this.master.gain, v = this.volume * this.scene;
+    m.cancelScheduledValues(t);
+    m.setValueAtTime(v * (1 - 0.8 * s), t);
+    m.linearRampToValueAtTime(v, t + len);
+  }
+
+  // you killed someone
+  crit() {
+    if (this.ctx && !this.sfxPlay('crit', 0.8)) this.hitTick(true);
+  }
+
   roundStart() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime, o = this.out(null, 0.5, 0.4);

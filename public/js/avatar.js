@@ -326,6 +326,11 @@ export const HOLDS = {
   katana: { right: [-0.36, 0, 0], left: null, melee: true },
   axe: { right: [-0.3, 0, 0], left: null, melee: true },
   sledge: { right: [-0.3, 0, 0], left: null, melee: true },
+  machete: { right: [-0.32, 0, 0], left: null, melee: true },
+  pan: { right: [-0.3, 0, 0], left: null, melee: true },
+  golf: { right: [-0.38, 0, 0], left: null, melee: true },
+  wrench: { right: [-0.3, 0, 0], left: null, melee: true },
+  shovel: { right: [-0.34, 0, 0], left: null, melee: true },
   pistol: { right: [-0.18, 0, -0.42], left: [-0.2, 1.8, -0.48], mag: [-0.2, 0, -0.9], short: true },
   revolver: { right: [-0.22, 0, -0.4], left: [-0.24, 1.8, -0.46], mag: [0.05, 2, 0], short: true },
   smg: { right: [-0.1, 0, -0.42], left: [0.22, 0, -0.32], mag: [0.02, 0, -0.85] },
@@ -338,6 +343,12 @@ export const HOLDS = {
   rocket: { right: [-0.02, 0, -0.5], left: [0.2, 0, -0.5], mag: [-0.4, 0, 0] },
   railgun: { right: [-0.12, 0, -0.42], left: [0.18, 0, -0.3], mag: [0, 0, -0.8] },
   grenade: { right: [0, 0, 0], left: null },
+  flashbang: { right: [0, 0, 0], left: null },
+  deagle: { right: [-0.24, 0, -0.42], left: [-0.26, 1.8, -0.5], mag: [-0.3, 0, -0.9], short: true },
+  uzi: { right: [-0.06, 0, -0.45], left: [0.12, 1.6, -0.5], mag: [-0.06, 0, -0.95], short: true },
+  ak: { right: [-0.12, 0, -0.36], left: [0.24, 0, -0.06], mag: [0.06, 0, -0.75] },
+  dmr: { right: [-0.1, 0, -0.38], left: [0.26, 0, -0.04], mag: [0.04, 0, -0.6] },
+  double: { right: [-0.18, 0, -0.3], left: [0.1, 0, -0.06], mag: [0.02, 0, 0.3] },
 };
 // a hold's grip points in the weapon's own space, for a model of this size
 export function holdPoints(slot, size) {

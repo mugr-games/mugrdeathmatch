@@ -214,13 +214,16 @@ const CHARM_BUILD = {
 };
 export const CHARM_IDS = Object.keys(CHARM_BUILD);
 
-// a charm on a gun: a little chain from a ring on the gun's left side (the side you see), swinging.
-// size: the gun model's size. Returns the pivot it swings on.
-export function addCharm(gun, id, size) {
+// a charm on a gun: a little chain from a ring on the gun's left side (the side you see), swinging, hung where
+// no hand goes: off the stock behind the grip on long guns, under the muzzle end on pistols. size: the gun
+// model's size; hold: how it's held (HOLDS). Returns the pivot it swings on.
+export function addCharm(gun, id, size, hold) {
   const build = CHARM_BUILD[id];
   if (!build || !size) return null;
   const pivot = new THREE.Group();
-  pivot.position.set(-size.x * 0.12, size.y / 2 + 0.25, -size.z * 0.05);
+  const short = !hold || hold.short;
+  const x = short ? size.x * 0.3 : ((hold.right?.[0] ?? -0.1) - 0.27) * size.x;
+  pivot.position.set(x, size.y / 2 + 0.25, -size.z * (short ? 0.08 : 0.05));
   pivot.scale.setScalar(Math.max(0.9, Math.min(1.8, size.x / 22)));
   const add = (geo, mat, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) => {
     const m = new THREE.Mesh(geo, mat);

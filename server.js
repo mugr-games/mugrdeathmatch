@@ -8,7 +8,7 @@ import { WebSocketServer } from 'ws';
 import { BoxWorld, MASK_SHOT } from './public/js/collide.js';
 import { CODE_MAPS, MODE_MAPS, HEIST_MAPS } from './public/js/mapdefs.js';
 import { pmove, newPlayerState, BTN } from './public/js/pmove.js';
-import { WEAPONS, WEAPON_INDEX, ITEMS, LOADOUTS, ITEM_ROTATION, ZOMBIE } from './public/js/weapons.js';
+import { WEAPONS, WEAPON_INDEX, ITEMS, LOADOUTS, ITEM_ROTATION, ZOMBIE, cleanLoadout } from './public/js/weapons.js';
 import { initLoadout, zombieLoadout, giveWeapon, weaponThink, spreadDirs, eyePos, viewDir, hitTest, applyDamage, fallDamage, packOwn, MAX_HP, MAX_ARMOR } from './public/js/sim.js';
 import { launch, stepProj } from './public/js/projectiles.js';
 import { buildNav, boxBounds } from './public/js/nav.js';
@@ -94,7 +94,7 @@ function navFor(id) {
 const humanCount = (R) => { let n = 0; for (const p of R.players.values()) if (!p.bot) n++; return n; };
 
 // ------------------------------------------------------------------ room settings
-export const DEFAULT_SETTINGS = { name: 'Main', mode: 'dm', caplimit: 3, map: 'rotation', maxPlayers: 16, fraglimit: 30, timelimit: 15, loadout: 'default', gravity: 1, speed: 1, jump: 1, items: true, private: false, password: '', bots: 0, botSkill: 'normal' };
+export const DEFAULT_SETTINGS = { name: 'Main', mode: 'dm', caplimit: 3, map: 'rotation', maxPlayers: 16, fraglimit: 30, timelimit: 15, loadout: 'custom', gravity: 1, speed: 1, jump: 1, items: true, private: false, password: '', bots: 0, botSkill: 'normal' };
 
 function num(v, lo, hi, def) {
   v = +v;
@@ -348,6 +348,26 @@ let nextId = 1;
 
 const validModel = (m) => (Number.isInteger(m) && m >= 0 && m < NUM_MODELS ? m : 0);
 
+// custom-loadout rooms: everyone brings their own weapons (modes with weapons of their own, like zombies,
+// heists and free roam, ignore it and play standard)
+function ownLoadouts(R) {
+  return !!LOADOUTS[R.settings.loadout].custom && !R.cz && !R.fp && !R.heist && !R.mb && !R.pk;
+}
+// a player's own weapons for such a room, primary first (null elsewhere)
+function myLoadout(R, p) {
+  if (!ownLoadouts(R)) return null;
+  const L = cleanLoadout(p.profile?.loadout, p.profile?.owned || []);
+  return [L.primary, L.secondary, L.melee, L.utility];
+}
+// a profile arrived after spawning (it loads a moment after joining): swap to their own loadout, keeping health
+function giveOwnLoadout(R, p) {
+  if (!ownLoadouts(R) || !p.ps.alive) return;
+  const { hp, armor } = p.ps;
+  initLoadout(p.ps, R.settings.loadout, myLoadout(R, p));
+  p.ps.hp = hp;
+  p.ps.armor = armor;
+}
+
 function newPlayer(ws, name, color, model) {
   const p = {
     id: nextId++, ws, name: clean(name) || 'Player', color: Number.isInteger(color) && color >= 0 && color < NUM_COLORS ? color : nextId % NUM_COLORS,
@@ -394,7 +414,8 @@ function respawn(R, p) {
   const t = p.ps.time || 0;
   p.ps = newPlayerState([best.origin[0], best.origin[1], best.origin[2] + 1]);
   p.ps.time = t;
-  initLoadout(p.ps, R.cz ? 'zombies' : R.settings.loadout);
+  const S = LOADOUTS[R.settings.loadout];
+  initLoadout(p.ps, R.cz ? 'zombies' : S.custom && !ownLoadouts(R) ? 'default' : R.settings.loadout, myLoadout(R, p));
   if (p.team === 'zombie') zombieLoadout(p.ps);
   if (R.cz) R.cz.loadout(p);
   if (R.heist) R.heist.loadout(p);
@@ -588,7 +609,7 @@ function fire(R, p, wi, cmd, seq) {
     const dir = spreadDirs(W, cmd.yaw, cmd.pitch, seq, zoomed)[0];
     const pr = { id: nextProj++, w: wi, owner: p.id, ...launch(world, W, start, dir) };
     // grenades carry some of the thrower's momentum
-    if (W.proj.kind === 'grenade') for (let k = 0; k < 3; k++) pr.vel[k] += ps.velocity[k] * 0.5;
+    if (W.proj.kind === 'grenade' || W.proj.kind === 'flash') for (let k = 0; k < 3; k++) pr.vel[k] += ps.velocity[k] * 0.5;
     R.projectiles.push(pr);
     pushEvent(R, { e: 'proj', id: pr.id, w: wi, owner: p.id, o: pr.pos.map((v) => +v.toFixed(1)), v: pr.vel.map((v) => +v.toFixed(1)) });
     return;
@@ -678,7 +699,7 @@ function stepProjectiles(R, dt) {
     }
     const owner = R.players.get(pr.owner) || null;
     let done = false;
-    if (victim && P.kind !== 'grenade') {
+    if (victim && P.kind !== 'grenade' && P.kind !== 'flash') {
       const at = prev.map((v, k) => v + (pr.pos[k] - v) * best);
       if (P.direct) hurtAny(R, victim.o, owner, P.direct * (victim.head && P.kind === 'bolt' ? 2 : 1), W.id, victim.head, norm(pr.vel));
       if (P.radius) explode(R, pr, at, owner);
@@ -700,7 +721,24 @@ function stepProjectiles(R, dt) {
 function explode(R, pr, at, owner) {
   const W = WEAPONS[pr.w], P = W.proj;
   pushEvent(R, { e: 'boom', id: pr.id, o: at.map((v) => +v.toFixed(1)), k: P.kind });
-  blast(R, at, P, owner, W.id);
+  if (P.kind === 'flash') flashOut(R, at, P);
+  else blast(R, at, P, owner, W.id);
+}
+
+// A flashbang going off: everyone who can see it is blinded, more the closer they are and the more
+// squarely they're looking at it (behind you, you only catch a little). Each gets their own strength.
+function flashOut(R, at, P) {
+  for (const p of R.players.values()) {
+    if (p.bot || !p.ps.alive) continue;
+    const eye = eyePos(p.ps);
+    const d = Math.hypot(at[0] - eye[0], at[1] - eye[1], at[2] - eye[2]);
+    if (d > P.radius) continue;
+    const tr = R.map.world.trace(eye, at, [0, 0, 0], [0, 0, 0], MASK_SHOT);
+    if (tr.fraction < 0.97) continue;
+    const f = viewDir(p.yaw, p.pitch), dot = d > 1 ? ((at[0] - eye[0]) * f[0] + (at[1] - eye[1]) * f[1] + (at[2] - eye[2]) * f[2]) / d : 1;
+    const s = Math.pow(1 - d / P.radius, 0.6) * (0.2 + 0.8 * Math.max(0, dot));
+    if (s > 0.04) pushEvent(R, { e: 'flash', s: +s.toFixed(2) }, p.id);
+  }
 }
 
 // Radius damage and knockback from a point. P: { radius, splash, knock }.
@@ -829,10 +867,13 @@ function hittable(R) {
 }
 
 function hurtAny(R, o, attacker, dmg, weapon, head, dir) {
+  const npc = o.isZombie || o.isPed || o.isNpc, was = o.hp;
   if (o.isZombie) R.cz.hurt(o, attacker, attacker && attacker.ps.dmgBoost > attacker.ps.time ? dmg * 2 : dmg, weapon, head, dir);
   else if (o.isPed) R.fp.hurt(o, attacker, dmg, weapon, head, dir);
   else if (o.isNpc) R.heist.hurt(o, attacker, dmg, weapon, head, dir);
   else damage(R, o, attacker, dmg, weapon, head, dir);
+  // the shooter's hit marker for an NPC (players' hits already go out as hurt and kill events)
+  if (npc && attacker && !attacker.bot && was > 0 && o.hp < was) pushEvent(R, { e: 'hm', hs: head ? 1 : 0, k: o.hp <= 0 ? 1 : 0 }, attacker.id);
 }
 
 // what the zombies game needs from the server
@@ -1225,6 +1266,7 @@ function profileApi(req, res, route) {
     let error = null;
     if (route === 'buy') error = profiles.buy(pr, String(m.item || ''));
     else if (route === 'equip') error = profiles.equip(pr, String(m.slot || ''), m.item === null ? null : String(m.item || ''));
+    else if (route === 'loadout') error = profiles.setLoadout(pr, m.loadout);
     else if (route === 'image') {
       error = await profiles.setImage(pr, m.data);
       // let the staff online know there's a picture to look at
@@ -1304,7 +1346,7 @@ const server = http.createServer((req, res) => {
     });
   }
   if (req.method === 'OPTIONS' && p.startsWith('/api/')) { res.writeHead(204, CORS); return res.end(); }
-  if (req.method === 'POST' && /^\/api\/(profile|buy|equip|image|register|login)$/.test(p)) return profileApi(req, res, p.slice(5));
+  if (req.method === 'POST' && /^\/api\/(profile|buy|equip|loadout|image|register|login)$/.test(p)) return profileApi(req, res, p.slice(5));
   // approved pictures for image capes and flags
   if (p.startsWith('/img/')) {
     const id = p.slice(5);
@@ -1785,6 +1827,7 @@ wss.on('connection', (ws, req) => {
           me.profile = pr;
           if (!pr) return;
           if (me.room?.fp) me.room.fp.profile(me);
+          if (me.room) giveOwnLoadout(me.room, me);
           send(me, { t: 'coins', coins: pr.coins });
           let changed = Object.keys(pr.eq).length > 0;
           // signed in: play under the account name. A guest using someone's account name gets a guest name.

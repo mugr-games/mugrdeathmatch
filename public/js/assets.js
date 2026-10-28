@@ -34,6 +34,17 @@ export const SLOTS = {
   katana: { kind: 'weapon', length: 38 },
   axe: { kind: 'weapon', length: 32 },
   sledge: { kind: 'weapon', length: 34 },
+  deagle: { kind: 'weapon', length: 11 },
+  uzi: { kind: 'weapon', length: 13 },
+  ak: { kind: 'weapon', length: 36 },
+  dmr: { kind: 'weapon', length: 42 },
+  double: { kind: 'weapon', length: 36 },
+  flashbang: { kind: 'weapon', length: 5 },
+  machete: { kind: 'weapon', length: 24 },
+  pan: { kind: 'weapon', length: 20 },
+  golf: { kind: 'weapon', length: 38 },
+  wrench: { kind: 'weapon', length: 18 },
+  shovel: { kind: 'weapon', length: 40 },
   megahealth: { kind: 'item', size: 22 },
   heavyarmor: { kind: 'item', size: 26 },
   pw_damage: { kind: 'item', size: 18 },
@@ -47,7 +58,7 @@ export const MAP_CREDITS = {
 };
 
 // weapon id -> model slot
-export const WEAPON_SLOT = { crowbar: 'crowbar', pistol: 'pistol', '357': 'revolver', smg1: 'smg', ar2: 'rifle', shotgun: 'shotgun', crossbow: 'crossbow', sniper: 'sniper', rpg: 'rocket', grenade: 'grenade', lmg: 'lmg', autoshotgun: 'autoshotgun', railgun: 'railgun', claws: 'claws', knife: 'knife', bat: 'bat', katana: 'katana', axe: 'axe', sledge: 'sledge' };
+export const WEAPON_SLOT = { crowbar: 'crowbar', pistol: 'pistol', '357': 'revolver', smg1: 'smg', ar2: 'rifle', shotgun: 'shotgun', crossbow: 'crossbow', sniper: 'sniper', rpg: 'rocket', grenade: 'grenade', lmg: 'lmg', autoshotgun: 'autoshotgun', railgun: 'railgun', claws: 'claws', knife: 'knife', bat: 'bat', katana: 'katana', axe: 'axe', sledge: 'sledge', machete: 'machete', pan: 'pan', golf: 'golf', wrench: 'wrench', shovel: 'shovel', deagle: 'deagle', uzi: 'uzi', ak: 'ak', dmr: 'dmr', double: 'double', flashbang: 'flashbang' };
 export const ITEM_SLOT = { health: 'medkit', vial: 'medkit', battery: 'armor', ammo: 'ammo', megahealth: 'megahealth', heavyarmor: 'heavyarmor', damage: 'pw_damage', haste: 'pw_haste', boots: 'pw_boots' };
 
 let available = {};
@@ -248,6 +259,23 @@ function part(geo, mat, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
 const rbox = (w, d, h, r = 0.35) => new RoundedBoxGeometry(w, d, h, 2, Math.min(r, w / 2, d / 2, h / 2) * 0.99);
 const tube = (r, len, seg = 16) => new THREE.CylinderGeometry(r, r, len, seg).rotateZ(Math.PI / 2); // along X
 
+// A part cut from a side profile: points [x forward, z up], given thickness across, with rounded edges. holes:
+// cut-outs (a trigger guard's opening, a thumbhole). Real guns are mostly flat profiles like this.
+function slab(pts, width, mat, x = 0, y = 0, z = 0, bevel = 0.16, holes = []) {
+  const v = (p) => p.map(([px, pz]) => new THREE.Vector2(px, pz));
+  const sh = new THREE.Shape(v(pts));
+  for (const h of holes) sh.holes.push(new THREE.Path(v(h)));
+  const b = Math.min(bevel, width * 0.3), d = Math.max(0.02, width - b * 2);
+  const geo = new THREE.ExtrudeGeometry(sh, { depth: d, bevelEnabled: b > 0, bevelSize: b, bevelThickness: b, bevelSegments: 2, curveSegments: 6 });
+  geo.translate(0, 0, -d / 2).rotateX(Math.PI / 2);
+  return part(geo, mat, x, y, z);
+}
+// shallow grooves or slots along a side: count dark strips from x0, step apart
+function grooves(g, mat, x0, step, count, y, z, w, h, d = 0.08) {
+  for (let i = 0; i < count; i++) for (const s of [-1, 1]) g.add(part(new THREE.BoxGeometry(w, d, h), mat, x0 + i * step, s * y, z));
+}
+const BLACK = () => new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.9 });
+
 // barrel with a muzzle ring at its front end
 function barrel(g, r, len, x0, z, mat) {
   g.add(part(tube(r, len), mat, x0 + len / 2, 0, z));
@@ -346,24 +374,67 @@ const BUILD = {
     g.add(part(rbox(3.6, 3.6, 9.5, 0.6), steel, 14.6, 0, 0)); // the head
     for (const z of [-4.9, 4.9]) g.add(part(new THREE.CylinderGeometry(1.85, 1.85, 0.5, 4).rotateY(Math.PI / 4).rotateX(Math.PI / 2), steel, 14.6, 0, z)); // striking faces
   },
+  // a machete: a riveted grip and a long, wide blade that sweeps up to the tip
+  machete(g) {
+    const steel = M.steel(), grip = M.polymer(), dark = M.dark();
+    g.add(part(rbox(6.5, 1.2, 1.6, 0.55), grip, -8.5, 0, 0));
+    for (const x of [-10, -7]) for (const y of [-0.62, 0.62]) g.add(part(new THREE.CylinderGeometry(0.22, 0.22, 0.1, 8).rotateX(Math.PI / 2), steel, x, y, 0)); // rivets
+    g.add(part(rbox(0.6, 1.4, 2.2, 0.2), dark, -5, 0, 0));
+    const blade = new THREE.Shape([new THREE.Vector2(0, -0.9), new THREE.Vector2(15, -1.4), new THREE.Vector2(17.5, -0.4), new THREE.Vector2(16.5, 1.1), new THREE.Vector2(0, 0.7)]);
+    g.add(part(new THREE.ExtrudeGeometry(blade, { depth: 0.12, bevelEnabled: true, bevelSize: 0.05, bevelThickness: 0.06, bevelSegments: 1 }).translate(0, 0, -0.06).rotateX(Math.PI / 2), steel, -4.7, 0, 0));
+  },
+  // a cast-iron frying pan held by its handle
+  pan(g) {
+    const iron = M.dark(), grip = M.polymer();
+    g.add(part(rbox(10, 1.1, 1.3, 0.45), grip, -5, 0, 0)); // the handle
+    g.add(part(new THREE.CylinderGeometry(0.75, 0.75, 0.6, 12).rotateX(Math.PI / 2), iron, -10, 0, 0)); // hanging hole end
+    const pan = new THREE.LatheGeometry([[0, 0], [4.6, 0], [5.3, 0.35], [5.6, 1.6], [5.3, 1.65], [5.0, 0.55], [0, 0.45]].map(([r, y]) => new THREE.Vector2(r, y)), 28);
+    g.add(part(pan.translate(0, -0.8, 0), iron, 5.2, 0, 0)); // the pan, its face to the side
+  },
+  // a golf club: a long thin shaft, a rubber grip and a metal club head at the bottom
+  golf(g) {
+    const steel = M.steel(), grip = M.polymer();
+    g.add(part(new THREE.CylinderGeometry(0.28, 0.42, 36, 10).rotateZ(Math.PI / 2), steel, 0, 0, 0));
+    g.add(part(new THREE.CylinderGeometry(0.55, 0.62, 9, 12).rotateZ(Math.PI / 2), grip, -14, 0, 0));
+    g.add(part(rbox(1.2, 1.4, 4.2, 0.5), steel, 18.2, 0, -1.6, 0, 0.2, 0)); // the head
+  },
+  // a pipe wrench: a heavy handle with an adjustable jaw at the end
+  wrench(g) {
+    const red = M.paint(0xb3261e), steel = M.steel(), dark = M.dark();
+    g.add(part(rbox(14, 1.2, 1.8, 0.5), red, -2, 0, 0));
+    g.add(part(rbox(3.4, 1.5, 4.4, 0.4), dark, 6.2, 0, 1)); // the jaw body
+    g.add(part(rbox(4.2, 1.3, 1.1, 0.3), steel, 7, 0, 3.4)); // the hook jaw
+    g.add(part(new THREE.CylinderGeometry(0.9, 0.9, 1.6, 14).rotateX(Math.PI / 2), steel, 4.2, 0, 1.6)); // adjusting nut
+  },
+  // a shovel: a long wooden shaft, a D handle and a pointed steel blade
+  shovel(g) {
+    const wood = M.wood(), steel = M.dark();
+    g.add(part(new THREE.CylinderGeometry(0.62, 0.62, 30, 10).rotateZ(Math.PI / 2), wood, -2, 0, 0));
+    g.add(part(new THREE.TorusGeometry(1.6, 0.35, 6, 14, Math.PI).rotateY(Math.PI / 2).rotateX(Math.PI / 2), wood, -18.4, 0, 0)); // D handle
+    const blade = new THREE.Shape([new THREE.Vector2(0, -3.2), new THREE.Vector2(7, -3.0), new THREE.Vector2(10, 0), new THREE.Vector2(7, 3.0), new THREE.Vector2(0, 3.2)]);
+    g.add(part(new THREE.ExtrudeGeometry(blade, { depth: 0.2, bevelEnabled: false }).translate(0, 0, -0.1), steel, 13, 0, 0)); // flat, facing up
+  },
+  // a striker-fired polymer pistol: a squared steel slide with rear serrations, a polymer frame with an
+  // undercut trigger guard, an angled textured grip, a dust-cover rail and three-dot sights
   pistol(g) {
-    const poly = M.polymer(), steel = M.dark();
-    g.add(part(rbox(9, 2.0, 2.2, 0.4), steel, 0.5, 0, 1.6)); // slide
-    for (let i = 0; i < 5; i++) g.add(part(new THREE.BoxGeometry(0.2, 2.1, 1.4), poly, -3 + i * 0.5, 0, 1.7)); // serrations
-    g.add(part(rbox(7.5, 1.9, 1.4, 0.3), poly, 0, 0, 0.0)); // frame
-    barrel(g, 0.45, 1.2, 4.9, 1.6, steel);
-    grip(g, -2.6, -0.4, 5, poly);
-    triggerGuard(g, 0.2, -0.6, poly);
-    g.add(part(new THREE.BoxGeometry(0.5, 0.6, 0.6), steel, 4.4, 0, 2.95)); // front sight
-    g.add(part(new THREE.BoxGeometry(0.6, 1.2, 0.6), steel, -3.2, 0, 2.95)); // rear sight
+    const poly = M.polymer(), steel = M.dark(), black = BLACK();
+    g.add(slab([[-3.7, 0.85], [4.6, 0.85], [4.6, 2.25], [4.35, 2.6], [-3.45, 2.6], [-3.7, 2.3]], 1.9, steel, 0, 0, 0, 0.14));
+    g.add(slab([[4.25, 0.9], [4.25, 0.25], [1.5, 0.05], [1.05, -1.55], [0.55, -1.8], [-0.95, -1.8], [-1.45, -1.25], [-1.75, -0.75], [-2.7, -5.1], [-5.05, -5.1], [-4.25, 0.05], [-4.6, 0.45], [-3.75, 0.9]],
+      1.75, poly, 0, 0, 0, 0.18, [[[0.6, -0.15], [0.35, -1.35], [-0.75, -1.35], [-1.25, -0.6], [-0.95, -0.15]]]));
+    g.add(slab([[-0.15, -0.2], [0.0, -0.95], [-0.3, -1.15], [-0.5, -0.95], [-0.35, -0.2]], 0.4, steel, 0, 0, 0, 0.05)); // trigger
+    for (let i = 0; i < 6; i++) g.add(part(new THREE.BoxGeometry(0.12, 1.96, 1.25), black, -3.25 + i * 0.22, 0, 1.75)); // serrations
+    grooves(g, black, -4.4, 0.32, 7, 0.88, -2.6, 0.16, 3.4, 0.04); // grip texture
+    g.add(part(new THREE.BoxGeometry(2.2, 0.06, 0.95), black, 1.0, 0.95, 1.95)); // ejection port
+    g.add(part(new THREE.BoxGeometry(0.7, 0.05, 0.5), M.steel(), 1.0, 0.98, 1.95)); // the barrel hood in it
+    g.add(part(new THREE.BoxGeometry(1.6, 0.25, 0.35), M.steel(), -0.6, 0.98, 0.65)); // slide stop
+    for (let i = 0; i < 3; i++) g.add(part(new THREE.BoxGeometry(0.35, 1.8, 0.22), poly, 2.2 + i * 0.6, 0, 0.12)); // rail
+    g.add(part(rbox(2.45, 1.95, 0.42, 0.15), poly, -3.9, 0, -5.25, 0, 0.21, 0)); // magazine base
+    g.add(part(new THREE.BoxGeometry(0.35, 0.45, 0.5), steel, 4.15, 0, 2.8)); // front sight
+    for (const s of [-0.45, 0.45]) g.add(part(new THREE.BoxGeometry(0.5, 0.42, 0.5), steel, -3.1, s, 2.8)); // rear sight
     const white = new THREE.MeshBasicMaterial({ color: 0xf0f0e8 });
-    g.add(part(new THREE.BoxGeometry(0.62, 0.22, 0.22), white, 4.4, 0, 3.05)); // sight dots
-    for (const s of [-0.38, 0.38]) g.add(part(new THREE.BoxGeometry(0.62, 0.2, 0.2), white, -3.2, s, 3.05));
-    g.add(part(new THREE.BoxGeometry(2.4, 0.1, 1), M.polymer(), 1.2, 1.02, 1.85)); // ejection port
-    g.add(part(new THREE.BoxGeometry(1.6, 0.25, 0.4), M.steel(), -0.4, 1.0, 0.75)); // slide stop
-    g.add(part(rbox(2.9, 2.4, 0.5, 0.2), poly, -3.4, 0, -4.9, 0, -0.28, 0)); // magazine baseplate
-    for (let i = 0; i < 3; i++) g.add(part(new THREE.BoxGeometry(0.4, 1.95, 0.25), steel, 2 + i * 0.7, 0, -0.75)); // accessory rail
-    g.add(part(new THREE.CircleGeometry(0.28, 12).rotateY(Math.PI / 2), M.polymer(), 6.12, 0, 1.6)); // the bore
+    g.add(part(new THREE.BoxGeometry(0.4, 0.2, 0.2), white, 4.15, 0, 2.9));
+    for (const s of [-0.45, 0.45]) g.add(part(new THREE.BoxGeometry(0.52, 0.18, 0.18), white, -3.1, s, 2.9));
+    g.add(part(new THREE.CircleGeometry(0.3, 14).rotateY(Math.PI / 2), black, 4.62, 0, 1.6)); // the bore
   },
   revolver(g) {
     const steel = M.steel(), wood = M.wood(), dark = M.dark();
@@ -379,58 +450,176 @@ const BUILD = {
     triggerGuard(g, -0.4, -0.5, steel);
     g.add(part(new THREE.BoxGeometry(1.2, 0.6, 1), steel, -1.5, 0, 3.1, 0, 0.5, 0)); // hammer
   },
+  // a roller-delayed SMG: a stamped tube receiver, a cocking tube over the barrel, a slim handguard, a curved
+  // steel magazine, a polymer trigger group and a retracted two-rod stock
   smg(g) {
-    const poly = M.polymer(), steel = M.dark();
-    g.add(part(rbox(12, 2.6, 3.2, 0.5), poly, 0, 0, 0.8));
-    barrel(g, 0.5, 6, 6, 1.2, steel);
-    g.add(part(tube(1.0, 4.5), steel, 9.5, 0, 1.2)); // suppressor
-    rail(g, -4, 8, 2.5, steel);
-    g.add(part(rbox(1.8, 1.6, 7, 0.3), steel, 2.2, 0, -3.5, 0, 0.12, 0)); // magazine
-    grip(g, -2.5, -0.8, 4.5, poly);
-    triggerGuard(g, -0.6, -0.9, poly);
-    g.add(part(rbox(5, 1.2, 2.2, 0.3), poly, -8.5, 0, 0.6)); // folded stock
-    g.add(part(new THREE.BoxGeometry(2.4, 1.6, 1.6), steel, -1, 0, 3.4)); // red dot
-    g.add(part(new THREE.CircleGeometry(0.55, 12).rotateY(Math.PI / 2), M.glass(), 0.25, 0, 3.4));
-    g.add(part(new THREE.BoxGeometry(1.4, 1.4, 0.6), steel, 3.5, 1.5, 1.9)); // charging handle
-    g.add(part(new THREE.CylinderGeometry(0.35, 0.35, 0.4, 8).rotateX(Math.PI / 2), M.steel(), -2.2, 1.4, 0.6)); // selector
-    g.add(part(new THREE.TorusGeometry(0.6, 0.15, 6, 12), steel, -10.8, 0, 1.4, Math.PI / 2, 0, 0)); // sling loop
+    const poly = M.polymer(), steel = M.dark(), black = BLACK();
+    g.add(slab([[-6, 0], [5.2, 0], [5.2, 2.4], [-6, 2.4]], 2.2, steel, 0, 0, 0, 0.5));
+    for (let i = 0; i < 5; i++) g.add(part(new THREE.BoxGeometry(0.25, 2.25, 0.5), black, -4 + i * 1.6, 0, 1.2)); // stamped ribs
+    g.add(part(tube(0.62, 8.5), steel, 7.2, 0, 2.05)); // cocking tube
+    g.add(slab([[5.2, 0.1], [10.2, 0.35], [10.2, 1.85], [5.2, 2.05]], 2.5, poly, 0, 0, 0, 0.4)); // handguard
+    grooves(g, black, 6, 0.9, 5, 1.22, 1.0, 0.45, 1.1, 0.06);
+    barrel(g, 0.42, 2.8, 10, 1.1, steel);
+    g.add(part(new THREE.TorusGeometry(0.75, 0.16, 6, 14).rotateY(Math.PI / 2), steel, 11.6, 0, 2.6)); // front sight hood
+    g.add(slab([[0.9, 0.05], [2.6, 0.05], [3.4, -3.6], [3.2, -6.0], [1.6, -6.2], [1.0, -3.6]], 1.3, steel, 0, 0, 0, 0.12)); // curved magazine
+    g.add(slab([[-0.3, 0.05], [-0.8, -0.9], [-1.6, -4.3], [-3.4, -4.3], [-3.0, -0.4], [-2.5, 0.05]], 1.6, poly, 0, 0, 0, 0.2)); // grip
+    triggerGuard(g, -0.4, -0.85, poly);
+    for (const s of [-0.9, 0.9]) g.add(part(tube(0.28, 6.5), steel, -9.2, s, 1.3)); // stock rods
+    g.add(part(rbox(1.2, 2.6, 3.4, 0.4), poly, -12.6, 0, 1.0)); // butt pad
+    g.add(part(new THREE.CylinderGeometry(0.75, 0.75, 1.0, 14).rotateX(Math.PI / 2), steel, -5.2, 0, 2.95)); // rear sight drum
+    g.add(part(new THREE.BoxGeometry(1.0, 0.5, 0.5), steel, 3.6, 1.35, 2.05)); // cocking handle
   },
+  // an AR-pattern rifle: a flat-top upper with a full rail, a lower with its magazine well, a free-floated
+  // slotted handguard, a polymer magazine, an A2 grip, a buffer tube and a collapsible stock, a red-dot sight
   rifle(g) {
-    const poly = M.polymer(), steel = M.dark(), acc = M.paint(0x3f6f8f);
-    g.add(part(rbox(14, 2.8, 3.4, 0.5), poly, 1, 0, 0.6)); // receiver
-    g.add(part(rbox(10, 3.2, 3.0, 0.6), acc, 8, 0, 0.9)); // handguard
-    for (let i = 0; i < 4; i++) g.add(part(new THREE.BoxGeometry(1.2, 3.3, 0.5), steel, 4.5 + i * 2.2, 0, 1.6)); // vents
-    barrel(g, 0.55, 6, 13, 0.9, steel);
-    rail(g, -4, 14, 2.6, steel);
-    // a curved magazine: segments tipping forward as they go down
-    for (let i = 0; i < 4; i++) g.add(part(rbox(2.1, 1.8, 2.1, 0.25), steel, 2.5 + i * 0.55, 0, -1.3 - i * 1.9, 0, 0.12 + i * 0.09, 0));
-    grip(g, -2.4, -0.9, 4.8, poly);
-    triggerGuard(g, -0.4, -1, poly);
-    g.add(part(tube(1.0, 7), M.dark(), -7.5, 0, 1.4)); // buffer tube
-    g.add(part(rbox(5.5, 2.2, 3.8, 0.6), poly, -11.5, 0, 0.6)); // adjustable stock
-    g.add(part(rbox(1.2, 2.3, 4.4, 0.4), M.polymer(), -14.4, 0, 0.4)); // butt pad
-    optic(g, 1, 4.6, 6, 1.0, steel, M.glass());
-    g.add(part(new THREE.CylinderGeometry(0.55, 0.55, 0.6, 10).rotateZ(Math.PI / 2), steel, -2.6, 1.55, 1.6)); // forward assist
-    g.add(part(new THREE.BoxGeometry(1.6, 3.4, 0.6), steel, -5.2, 0, 2.3)); // charging handle
-    g.add(part(new THREE.BoxGeometry(3, 0.1, 1.1), M.polymer(), 0.5, 1.42, 1.3)); // dust cover
-    g.add(part(tube(0.85, 2.4, 10), steel, 19.6, 0, 0.9)); // muzzle brake
-    for (const s of [-1, 1]) g.add(part(new THREE.BoxGeometry(1.2, 0.2, 0.5), M.polymer(), 19.6, s * 0.8, 0.9)); // its ports
+    const poly = M.polymer(), steel = M.dark(), black = BLACK();
+    g.add(slab([[-5.5, 1.0], [6.5, 1.0], [6.5, 2.6], [-5.5, 2.6]], 2.2, steel, 0, 0, 0, 0.2)); // upper
+    g.add(slab([[-5.5, 1.05], [4.2, 1.05], [4.2, -1.0], [3.4, -1.6], [1.0, -1.6], [0.6, -0.4], [-1.6, -0.4], [-5.2, 0.2]], 2.0, steel, 0, 0, 0, 0.2)); // lower
+    rail(g, -5.5, 12, 2.7, steel);
+    g.add(slab([[6.5, 0.85], [17.5, 0.85], [17.5, 2.65], [6.5, 2.65]], 2.5, poly, 0, 0, 0, 0.45)); // handguard
+    grooves(g, black, 8, 1.8, 5, 1.24, 1.6, 1.1, 0.4, 0.06); // M-LOK slots
+    rail(g, 6.6, 10.8, 2.8, steel);
+    barrel(g, 0.42, 5, 17.5, 1.75, steel);
+    g.add(part(tube(0.72, 2.2, 12), steel, 23.4, 0, 1.75)); // muzzle brake
+    for (const s of [-1, 1]) g.add(part(new THREE.BoxGeometry(1.1, 0.2, 0.45), black, 23.5, s * 0.66, 1.75));
+    g.add(slab([[1.0, -1.6], [3.4, -1.6], [3.9, -4.5], [3.4, -7.4], [1.2, -7.6], [1.0, -4.6]], 1.6, poly, 0, 0, 0, 0.15)); // magazine
+    grooves(g, black, 1.5, 0.5, 3, 0.81, -6.6, 0.2, 0.6, 0.04);
+    g.add(slab([[-0.9, -0.4], [-1.6, -4.6], [-3.2, -4.7], [-3.0, -0.4]], 1.5, poly, 0, 0, 0, 0.25)); // grip
+    triggerGuard(g, -0.2, -0.9, steel);
+    g.add(part(tube(0.65, 5), steel, -8, 0, 1.6)); // buffer tube
+    g.add(slab([[-7.5, 2.4], [-14, 2.6], [-14.4, 2.2], [-14.4, -1.8], [-13.6, -2.0], [-9, 0.2], [-7.5, 0.7]], 2.0, poly, 0, 0, 0, 0.3)); // stock
+    g.add(part(new THREE.BoxGeometry(2.2, 0.06, 0.9), black, 0.6, 1.12, 1.8)); // ejection port
+    g.add(part(new THREE.CylinderGeometry(0.42, 0.42, 0.6, 10).rotateZ(Math.PI / 2), steel, -3.6, 1.2, 2.0)); // forward assist
+    g.add(part(new THREE.BoxGeometry(1.2, 2.6, 0.45), steel, -5.6, 0, 2.6)); // charging handle
+    g.add(part(new THREE.BoxGeometry(2.6, 1.6, 1.6), steel, -1, 0, 3.6)); // red dot
+    g.add(part(new THREE.CircleGeometry(0.6, 14).rotateY(Math.PI / 2), M.glass(), 0.32, 0, 3.7));
   },
+  // a pump shotgun: a milled receiver, the barrel over a magazine tube, a grooved wooden fore-end, a wooden
+  // stock with a pistol wrist, a bead sight and spare shells on a side saddle
   shotgun(g) {
-    const steel = M.dark(), wood = M.wood();
-    barrel(g, 0.75, 24, -2, 1.6, steel);
-    g.add(part(tube(0.65, 20), steel, 8, 0, 0.1)); // magazine tube
-    g.add(part(rbox(7, 2.2, 2.2, 0.6), wood, 9, 0, 0.1)); // pump
-    for (let i = 0; i < 5; i++) g.add(part(new THREE.BoxGeometry(0.3, 2.3, 2.3), M.polymer(), 6.5 + i * 1.2, 0, 0.1));
-    g.add(part(rbox(8, 2.4, 3.2, 0.5), steel, -3.5, 0, 0.9)); // receiver
-    triggerGuard(g, -4.5, -0.8, steel);
-    g.add(part(rbox(11, 2.2, 3.6, 0.8), wood, -12.5, 0, -0.4, 0, 0.12, 0)); // stock
-    g.add(part(new THREE.SphereGeometry(0.4, 8, 6), steel, 21.5, 0, 2.5)); // bead sight
-    // spare shells on a side saddle: red hulls with brass heads
+    const steel = M.dark(), wood = M.wood(), black = BLACK();
+    g.add(slab([[-6, -0.2], [2, -0.2], [2, 2.6], [-5, 2.8], [-6, 2.4]], 2.2, steel, 0, 0, 0, 0.3)); // receiver
+    barrel(g, 0.55, 20, 2, 2.0, steel);
+    g.add(part(tube(0.55, 17), steel, 10.5, 0, 0.8)); // magazine tube
+    g.add(slab([[6, -0.1], [13, -0.1], [13, 1.7], [6, 1.7]], 2.6, wood, 0, 0, 0, 0.45)); // fore-end
+    grooves(g, black, 6.8, 0.8, 8, 1.27, 0.8, 0.22, 1.2, 0.05);
+    g.add(slab([[-6, 0.2], [-6, 2.4], [-9, 1.8], [-18, 2.1], [-18.4, 1.7], [-18.4, -3.0], [-17.6, -3.2], [-9.5, -1.2], [-7.2, -1.0]], 2.0, wood, 0, 0, 0, 0.35)); // stock
+    g.add(part(rbox(0.8, 2.1, 5.2, 0.3), M.polymer(), -18.6, 0, -0.5, 0, 0.05, 0)); // recoil pad
+    triggerGuard(g, -4.2, -0.8, steel);
+    g.add(part(new THREE.SphereGeometry(0.32, 8, 6), M.steel(), 21.6, 0, 2.7)); // bead sight
+    g.add(part(new THREE.BoxGeometry(3, 0.06, 1.1), black, -2.2, 1.13, 1.6)); // ejection port
     const hull = new THREE.MeshStandardMaterial({ color: 0xa8231c, roughness: 0.55 }), brass = new THREE.MeshStandardMaterial({ color: 0xc9a04a, metalness: 0.9, roughness: 0.3 });
-    g.add(part(rbox(5, 0.5, 2.4, 0.2), M.polymer(), -3.6, 1.35, 1.0));
-    for (let i = 0; i < 4; i++) { g.add(part(new THREE.CylinderGeometry(0.42, 0.42, 2.2, 10), hull, -5.2 + i * 1.05, 1.75, 1.15)); g.add(part(new THREE.CylinderGeometry(0.44, 0.44, 0.5, 10), brass, -5.2 + i * 1.05, 1.75, -0.05)); }
-    g.add(part(new THREE.BoxGeometry(3, 1.4, 0.1), M.polymer(), -3.2, 0, -0.72)); // loading port
+    g.add(part(rbox(5, 0.5, 2.4, 0.2), M.polymer(), -3, 1.35, 1.2));
+    for (let i = 0; i < 4; i++) { g.add(part(new THREE.CylinderGeometry(0.42, 0.42, 2.2, 10), hull, -4.6 + i * 1.05, 1.75, 1.35)); g.add(part(new THREE.CylinderGeometry(0.44, 0.44, 0.5, 10), brass, -4.6 + i * 1.05, 1.75, 0.15)); }
+  },
+  // a big-bore semi-auto pistol: a long steel slide over a fluted fixed barrel, a steel frame with rubber
+  // grip panels and an exposed hammer
+  deagle(g) {
+    const steel = M.steel(), dark = M.dark(), rubber = M.polymer(), black = BLACK();
+    g.add(slab([[-4.3, 1.0], [1.7, 1.0], [1.7, 2.95], [-4.1, 2.95], [-4.3, 2.6]], 1.95, steel, 0, 0, 0, 0.14)); // slide
+    g.add(slab([[1.5, 1.15], [6.5, 1.15], [6.5, 2.95], [1.5, 2.95]], 1.55, steel, 0, 0, 0, 0.12)); // barrel
+    for (const z of [1.6, 2.4]) for (const s of [-1, 1]) g.add(part(new THREE.BoxGeometry(4.2, 0.06, 0.28), dark, 4.2, s * 0.79, z)); // flutes
+    g.add(slab([[4.0, 1.05], [4.0, 0.5], [1.2, 0.3], [0.9, -1.4], [0.4, -1.75], [-1.1, -1.75], [-1.6, -1.1], [-1.9, -0.6], [-2.9, -5.3], [-5.5, -5.3], [-4.7, 0.2], [-4.95, 0.7], [-4.25, 1.05]],
+      1.85, steel, 0, 0, 0, 0.18, [[[0.55, -0.1], [0.3, -1.35], [-0.85, -1.35], [-1.35, -0.55], [-1.05, -0.1]]]));
+    g.add(slab([[-2.05, -0.9], [-2.85, -5.0], [-5.25, -5.0], [-4.6, -0.45]], 2.05, rubber, 0, 0, 0, 0.2)); // grip panels
+    grooves(g, black, -4.6, 0.36, 6, 1.03, -2.8, 0.18, 3.6, 0.03);
+    for (let i = 0; i < 7; i++) g.add(part(new THREE.BoxGeometry(0.12, 2.0, 1.4), black, -3.9 + i * 0.22, 0, 1.95)); // serrations
+    g.add(part(new THREE.BoxGeometry(0.7, 0.6, 1.0), dark, -4.55, 0, 2.6, 0, 0.4, 0)); // hammer
+    g.add(slab([[-0.15, -0.15], [0.0, -0.95], [-0.3, -1.15], [-0.5, -0.95], [-0.35, -0.15]], 0.4, dark, 0, 0, 0, 0.05)); // trigger
+    g.add(part(new THREE.BoxGeometry(0.4, 0.5, 0.5), dark, 6.1, 0, 3.15)); // front sight
+    g.add(part(new THREE.BoxGeometry(0.5, 1.2, 0.45), dark, -3.7, 0, 3.15)); // rear sight
+    g.add(part(new THREE.CircleGeometry(0.42, 3).rotateY(Math.PI / 2).rotateX(Math.PI / 2), black, 6.52, 0, 2.05)); // the triangular bore
+  },
+  // a micro SMG: a boxy stamped receiver, the magazine up through the grip, a short barrel nut, a top cocking
+  // knob and a wire stock folded down the side
+  uzi(g) {
+    const steel = M.dark(), poly = M.polymer(), black = BLACK();
+    g.add(slab([[-5, 0], [5.4, 0], [5.4, 2.4], [-5, 2.4]], 2.3, steel, 0, 0, 0, 0.45));
+    for (let i = 0; i < 6; i++) g.add(part(new THREE.BoxGeometry(0.3, 2.2, 0.25), black, -3.8 + i * 1.4, 0, 2.38)); // ribbed top
+    g.add(part(tube(0.75, 1.4, 14), steel, 6.0, 0, 1.2)); // barrel nut
+    barrel(g, 0.36, 1.6, 6.6, 1.2, steel);
+    g.add(slab([[1.0, 0.05], [0.5, -4.6], [-1.6, -4.6], [-1.4, 0.05]], 1.75, poly, 0, 0, 0, 0.2)); // grip
+    g.add(part(rbox(1.5, 1.25, 2.2, 0.15), steel, -0.65, 0, -5.6, 0, 0.1, 0)); // magazine
+    g.add(slab([[3.4, 0.05], [3.2, -1.3], [1.2, -1.4], [1.0, 0.05]], 1.2, steel, 0, 0, 0, 0.12, [[[2.9, -0.15], [2.75, -1.0], [1.45, -1.05], [1.3, -0.15]]])); // trigger guard
+    g.add(part(new THREE.SphereGeometry(0.5, 10, 8), steel, 1.0, 0, 2.75)); // cocking knob
+    for (const s of [-1, 1]) g.add(part(new THREE.BoxGeometry(0.3, 0.6, 0.9), steel, 4.4, s * 0.5, 2.8)); // front sight ears
+    for (const s of [-1, 1]) g.add(part(tube(0.18, 9), steel, -1.6, s * 1.35, 0.5)); // folded wire stock
+    g.add(part(rbox(0.5, 3, 2.4, 0.2), steel, 2.9, 0, 0.5)); // its butt plate
+  },
+  // an AK-pattern rifle: a stamped receiver with a ribbed dust cover, wooden handguards, a gas block and a
+  // slant brake, a curved steel magazine, a wooden grip and a long wooden stock
+  ak(g) {
+    const steel = M.dark(), wood = M.wood(), black = BLACK();
+    g.add(slab([[-5.5, 0], [6.5, 0], [6.5, 2.0], [5.8, 2.4], [-4.8, 2.6], [-5.5, 2.0]], 2.0, steel, 0, 0, 0, 0.25)); // receiver
+    for (let i = 0; i < 6; i++) g.add(part(new THREE.BoxGeometry(0.2, 1.7, 0.2), black, -4 + i * 1.3, 0, 2.55)); // dust cover ribs
+    g.add(slab([[6.5, 0.25], [13.5, 0.45], [13.5, 1.85], [6.5, 1.85]], 2.35, wood, 0, 0, 0, 0.45)); // lower handguard
+    g.add(slab([[7, 2.0], [13, 2.0], [13, 2.75], [7.3, 2.9]], 1.65, wood, 0, 0, 0, 0.35)); // upper handguard
+    for (let i = 0; i < 3; i++) for (const s of [-1, 1]) g.add(part(new THREE.CircleGeometry(0.22, 10).rotateX(s * Math.PI / 2), black, 8.6 + i * 1.6, s * 0.84, 2.45)); // vent holes
+    barrel(g, 0.4, 7.5, 13.5, 1.15, steel);
+    g.add(part(rbox(1.2, 1.4, 2.4, 0.2), steel, 13.9, 0, 1.7)); // gas block
+    g.add(part(rbox(1.2, 1.1, 3.0, 0.2), steel, 18.4, 0, 1.6)); // front sight block
+    g.add(part(new THREE.BoxGeometry(0.2, 0.2, 0.9), steel, 18.4, 0, 3.4));
+    g.add(part(tube(0.6, 1.6, 12), steel, 21.6, 0, 1.15)); // slant brake
+    g.add(slab([[1.6, 0.05], [4.0, 0.05], [5.2, -3.0], [5.0, -6.2], [2.6, -6.6], [2.0, -3.4]], 1.4, steel, 0, 0, 0, 0.15)); // magazine
+    for (let i = 0; i < 4; i++) g.add(part(new THREE.BoxGeometry(0.15, 1.45, 0.4), black, 2.6 + i * 0.6, 0, -1.4 - i * 1.3)); // its ribs
+    g.add(slab([[-1.0, 0.05], [-1.6, -4.2], [-3.4, -4.2], [-3.2, -0.5], [-2.6, 0.05]], 1.55, wood, 0, 0, 0, 0.25)); // grip
+    g.add(slab([[0.8, 0.05], [0.7, -1.2], [-0.9, -1.3], [-0.9, 0.05]], 0.4, steel, 0, 0, 0, 0.08, [[[0.55, -0.15], [0.45, -1.0], [-0.65, -1.05], [-0.65, -0.15]]])); // trigger guard
+    g.add(slab([[-5.5, 0.2], [-5.5, 2.0], [-16, 0.9], [-16.4, 0.6], [-16.4, -3.4], [-15.6, -3.6], [-9, -1.0]], 1.9, wood, 0, 0, 0, 0.35)); // stock
+    g.add(part(rbox(0.5, 2.0, 4.2, 0.2), steel, -16.6, 0, -1.4)); // butt plate
+    g.add(part(new THREE.BoxGeometry(1.4, 0.8, 0.4), steel, 3.5, 0, 2.9)); // rear sight leaf
+    g.add(slab([[-3.5, 1.3], [2.5, 1.5], [2.5, 1.9], [-3.5, 1.7]], 0.15, steel, 0, 1.05, 0, 0.04)); // selector lever
+  },
+  // a marksman rifle: a long railed receiver, a free-float handguard, a straight 10-round magazine, a
+  // thumbhole stock with a cheek riser, a muzzle brake and a long scope
+  dmr(g) {
+    const steel = M.dark(), poly = M.polymer(), black = BLACK(), tan = M.paint(0x8a7a5a);
+    g.add(slab([[-6, 0], [8, 0], [8, 2.6], [-6, 2.6]], 2.4, steel, 0, 0, 0, 0.25));
+    rail(g, -6, 14, 2.7, steel);
+    g.add(slab([[8, 0.3], [18.5, 0.3], [18.5, 2.5], [8, 2.5]], 2.5, tan, 0, 0, 0, 0.5)); // handguard
+    grooves(g, black, 9.5, 2, 5, 1.26, 1.4, 1.2, 0.4, 0.06);
+    barrel(g, 0.5, 7, 18.5, 1.4, steel);
+    g.add(part(tube(0.78, 2.4, 12), steel, 26.4, 0, 1.4)); // muzzle brake
+    for (let i = 0; i < 3; i++) for (const s of [-1, 1]) g.add(part(new THREE.BoxGeometry(0.4, 0.2, 0.5), black, 25.7 + i * 0.7, s * 0.7, 1.4));
+    g.add(part(rbox(2.4, 1.6, 4.5, 0.2), steel, 2, 0, -2.2)); // magazine
+    g.add(slab([[-1.5, 0.05], [-2.3, -4.4], [-4.0, -4.4], [-3.6, -0.4], [-3.0, 0.05]], 1.6, tan, 0, 0, 0, 0.25)); // grip
+    triggerGuard(g, -0.8, -0.9, steel);
+    g.add(slab([[-6, 0.2], [-6, 2.4], [-17, 2.6], [-17.6, 2.3], [-17.6, -2.6], [-16.8, -2.8], [-12, -0.6], [-7, -0.8]], 1.9, tan, 0, 0, 0, 0.35, [[[-8.2, 0.9], [-12.2, 1.2], [-12.4, -0.2], [-9.2, -0.3]]])); // thumbhole stock
+    g.add(part(rbox(4.5, 1.8, 0.8, 0.3), tan, -13.5, 0, 3.0)); // cheek riser
+    g.add(part(rbox(0.8, 2.0, 5.6, 0.3), poly, -17.9, 0, -0.1)); // recoil pad
+    optic(g, 1, 5.2, 11, 1.1, steel, M.glass());
+    for (const x of [-2, 4]) g.add(part(rbox(1.0, 1.6, 2.0, 0.2), steel, x, 0, 4.0)); // scope rings
+    g.add(part(new THREE.CylinderGeometry(0.6, 0.6, 1.0, 12), M.steel(), 1, 0, 6.8)); // turret
+    g.add(part(new THREE.BoxGeometry(2, 0.06, 1), black, 1.5, 1.22, 1.5)); // ejection port
+  },
+  // a side-by-side double barrel: two barrels with a rib between, a steel action, a wooden splinter fore-end,
+  // twin triggers and a wooden stock with a straight wrist
+  double(g) {
+    const steel = M.steel(), dark = M.dark(), wood = M.wood(), black = BLACK();
+    for (const s of [-0.72, 0.72]) {
+      g.add(part(tube(0.72, 20, 16), dark, 8.4, s, 1.4)); // barrels
+      g.add(part(new THREE.CircleGeometry(0.5, 14).rotateY(Math.PI / 2), black, 18.42, s, 1.4)); // bores
+    }
+    g.add(part(new THREE.BoxGeometry(20, 0.5, 0.3), dark, 8.4, 0, 2.1)); // the rib
+    g.add(slab([[-4.5, -0.4], [0, -0.4], [0, 2.4], [-4.5, 2.4]], 2.7, steel, -1.6, 0, 0, 0.35)); // action
+    for (let i = 0; i < 3; i++) for (const s of [-1, 1]) g.add(part(new THREE.CircleGeometry(0.45, 12).rotateX(s * Math.PI / 2), M.dark(), -4.4 + i * 1.3, s * 1.36, 1.0)); // engraving
+    g.add(slab([[1, 0.15], [9, 0.45], [9, 1.25], [1, 1.15]], 2.5, wood, 0, 0, 0, 0.4)); // fore-end
+    g.add(slab([[-6.1, -0.3], [-6.1, 2.2], [-9.5, 1.6], [-18.2, 1.8], [-18.6, 1.4], [-18.6, -3.0], [-17.8, -3.2], [-9.5, -1.0], [-7.4, -1.2]], 2.0, wood, 0, 0, 0, 0.35)); // stock
+    g.add(slab([[-2.4, -0.4], [-2.5, -1.5], [-4.6, -1.6], [-4.8, -0.4]], 0.35, steel, 0, 0, 0, 0.08, [[[-2.7, -0.55], [-2.75, -1.25], [-4.4, -1.3], [-4.5, -0.55]]])); // trigger guard
+    for (const x of [-3.3, -4.0]) g.add(slab([[x, -0.4], [x + 0.12, -1.0], [x - 0.15, -1.15], [x - 0.3, -0.4]], 0.3, dark, 0, 0, 0, 0.05)); // twin triggers
+    g.add(part(new THREE.BoxGeometry(1.4, 0.5, 0.35), steel, -4.6, 0.35, 2.55, 0, 0, 0.4)); // top lever
+    g.add(part(new THREE.SphereGeometry(0.28, 8, 6), M.steel(), 18, 0, 2.4)); // bead
+  },
+  // a flashbang: a perforated steel can with a spoon and a pull ring
+  flashbang(g) {
+    const steel = M.steel(), dark = M.dark(), black = BLACK();
+    g.add(part(new THREE.CylinderGeometry(1.25, 1.25, 4.2, 16).rotateX(Math.PI / 2), M.paint(0x3d4a3a), 0, 0, 0));
+    for (let r = 0; r < 3; r++) for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + r * 0.4;
+      g.add(part(new THREE.CircleGeometry(0.22, 8).lookAt(new THREE.Vector3(Math.cos(a), Math.sin(a), 0)), black, Math.cos(a) * 1.27, Math.sin(a) * 1.27, -1.2 + r * 1.2));
+    }
+    g.add(part(new THREE.CylinderGeometry(0.8, 1.0, 1.0, 12).rotateX(Math.PI / 2), dark, 0, 0, 2.55)); // fuse head
+    g.add(part(new THREE.BoxGeometry(0.5, 0.8, 4.2), steel, -1.4, 0, 1.0, 0, 0.18, 0)); // spoon
+    g.add(part(new THREE.TorusGeometry(0.75, 0.11, 6, 14), steel, 0.8, 0, 3.2, 0, Math.PI / 2, 0)); // pull ring
   },
   crossbow(g) {
     const poly = M.polymer(), steel = M.steel(), acc = M.paint(0x8a3324);

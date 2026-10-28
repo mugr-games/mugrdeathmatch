@@ -3,6 +3,23 @@ import { WEAPONS, PERKS } from './weapons.js';
 
 const $ = (id) => document.getElementById(id);
 
+// the hit marker: four short slashes round the crosshair, white for a hit, red for a headshot, bigger for a kill
+let markTimer = 0;
+export function showHitMarker(kind) {
+  let el = document.getElementById('hitmark');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'hitmark';
+    el.innerHTML = '<i></i><i></i><i></i><i></i>';
+    (document.getElementById('crosshair')?.parentNode || document.body).append(el);
+  }
+  el.className = '';
+  void el.offsetWidth; // restart the animation
+  el.className = 'on' + (kind ? ' ' + kind : '');
+  clearTimeout(markTimer);
+  markTimer = setTimeout(() => { el.className = ''; }, kind === 'kill' ? 450 : 280);
+}
+
 export class Hud {
   constructor() {
     this.el = $('hud');
@@ -97,6 +114,8 @@ export class Hud {
     while (this.chat.children.length > 8) this.chat.firstChild.remove();
     setTimeout(() => row.classList.add('fade'), 9000);
   }
+
+  hitMarker(kind) { showHitMarker(kind); }
 
   damage(angleDeg) {
     // angle of the attacker relative to view: 0 = in front

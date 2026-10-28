@@ -212,7 +212,7 @@ class Character {
     this.weapon = instance(proto);
     this.weapon.position.x = 4;
     this.weapon.rotation.x = HOLDS[slot]?.spin || 0;
-    gunLook(this.weapon, this.cos, proto.object?.userData.size || proto.userData?.size);
+    gunLook(this.weapon, this.cos, proto.object?.userData.size || proto.userData?.size, HOLDS[slot]);
     this.mount.add(this.weapon);
     this.avatar?.setHold(slot, proto.object?.userData.size || proto.userData?.size, 4);
     if (this.root.userData.drawn === false) this.weapon.traverse((o) => o.layers.set(HIDDEN_LAYER));
@@ -242,11 +242,12 @@ class Character {
   }
 }
 
-// a gun in its owner's gun skin, with their charm hanging off it
-function gunLook(gun, cos, size) {
+// a gun in its owner's gun skin, with their charm hanging off it (not on melee weapons or grenades)
+function gunLook(gun, cos, size, hold) {
   const sk = COSMETIC[cos?.wskin], ch = COSMETIC[cos?.charm];
   if (sk?.slot === 'wskin') applyGunSkin(gun, sk.finish);
-  if (ch?.slot === 'charm') addCharm(gun, ch.charm, size);
+  const thrown = hold && !hold.left && !hold.short;
+  if (ch?.slot === 'charm' && hold && !hold.melee && !thrown) addCharm(gun, ch.charm, size, hold);
 }
 
 // ------------------------------------------------------------------ game
@@ -837,9 +838,14 @@ export class Game {
       case 'boom': {
         const pr = this.projectiles.get(ev.id);
         if (pr) { this.scene.remove(pr.obj); this.projectiles.delete(ev.id); }
-        this.explosion(ev.o);
+        if (ev.k === 'flash') this.flashPop(ev.o);
+        else this.explosion(ev.o);
         break;
       }
+      // a flashbang blinded you (s: how badly, 0..1)
+      case 'flash':
+        this.blind(ev.s);
+        break;
       case 'shot': {
         if (ev.id === me && !ev.jet) return; // predicted locally already (a jet's cannon isn't)
         const W = WEAPONS[ev.w];
@@ -859,6 +865,10 @@ export class Game {
       case 'snd':
         if (ev.id !== me && ev.k === 'reload') { this.sound.reload(WEAPONS[ev.w].id, this.players.get(ev.id)?.pos, WEAPONS[ev.w].reload); this.players.get(ev.id)?.obj?.reload(WEAPONS[ev.w].reload); }
         break;
+      // you hit an NPC (k: and killed it)
+      case 'hm':
+        if (ev.k) { this.sound.crit(); this.hud.hitMarker('kill'); } else { this.sound.hitTick(!!ev.hs); this.hud.hitMarker(ev.hs ? 'head' : ''); }
+        break;
       case 'hurt': {
         if (ev.id !== me) this.players.get(ev.id)?.obj?.flinch();
         if (ev.id === me) {
@@ -869,7 +879,7 @@ export class Game {
         } else {
           const pl = this.players.get(ev.id);
           if (pl) this.sound.hurt(pl.pos, false);
-          if (ev.a === me) this.sound.hitTick();
+          if (ev.a === me && ev.hp > 0) { this.sound.hitTick(!!ev.hs); this.hud.hitMarker(ev.hs ? 'head' : ''); }
         }
         break;
       }
@@ -877,6 +887,7 @@ export class Game {
         const k = this.info.get(ev.k), v = this.info.get(ev.v);
         this.hud.kill(ev.k && ev.k !== ev.v ? k?.name || '?' : '', v?.name || '?', ev.w, ev.hs, ev.k === me || ev.v === me);
         this.sound.death(ev.v === me ? null : ev.o);
+        if (ev.k === me && ev.v !== me) { this.sound.crit(); this.hud.hitMarker('kill'); }
         const pl = this.players.get(ev.v);
         if (pl) pl.deathAt = performance.now() / 1000;
         if (ev.v === me) { this.deathAt = performance.now() / 1000; this.killer = ev.k !== me ? k?.name : null; }
@@ -1296,7 +1307,7 @@ export class Game {
     model.rotation.x = HOLDS[slot]?.spin || 0;
     vm.sight = size.z * 0.42; // from the gun's middle up to its sights
     vm.cosKey = this.gunCosKey();
-    gunLook(model, this.cosFor(this.info.get(this.myId)), size);
+    gunLook(model, this.cosFor(this.info.get(this.myId)), size, HOLDS[slot]);
     vm.model = model;
     vm.len = size.x;
     vm.hold = holdPoints(slot, size);
@@ -1359,7 +1370,7 @@ export class Game {
     const vm = this.vm;
     const id = WEAPONS[this.ps.cur].id;
     if (name === 'fire') {
-      vm.kick = Math.min(1.6, vm.kick + (['shotgun', '357', 'autoshotgun', 'railgun', 'sniper', 'rpg'].includes(id) ? 1 : 0.45));
+      vm.kick = Math.min(1.6, vm.kick + (['shotgun', '357', 'autoshotgun', 'railgun', 'sniper', 'rpg', 'deagle', 'dmr', 'double'].includes(id) ? 1 : 0.45));
       // automatic fire shakes the gun about a little; pumps and bolts get worked after each shot
       vm.rollV += (Math.random() - 0.5) * (WEAPONS[this.ps.cur].semi ? 0.02 : 0.06);
       if (vm.hold?.pump || vm.hold?.bolt) vm.pump = 0.0001;
@@ -1640,6 +1651,7 @@ export class Game {
   }
 
   worldFlash(pos) {
+    this.flashLight.color.set(0xffb060);
     this.flashLight.position.set(pos[0], pos[1], pos[2]);
     this.flashLight.intensity = 60000;
     this.flashLightT = 0.05;
@@ -1735,6 +1747,12 @@ export class Game {
       flame.position.x = -9;
       flame.scale.setScalar(10);
       g.add(body, flame);
+    } else if (P.kind === 'flash') {
+      // a flashbang can tumbling through the air
+      const can = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 4.4, 12), new THREE.MeshStandardMaterial({ color: 0x3d4a3a, roughness: 0.6, metalness: 0.4 }));
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.0, 1.0, 10), metal);
+      cap.position.y = 2.6;
+      g.add(can, cap);
     } else {
       const shell = new THREE.Mesh(new THREE.SphereGeometry(2.6, 12, 8), new THREE.MeshStandardMaterial({ color: 0x3f4a2c, roughness: 0.7, metalness: 0.2 }));
       const band = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.35, 6, 16), metal);
@@ -1754,11 +1772,12 @@ export class Game {
       const res = stepProj(this.world, pr, pr.P, dt);
       pr.obj.position.set(...pr.pos);
       const sp = Math.hypot(...pr.vel);
-      if (sp > 1 && pr.kind !== 'grenade') {
+      const lobbed = pr.kind === 'grenade' || pr.kind === 'flash';
+      if (sp > 1 && !lobbed) {
         // point along the flight path
         const d = new THREE.Vector3(...pr.vel).normalize();
         pr.obj.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), d);
-      } else if (pr.kind === 'grenade' && !pr.rest) pr.obj.rotation.x += dt * 12;
+      } else if (lobbed && !pr.rest) pr.obj.rotation.x += dt * 12;
       if (pr.kind === 'grenade') {
         // blink faster as the fuse runs down
         const left = Math.max(0.05, pr.P.fuse - pr.t);
@@ -1778,8 +1797,40 @@ export class Game {
     }
   }
 
+  // a flashbang going off where you can see it: a burst of white light and a bang (no smoke or fire)
+  flashPop(pos) {
+    const at = new THREE.Vector3(...pos);
+    this.flashLight.position.copy(at);
+    this.flashLight.color.setRGB(1, 1, 1);
+    this.flashLight.intensity = 1600000;
+    this.flashLight.distance = 1400;
+    this.flashLightT = 0.1;
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: new THREE.Color(6, 6, 6), blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    glow.position.copy(at);
+    this.addEffect(glow, 0.35, (e, k) => { glow.scale.setScalar(60 + 220 * k); glow.material.opacity = 1 - k; });
+    this.sound.flashbang(pos);
+  }
+
+  // blinded by a flashbang: the screen goes white and fades back, the ears ring
+  blind(s) {
+    let el = document.getElementById('flashout');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'flashout';
+      document.body.append(el);
+    }
+    const hold = 0.25 + s * 1.6, fade = 0.8 + s * 2.6;
+    el.style.transition = 'none';
+    el.style.opacity = String(Math.min(1, 0.35 + s));
+    void el.offsetWidth;
+    el.style.transition = `opacity ${fade}s ease-in ${hold}s`;
+    el.style.opacity = '0';
+    this.sound.ringing(s);
+  }
+
   explosion(pos) {
     const at = new THREE.Vector3(...pos);
+    this.flashLight.color.set(0xffb060);
     this.flashLight.position.copy(at);
     this.flashLight.intensity = 900000;
     this.flashLight.distance = 900;

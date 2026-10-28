@@ -8,6 +8,9 @@ import { esc } from './hud.js';
 import { api } from './net.js';
 import { loadSlot, instance } from './assets.js';
 import { applyGunSkin, addCharm, swingCharm } from './skins.js';
+import { WEAPONS, WEAPON_INDEX, LOADOUT_PARTS, partOf, ownsWeapon } from './weapons.js';
+import { WEAPON_SLOT } from './assets.js';
+import { HOLDS } from './avatar.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -56,15 +59,20 @@ class Preview {
     this.turn.add(this.avatar.root);
   }
 
-  // gun skins and charms: a rifle on its own, big, turning, in the skin and with the charm
-  async showGun(cos) {
+  // gun skins, charms and weapons: one gun on its own (the rifle unless it's a weapon you're looking at), big,
+  // turning, in your gun skin and with your charm
+  async showGun(cos, slot = 'rifle') {
     const ask = (this.asked = {});
-    const proto = await loadSlot('rifle');
+    const proto = await loadSlot(slot);
     if (this.asked !== ask) return;
     this.clear();
     const g = instance(proto), size = proto.object?.userData.size;
-    if (COSMETIC[cos.wskin]?.slot === 'wskin') applyGunSkin(g, COSMETIC[cos.wskin].finish);
-    if (COSMETIC[cos.charm]?.slot === 'charm') addCharm(g, COSMETIC[cos.charm].charm, size);
+    const H = HOLDS[slot];
+    g.rotation.x = H?.spin || 0;
+    if (!H?.melee) {
+      if (COSMETIC[cos.wskin]?.slot === 'wskin') applyGunSkin(g, COSMETIC[cos.wskin].finish);
+      if (COSMETIC[cos.charm]?.slot === 'charm') addCharm(g, COSMETIC[cos.charm].charm, size, H);
+    }
     g.scale.setScalar(Math.min(3.4, 80 / (size?.x || 24)));
     g.position.z = 46;
     this.gun = g;
@@ -202,6 +210,28 @@ export class Locker {
     this.opts.onTheme?.(this.profile.eq.menu, false); // back to the theme you own, if one was being tried
   }
 
+  // your own loadout: one weapon for each part, from the ones you own (used in "your own loadouts" rooms)
+  renderLoadout() {
+    const P = this.profile, lo = P.loadout || {};
+    $('lk-slots').innerHTML = '';
+    const rows = Object.entries(LOADOUT_PARTS).map(([part, label]) => {
+      const opts = WEAPONS.filter((W) => !W.zombie && partOf(W) === part && ownsWeapon(W.id, P.owned)).map((W) => `<option value="${W.id}"${lo[part] === W.id ? ' selected' : ''}>${esc(W.name)}</option>`).join('');
+      return `<div class="lo-row"><label for="lo-${part}">${label}</label><select id="lo-${part}" data-part="${part}">${opts}</select></div>`;
+    });
+    $('lk-items').innerHTML = rows.join('') + '<p class="lo-note">You spawn with these in rooms set to "your own loadouts" (the main deathmatch, team and flag rooms). Buy more in Shop → Weapons. Changes count from your next spawn.</p>';
+    $('lk-msg').textContent = '';
+    for (const sel of $('lk-items').querySelectorAll('select')) {
+      sel.onchange = async () => {
+        const next = { ...lo, [sel.dataset.part]: sel.value };
+        const r = await this.api('loadout', { loadout: next });
+        $('lk-msg').textContent = r.error || 'Saved. You\'ll spawn with it next time.';
+        this.opts.sound?.ui(1000);
+      };
+      sel.onfocus = () => this.preview?.showGun(this.profile.eq || {}, WEAPON_SLOT[sel.value]);
+    }
+    this.preview?.showGun(P.eq || {}, WEAPON_SLOT[lo.primary || 'smg1']);
+  }
+
   // the picture for an image cape or flag: once you own one, upload it here
   pictureCard() {
     const P = this.profile;
@@ -241,6 +271,7 @@ export class Locker {
     // a menu theme shows on the menus themselves while you point at it
     this.opts.onTheme?.(cos.menu, false);
     if (slot === 'wskin' || slot === 'charm') return this.preview.showGun(cos);
+    if (slot === 'weapon') return this.preview.showGun(cos, WEAPON_SLOT[COSMETIC[trying]?.weapon || this.profile.loadout?.primary || 'smg1']);
     // your own picture shows in the preview straight away (others see it once it's approved)
     cos.img = this.profile.imgSt === 'ok' ? this.profile.img : this.localImg || (this.profile.imgSt === 'rejected' ? 'x' : 'p');
     this.preview.show(this.opts.settings.color | 0, this.opts.settings.model | 0, cos);
@@ -251,6 +282,7 @@ export class Locker {
     for (const b of document.querySelectorAll('#dlg-locker .lk-tab')) b.classList.toggle('on', b.dataset.tab === this.tab);
     $('lk-coins').textContent = P.coins.toLocaleString();
     $('lk-look').hidden = this.tab !== 'wardrobe';
+    if (this.tab === 'loadout') return this.renderLoadout();
     $('lk-slots').innerHTML = Object.entries(COS_SLOTS).map(([k, v]) => `<button type="button" class="lk-slot${k === this.slot ? ' on' : ''}" data-slot="${k}">${v}</button>`).join('');
     for (const b of $('lk-slots').children) b.onclick = () => { this.slot = b.dataset.slot; this.render(); };
     // hidden items (the Owner cape) aren't for sale: they only show up for whoever has them
@@ -261,6 +293,7 @@ export class Locker {
       let action;
       if (this.tab === 'shop') action = owned ? '<span class="lk-own">Owned</span>' : `<button type="button" class="btn${P.coins >= c.price ? ' primary' : ''}" data-buy="${c.id}">${c.price ? `Buy · ${c.price}` : 'Get · Free'}</button>`;
       else if (c.slot === 'emote') action = '<span class="lk-own">On your wheel (0)</span>';
+      else if (c.slot === 'weapon') action = '<span class="lk-own">In your loadout list</span>';
       else action = worn ? `<button type="button" class="btn" data-off="${c.slot}">Take off</button>` : `<button type="button" class="btn primary" data-wear="${c.id}">Wear</button>`;
       return `<div class="lk-card${worn ? ' worn' : ''}" data-id="${c.id}">${swatch}<b>${esc(c.name)}</b><span class="lk-price">${this.tab === 'shop' && !owned ? (c.price ? `${c.price} coins` : 'Free') : worn ? 'Wearing' : ''}</span>${action}</div>`;
     });

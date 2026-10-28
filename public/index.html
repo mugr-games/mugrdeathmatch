@@ -677,6 +677,26 @@ html, body { font: 14px/1.45 var(--ui); }
 @keyframes hpulse { 0% { background: rgba(255,255,255,.25); } 100% { background: var(--hud-bg); } }
 #crosshair::before, #crosshair::after { background: rgba(255,255,255,.95); box-shadow: 0 0 0 1px rgba(0,0,0,.55); }
 #crosshair { width: 26px; height: 26px; }
+/* the loadout tab */
+.lo-row { display: grid; grid-template-columns: 90px 1fr; gap: 10px; align-items: center; margin-bottom: 10px; }
+.lo-row label { color: var(--text-dim); font-weight: 600; }
+.lo-row select { width: 100%; background: var(--panel-dark); border: 1px solid rgba(255,255,255,.12); border-radius: 4px; padding: 7px 8px; color: #fff; }
+.lo-note { color: var(--text-dim); font-size: 12px; line-height: 1.5; }
+/* blinded by a flashbang */
+#flashout { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 40; }
+/* the hit marker */
+#hitmark { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; transform: translate(-50%, -50%); pointer-events: none; opacity: 0; z-index: 3; }
+#hitmark i { position: absolute; width: 11px; height: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5); left: 50%; top: 50%; }
+#hitmark i:nth-child(1) { transform: translate(-50%, -50%) rotate(45deg) translateX(-12px); }
+#hitmark i:nth-child(2) { transform: translate(-50%, -50%) rotate(135deg) translateX(-12px); }
+#hitmark i:nth-child(3) { transform: translate(-50%, -50%) rotate(225deg) translateX(-12px); }
+#hitmark i:nth-child(4) { transform: translate(-50%, -50%) rotate(315deg) translateX(-12px); }
+#hitmark.on { animation: hitmark .28s ease-out forwards; }
+#hitmark.head i, #hitmark.kill i { background: #ff3a2e; }
+#hitmark.kill { animation: hitkill .45s ease-out forwards; }
+#hitmark.kill i { width: 14px; height: 3px; }
+@keyframes hitmark { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1.25); } 30% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1); } }
+@keyframes hitkill { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1.6) rotate(0deg); } 35% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.05); } }
 #crosshair::before { left: 12px; top: 0; width: 2px; height: 26px; clip-path: polygon(0 0,100% 0,100% 30%,0 30%,0 70%,100% 70%,100% 100%,0 100%); }
 #crosshair::after { top: 12px; left: 0; width: 26px; height: 2px; clip-path: polygon(0 0,30% 0,30% 100%,0 100%,0 0,70% 0,100% 0,100% 100%,70% 100%,70% 0); }
 .kf { background: rgba(10,12,16,.6); border: 1px solid rgba(255,255,255,.07); border-radius: 8px; padding: 4px 10px; color: #fff; font: 600 12px var(--ui); backdrop-filter: blur(6px); }
@@ -829,6 +849,7 @@ html, body { font: 14px/1.45 var(--ui); }
   <div class="tabs" role="tablist">
     <button class="tab lk-tab" data-tab="shop" role="tab">Shop</button>
     <button class="tab lk-tab" data-tab="wardrobe" role="tab">Wardrobe</button>
+    <button class="tab lk-tab" data-tab="loadout" role="tab">Loadout</button>
   </div>
   <div class="lk-body">
     <div>

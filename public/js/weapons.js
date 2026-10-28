@@ -32,16 +32,54 @@ export const WEAPONS = [
   { id: 'katana', slot: 0, name: 'KATANA', melee: true, damage: 55, rate: 0.55, range: 92, clip: -1, ammo: null },
   { id: 'axe', slot: 0, name: 'FIRE AXE', melee: true, damage: 65, rate: 0.8, range: 82, clip: -1, ammo: null },
   { id: 'sledge', slot: 0, name: 'SLEDGEHAMMER', melee: true, damage: 90, rate: 1.1, range: 86, clip: -1, ammo: null },
+  { id: 'machete', slot: 0, name: 'MACHETE', melee: true, damage: 45, rate: 0.45, range: 78, clip: -1, ammo: null },
+  { id: 'pan', slot: 0, name: 'FRYING PAN', melee: true, damage: 50, rate: 0.7, range: 70, clip: -1, ammo: null },
+  { id: 'golf', slot: 0, name: 'GOLF CLUB', melee: true, damage: 42, rate: 0.6, range: 92, clip: -1, ammo: null },
+  { id: 'wrench', slot: 0, name: 'PIPE WRENCH', melee: true, damage: 48, rate: 0.65, range: 72, clip: -1, ammo: null },
+  { id: 'shovel', slot: 0, name: 'SHOVEL', melee: true, damage: 58, rate: 0.85, range: 90, clip: -1, ammo: null },
+  // more guns
+  { id: 'deagle', slot: 1, name: 'HAND CANNON', damage: 48, rate: 0.42, semi: true, spread: 0.012, clip: 7, ammo: '357', maxAmmo: 21, spawnAmmo: 14, reload: 1.8 },
+  { id: 'uzi', slot: 2, name: 'MICRO SMG', damage: 9, rate: 0.055, spread: 0.06, clip: 32, ammo: 'smg1', maxAmmo: 192, spawnAmmo: 96, reload: 1.5 },
+  { id: 'ak', slot: 2, name: 'AK RIFLE', damage: 15, rate: 0.11, spread: 0.035, clip: 30, ammo: 'ar2', maxAmmo: 120, spawnAmmo: 60, reload: 2.0 },
+  { id: 'dmr', slot: 3, name: 'MARKSMAN RIFLE', damage: 40, rate: 0.32, semi: true, spread: 0.02, zoomSpread: 0, zoom: 40, clip: 10, ammo: 'sniper', maxAmmo: 30, spawnAmmo: 20, reload: 2.2 },
+  { id: 'double', slot: 3, name: 'DOUBLE BARREL', damage: 11, rate: 0.3, semi: true, spread: 0.1, pellets: 9, clip: 2, ammo: 'buckshot', maxAmmo: 24, spawnAmmo: 12, reload: 2.1 },
+  {
+    id: 'flashbang', slot: 4, name: 'FLASHBANG', damage: 0, rate: 0.8, semi: true, spread: 0, clip: 1, ammo: 'flash', maxAmmo: 3, spawnAmmo: 2, reload: 0.6, autoReload: true,
+    proj: { kind: 'flash', speed: 800, up: 130, gravity: 1, bounce: 0.4, fuse: 1.5, radius: 1100, splash: 0, knock: 0 },
+  },
 ];
 
 export const WEAPON_INDEX = Object.fromEntries(WEAPONS.map((w, i) => [w.id, i]));
+
+// Your own loadout (rooms set to "your own loadouts"): one weapon for each part, from the ones you own.
+// STARTER: everyone has these; the rest are bought in the shop for coins (WEAPON_PRICE).
+export const LOADOUT_PARTS = { primary: 'Primary', secondary: 'Sidearm', melee: 'Melee', utility: 'Grenade' };
+export const partOf = (W) => (W.melee ? 'melee' : W.proj && (W.proj.kind === 'grenade' || W.proj.kind === 'flash') ? 'utility' : W.slot === 1 ? 'secondary' : 'primary');
+export const STARTER = ['crowbar', 'knife', 'pistol', 'smg1', 'shotgun', 'grenade'];
+export const DEFAULT_LOADOUT = { primary: 'smg1', secondary: 'pistol', melee: 'crowbar', utility: 'grenade' };
+export const WEAPON_PRICE = {
+  '357': 300, deagle: 450, uzi: 350, ar2: 400, ak: 500, lmg: 700, autoshotgun: 600, double: 400, crossbow: 350, sniper: 600, dmr: 550, rpg: 900, railgun: 1200,
+  flashbang: 250, bat: 150, pan: 150, golf: 200, wrench: 200, machete: 250, shovel: 250, axe: 300, sledge: 350, katana: 400,
+};
+export const ownsWeapon = (id, owned = []) => STARTER.includes(id) || owned.includes('wpn_' + id);
+// a loadout made good: each part a weapon of the right kind that you own, else the default for that part
+export function cleanLoadout(lo, owned) {
+  const out = {};
+  for (const k of Object.keys(LOADOUT_PARTS)) {
+    const id = lo?.[k], W = WEAPONS[WEAPON_INDEX[id]];
+    out[k] = W && !W.zombie && partOf(W) === k && ownsWeapon(id, owned) ? id : DEFAULT_LOADOUT[k];
+  }
+  return out;
+}
 export const SLOT_COUNT = 5;
 
 // Room setting: what everyone spawns with.
 export const LOADOUTS = {
+  // custom: everyone spawns with their own loadout (weapons: the default one) and no guns lie around
+  custom: { name: 'Your own loadouts (no gun pickups)', weapons: ['smg1', 'pistol', 'crowbar', 'grenade'], full: true, noPickups: true, custom: true },
   default: { name: 'Standard (crowbar, pistol, SMG)', weapons: ['crowbar', 'pistol', 'smg1'], full: false },
   all: { name: 'Everything, full ammo', weapons: WEAPONS.filter((w) => !w.zombie).map((w) => w.id), full: true },
-  melee: { name: 'Melee only (crowbar, knife, bat, katana, axe, sledgehammer)', weapons: ['knife', 'bat', 'katana', 'axe', 'sledge', 'crowbar'], full: false, noPickups: true },
+  melee: { name: 'Melee only (every melee weapon)', weapons: ['knife', 'bat', 'katana', 'axe', 'sledge', 'machete', 'pan', 'golf', 'wrench', 'shovel', 'crowbar'], full: false, noPickups: true },
   explosives: { name: 'Explosives', weapons: ['crowbar', 'rpg', 'grenade'], full: true },
   snipers: { name: 'Snipers & revolvers', weapons: ['crowbar', 'sniper', '357'], full: true },
   heavy: { name: 'Heavy (machine gun, auto shotgun, railgun)', weapons: ['crowbar', 'lmg', 'autoshotgun', 'railgun'], full: true },
@@ -66,7 +104,7 @@ export const POWERS = { dmgBoost: { mul: 2 }, haste: { mul: 1.35 }, boots: { mul
 export const ITEM_ROTATION = [
   'health', 'battery', 'shotgun', 'ammo', 'damage', '357', 'crossbow', 'lmg', 'vial', 'rpg', 'haste', 'sniper', 'autoshotgun', 'health',
   'grenade', 'megahealth', 'railgun', 'heavyarmor', 'ar2', 'boots', 'ammo', 'battery', 'shotgun', 'vial', 'rpg', 'health',
-  'katana', 'bat', 'sledge', 'knife', 'axe',
+  'katana', 'bat', 'sledge', 'knife', 'axe', 'machete', 'pan', 'golf', 'wrench', 'shovel',
 ];
 
 // Zombies (infection): what a zombie is like
@@ -88,6 +126,7 @@ export const GUN_SHOP = [
   ['pistol', 250, 40], ['357', 700, 90], ['smg1', 1500, 120], ['shotgun', 1300, 100], ['ar2', 3000, 180], ['autoshotgun', 4200, 220],
   ['crossbow', 2200, 150], ['sniper', 5000, 260], ['lmg', 7500, 320], ['grenade', 600, 300], ['rpg', 9500, 900], ['railgun', 15000, 700],
   ['knife', 150, 0], ['bat', 300, 0], ['axe', 800, 0], ['sledge', 1000, 0], ['katana', 1200, 0],
+  ['pan', 200, 0], ['wrench', 350, 0], ['golf', 450, 0], ['machete', 600, 0], ['shovel', 700, 0],
 ];
 export const ARMOR_PRICE = 400;
 export const DROP_NAMES = { maxammo: 'MAX AMMO', instakill: 'INSTA-KILL', double: 'DOUBLE POINTS', nuke: 'KABOOM' };
