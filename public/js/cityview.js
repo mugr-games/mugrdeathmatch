@@ -16,6 +16,7 @@ import { BoxWorld } from './collide.js';
 import { viewDir } from './sim.js';
 import { esc } from './hud.js';
 import { isTouch } from './touch.js';
+import { held } from './binds.js';
 
 const DEG = Math.PI / 180;
 const CW = G * CHUNK; // chunk width
@@ -1022,7 +1023,7 @@ export class CityView {
       const sp = Math.hypot(s.v[0], s.v[1]) / V.top;
       const gear = Math.min(4, Math.floor(sp * 5));
       const rpm = 0.25 + ((sp * 5 - gear) * 0.6 + gear * 0.08) * (gear ? 1 : 1.3);
-      const thr = this.g.keys.has('KeyW') ? 1 : 0.4;
+      const thr = held(this.g.keys, 'fwd') ? 1 : 0.4;
       const base = V.pedal ? 0 : V.bike ? 70 : V.style === 'muscle' ? 34 : 44;
       const now = c.currentTime;
       this.engine.o.frequency.setTargetAtTime(base * (1 + rpm * 2.2), now, 0.05);

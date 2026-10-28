@@ -11,6 +11,7 @@ import { Voice } from './voice.js';
 import { HeistMenu } from './planning.js';
 import { COSMETICS, COSMETIC, hasEmote, EMOTE } from './cosmetics.js';
 import { EmoteWheel } from './emotewheel.js';
+import { ACTIONS, setBinds, getBinds, isKey, keysFor, padFor, bindKey, bindPad, resetBinds, keyName, padName } from './binds.js';
 import { DEVLOG } from './devlog.js';
 import { api, pageUrl, SERVER } from './net.js';
 
@@ -59,6 +60,7 @@ const LOW_END = CHROMEBOOK || (navigator.hardwareConcurrency || 8) <= 4 || (navi
 const DEFAULTS = { name: '', color: Math.floor(Math.random() * 8), model: Math.floor(Math.random() * MODELS.length), sens: 3, fov: 90, volume: 0.7, quality: CHROMEBOOK ? 'potato' : LOW_END || isTouch() ? 'low' : 'medium' };
 let settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('arena.settings') || '{}')); } catch {}
+setBinds(settings.binds);
 // once: a Chromebook that was saved on a heavy setting drops to low
 if (CHROMEBOOK && !settings.cbAuto) { settings.cbAuto = 1; if (settings.quality === 'medium' || settings.quality === 'high') settings.quality = 'low'; }
 if (!settings.name) settings.name = 'Player' + Math.floor(100 + Math.random() * 900);
@@ -116,6 +118,11 @@ async function boot() {
     },
     weapon: (dir) => game.cycleWeapon(dir),
     lastWeapon: () => game.pick(game.lastW),
+    action: (id) => doAction(id),
+    wheel: () => wheel.open,
+    wheelAim: (dx, dy) => { wheel.vx = 0; wheel.vy = 0; wheel.mouse(dx, dy); },
+    wheelPick: () => wheel.click(),
+    wheelClose: () => wheel.toggle(false),
     menu: () => { playing = false; if (document.pointerLockElement) document.exitPointerLock(); openMenu(); },
     start: () => { if (!$('btn-resume').hidden && !document.querySelector('.dialog:not([hidden])')) resume(); },
     back: () => { if (document.querySelector('.dialog:not([hidden])')) closeDialogs(); },
@@ -639,28 +646,80 @@ document.addEventListener('keydown', (e) => {
   if (!game || !playing || chatOpen) return;
   if (e.code === 'Tab' || e.code === 'Space' || e.code === 'AltLeft') e.preventDefault();
   game.keys.add(e.code);
-  // 0 opens the emote wheel; while it's open the number keys pick an emote
-  if (!e.repeat && (e.code === 'Digit0' || e.code === 'Numpad0') && !game.fv.phoneOpen()) { wheel.toggle(); return; }
+  // the emote wheel (0 unless changed); while it's open the number keys pick an emote
+  if (!e.repeat && isKey(e.code, 'emote') && !game.fv.phoneOpen()) { wheel.toggle(); return; }
   if (wheel.open) {
     const n = /^(Digit|Numpad)([1-9])$/.exec(e.code);
     if (n) { wheel.key(+n[2]); return; }
     if (e.code === 'Escape') wheel.toggle(false);
   }
-  // free roam: P (or the up arrow) for the phone, which then takes the arrows, Enter and Backspace
+  // free roam: the phone (P, or the up arrow), which then takes the arrows, Enter and Backspace
   if (game.fv.active) {
-    if (!e.repeat && (e.code === 'KeyP' || (e.code === 'ArrowUp' && !game.fv.phoneOpen() && !game.fv.shop))) { game.fv.togglePhone(); return; }
+    if (!e.repeat && (isKey(e.code, 'phone') || (e.code === 'ArrowUp' && !game.fv.phoneOpen() && !game.fv.shop))) { game.fv.togglePhone(); return; }
     if (game.fv.key(e.code)) { e.preventDefault(); return; }
-    if (!e.repeat && e.code === 'KeyM') { game.fv.toggleBigMap(); return; }
-    if (!e.repeat && e.code === 'KeyF' && (game.ps.car || game.ps.seat)) { const first = game.fv.toggleView(); save(); status(first ? 'First person driving (F for the chase camera)' : 'Chase camera (F for first person)'); return; }
+    if (!e.repeat && isKey(e.code, 'map')) { game.fv.toggleBigMap(); return; }
   }
   if (e.repeat) return;
   // during the end-of-match vote the number keys pick a map instead of a weapon
   if (/^Digit[1-5]$/.test(e.code)) numberKey(+e.code.slice(5));
-  if (e.code === 'KeyX') game.pick(game.lastW);
-  // third person on and off
-  if (e.code === 'KeyF') { settings.thirdPerson = !game.thirdPerson; game.setThirdPerson(settings.thirdPerson); save(); status(game.thirdPerson ? 'Third person (F to switch back)' : 'First person'); }
-  if (e.code === 'KeyY' || e.code === 'KeyT') { e.preventDefault(); openChat(); }
+  for (const id of ['lastweapon', 'third', 'chat']) if (isKey(e.code, id)) { e.preventDefault(); doAction(id); }
 });
+// the one-press actions, from a key or a controller button
+function doAction(id) {
+  if (!game || !playing) return;
+  const key = keyName(keysFor(id)[0]) || padName(padFor(id));
+  if (id === 'emote') wheel.toggle();
+  else if (id === 'phone' && game.fv.active) game.fv.togglePhone();
+  else if (id === 'map' && game.fv.active) game.fv.toggleBigMap();
+  else if (id === 'lastweapon') game.pick(game.lastW);
+  else if (id === 'chat') openChat();
+  else if (id === 'third') {
+    // in a car it switches the car camera; on foot, third person
+    if (game.fv.active && (game.ps.car || game.ps.seat)) { const first = game.fv.toggleView(); save(); status(first ? `First person driving (${key} for the chase camera)` : `Chase camera (${key} for first person)`); return; }
+    settings.thirdPerson = !game.thirdPerson; game.setThirdPerson(settings.thirdPerson); save(); status(game.thirdPerson ? `Third person (${key} to switch back)` : 'First person');
+  }
+}
+
+// ------------------------------------------------------------------ Options → Controls
+let capture = null; // { id, kind: 'key' | 'pad' } while waiting for a key or button
+function renderBinds() {
+  $('b-list').innerHTML = ACTIONS.map((a) => {
+    const k = capture?.id === a.id && capture.kind === 'key' ? 'Press a key…' : keysFor(a.id).map(keyName).join(' / ') || (a.mouse ? '' : '—');
+    const p = capture?.id === a.id && capture.kind === 'pad' ? 'Press a button…' : padName(padFor(a.id)) || '—';
+    return `<tr><td>${a.name}</td><td><button type="button" class="btn bkey" data-id="${a.id}" data-kind="key">${k}${a.mouse ? `<small>${k && k !== '—' ? ' · ' : ''}${a.mouse}</small>` : ''}</button></td><td><button type="button" class="btn bkey" data-id="${a.id}" data-kind="pad">${p}</button></td></tr>`;
+  }).join('');
+  for (const b of $('b-list').querySelectorAll('.bkey')) b.onclick = () => { capture = { id: b.dataset.id, kind: b.dataset.kind }; renderBinds(); if (capture.kind === 'pad') waitPad(); };
+}
+function saveBinds() { settings.binds = getBinds(); save(); capture = null; renderBinds(); }
+// keyboard: the next key pressed (Escape cancels, Backspace or Delete clears)
+document.addEventListener('keydown', (e) => {
+  if (!capture || capture.kind !== 'key') return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (e.code === 'Escape') { capture = null; renderBinds(); return; }
+  bindKey(capture.id, e.code === 'Backspace' || e.code === 'Delete' ? null : e.code);
+  saveBinds();
+}, true);
+// controller: the next button pressed
+function waitPad() {
+  const pads = () => (navigator.getGamepads ? [...navigator.getGamepads()] : []).filter(Boolean);
+  const was = new Set();
+  for (const p of pads()) p.buttons.forEach((b, i) => { if (b.pressed) was.add(i); });
+  const t0 = performance.now();
+  const look = () => {
+    if (!capture || capture.kind !== 'pad') return;
+    for (const p of pads()) for (let i = 0; i < p.buttons.length; i++) {
+      if (p.buttons[i].pressed && !was.has(i)) { bindPad(capture.id, i); saveBinds(); return; }
+      if (!p.buttons[i].pressed) was.delete(i);
+    }
+    if (performance.now() - t0 > 8000) { capture = null; renderBinds(); status('No controller button pressed.'); return; }
+    requestAnimationFrame(look);
+  };
+  requestAnimationFrame(look);
+}
+$('o-controls').onclick = () => { hide('dlg-options'); capture = null; renderBinds(); show('dlg-binds'); };
+$('b-reset').onclick = () => { resetBinds(); saveBinds(); };
+$('b-ok').onclick = () => { capture = null; hide('dlg-binds'); show('dlg-options'); };
 document.addEventListener('keyup', (e) => game?.keys.delete(e.code));
 function numberKey(n) {
   if (game.voting) game.castVote(n - 1);
@@ -707,7 +766,7 @@ requestAnimationFrame(loop);
 // ------------------------------------------------------------------ helpers
 function show(id) { $(id).hidden = false; }
 function hide(id) { $(id).hidden = true; }
-function closeDialogs() { hide('dlg-heist'); hide('dlg-leaders'); hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
+function closeDialogs() { hide('dlg-binds'); capture = null; hide('dlg-heist'); hide('dlg-leaders'); hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
 function status(t) { $('menu-status').textContent = t; }
 function loading(t) { $('loading').hidden = !t; $('loading-text').textContent = t; }
 

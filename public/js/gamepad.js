@@ -6,6 +6,7 @@
 // B crouch (hold) · X reload · Y use · LB / RB or d-pad left / right switch weapon · d-pad up last weapon ·
 // Back scores · Start menu
 import { BTN } from './pmove.js';
+import { padFor } from './binds.js';
 
 const B = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, BACK: 8, START: 9, L3: 10, R3: 11, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 };
 const DEAD = 0.16;
@@ -54,30 +55,37 @@ export class GamepadInput {
     const [rx, ry] = stick(axes[2] || 0, axes[3] || 0);
     if (now.some(Boolean) || lx || ly || rx || ry) this.active = true;
 
+    // the emote wheel is up: the right stick points, A picks, B closes
+    if (playing && this.opts.wheel?.()) {
+      this.reset();
+      if (rx || ry) this.opts.wheelAim(rx * 40, ry * 40);
+      if (hit(B.A) || hit(padFor('attack'))) this.opts.wheelPick();
+      if (hit(B.B) || hit(padFor('emote'))) this.opts.wheelClose();
+      this.prev = now;
+      return;
+    }
     if (playing) {
       this.fwd = -ly;
       this.side = lx;
-      if (hit(B.L3)) this.sprint = !this.sprint;
-      if (Math.hypot(lx, ly) < 0.3) this.sprint = false; // let go of the stick: stop sprinting
+      // buttons from Options → Controls (sprint toggles: press it, and letting go of the stick stops it)
+      const on = (id) => { const i = padFor(id); return i >= 0 && now[i]; };
+      const tap = (id) => { const i = padFor(id); return i >= 0 && hit(i); };
+      if (tap('sprint')) this.sprint = !this.sprint;
+      if (Math.hypot(lx, ly) < 0.3) this.sprint = false;
       let b = 0;
-      if (now[B.RT]) b |= BTN.ATTACK;
-      if (now[B.LT]) b |= BTN.ATTACK2;
-      if (now[B.A]) b |= BTN.JUMP;
-      if (now[B.B]) b |= BTN.DUCK;
-      if (now[B.R3]) b |= BTN.ROCKETJUMP;
-      if (now[B.X]) b |= BTN.RELOAD;
-      if (now[B.Y]) b |= BTN.USE;
+      for (const [id, bit] of [['attack', BTN.ATTACK], ['aim', BTN.ATTACK2], ['jump', BTN.JUMP], ['duck', BTN.DUCK], ['rocketjump', BTN.ROCKETJUMP], ['reload', BTN.RELOAD], ['use', BTN.USE], ['walk', BTN.WALK], ['mask', BTN.MASK], ['horn', BTN.HORN]]) if (on(id)) b |= bit;
       if (this.sprint) b |= BTN.SPRINT;
       this.buttons = b;
-      this.scores = now[B.BACK];
+      this.scores = on('scores');
       // look: a curved response so small tilts aim finely and full tilt turns fast
       if (rx || ry) {
         const s = LOOK_SPEED * this.opts.sens() * dt;
         this.opts.look(-rx * Math.abs(rx) * s * 1.6, ry * Math.abs(ry) * s);
       }
-      if (hit(B.LB) || hit(B.LEFT)) this.opts.weapon(-1);
-      if (hit(B.RB) || hit(B.RIGHT)) this.opts.weapon(1);
-      if (hit(B.UP)) this.opts.lastWeapon();
+      if (tap('prevweapon')) this.opts.weapon(-1);
+      if (tap('nextweapon')) this.opts.weapon(1);
+      if (tap('lastweapon')) this.opts.lastWeapon();
+      for (const id of ['emote', 'third', 'chat', 'phone', 'map']) if (tap(id)) this.opts.action?.(id);
       if (hit(B.START)) this.opts.menu();
     } else {
       this.reset();

@@ -158,6 +158,12 @@ label.check { display: flex; gap: 8px; align-items: center; color: var(--text-di
 #touch .tb-menu { right: calc(12px + env(safe-area-inset-right)); }
 #touch .tb-chat { right: calc(62px + env(safe-area-inset-right)); }
 #touch .tb-scores { right: calc(112px + env(safe-area-inset-right)); }
+#dlg-binds { width: min(620px, calc(100vw - 32px)); }
+.binds { width: 100%; border-collapse: collapse; font-size: 12px; }
+.binds th { text-align: left; color: var(--text-dim); font-weight: 600; padding: 4px 6px; }
+.binds td { padding: 3px 6px; border-top: 1px solid rgba(255,255,255,.06); }
+.binds .bkey { width: 100%; padding: 4px 8px; font-size: 12px; text-align: left; }
+.binds .bkey small { color: var(--text-dim); }
 #touch .tb-phone { display: none; top: calc(10px + env(safe-area-inset-top)); right: calc(222px + env(safe-area-inset-right)); width: 58px; height: 34px; border-radius: 8px; font-size: 11px; }
 #touch.fp .tb-phone { display: block; }
 #touch.ui .tb:not(.tb-phone) { display: none; }
@@ -1010,7 +1016,14 @@ html, body { font: 14px/1.45 var(--ui); }
   <div class="row"><label for="o-vol">Volume</label><div><input type="range" id="o-vol" min="0" max="1" step="0.05"><span class="val" id="o-vol-v"></span></div></div>
   <div class="row"><label for="o-quality">Graphics</label><select id="o-quality"><option value="potato">Potato: for old or slow devices, plain look, fastest</option><option value="low">Low: no bloom, simple shadows</option><option value="medium">Medium: bloom, soft shadows</option><option value="high">High: adds ambient occlusion and sharper shadows</option></select></div>
   <p style="margin-top:8px">Graphics changes apply straight away from the main menu. During a match they apply the next time the page loads.</p>
-  <div class="actions"><button class="btn primary" id="o-ok">OK</button></div>
+  <div class="actions"><button class="btn" id="o-controls">Controls…</button><button class="btn primary" id="o-ok">OK</button></div>
+</div>
+
+<div class="dialog" id="dlg-binds" hidden role="dialog" aria-labelledby="dlg-binds-title">
+  <h2 id="dlg-binds-title">Controls</h2>
+  <p>Click a key or a controller button, then press the new one. Escape cancels; Backspace clears a key. A key or button that belonged to something else moves here.</p>
+  <table class="binds"><thead><tr><th>Action</th><th>Keyboard</th><th>Controller</th></tr></thead><tbody id="b-list"></tbody></table>
+  <div class="actions"><button class="btn" id="b-reset">Reset all</button><button class="btn primary" id="b-ok">Done</button></div>
 </div>
 
 <div id="loading" hidden><div class="box"><div id="loading-text">Loading…</div><div class="bar"><i></i></div></div></div>

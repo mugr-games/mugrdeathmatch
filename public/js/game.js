@@ -19,6 +19,7 @@ import { Synth } from './synth.js';
 import { Hud } from './hud.js';
 import { Avatar, ZOMBIE_SKIN, MODELS, HOLDS, holdPoints, reachArm, avatarMaterials } from './avatar.js';
 import { EMOTE, COSMETIC } from './cosmetics.js';
+import { held } from './binds.js';
 import { applyGunSkin, addCharm, swingCharm, finishMaterial } from './skins.js';
 import { Ragdoll } from './ragdoll.js';
 import { ZombiesView } from './zview.js';
@@ -1849,19 +1850,12 @@ export class Game {
     const k = this.keys;
     let fwd = 0, side = 0, buttons = 0;
     if (!this.typing) {
-      if (k.has('KeyW')) fwd += 1;
-      if (k.has('KeyS')) fwd -= 1;
-      if (k.has('KeyD')) side += 1;
-      if (k.has('KeyA')) side -= 1;
-      if (k.has('Space')) buttons |= BTN.JUMP;
-      if (k.has('ControlLeft') || k.has('KeyC')) buttons |= BTN.DUCK;
-      if (k.has('ShiftLeft')) buttons |= BTN.SPRINT;
-      if (k.has('AltLeft')) buttons |= BTN.WALK;
-      if (k.has('KeyR')) buttons |= BTN.RELOAD;
-      if (k.has('KeyE')) buttons |= BTN.USE;
-      if (k.has('KeyQ')) buttons |= BTN.ROCKETJUMP;
-      if (k.has('KeyG')) buttons |= BTN.MASK;
-      if (k.has('KeyH')) buttons |= BTN.HORN;
+      // keys from Options → Controls
+      if (held(k, 'fwd')) fwd += 1;
+      if (held(k, 'back')) fwd -= 1;
+      if (held(k, 'right')) side += 1;
+      if (held(k, 'left')) side -= 1;
+      for (const [id, bit] of [['jump', BTN.JUMP], ['duck', BTN.DUCK], ['sprint', BTN.SPRINT], ['walk', BTN.WALK], ['reload', BTN.RELOAD], ['use', BTN.USE], ['rocketjump', BTN.ROCKETJUMP], ['mask', BTN.MASK], ['horn', BTN.HORN], ['attack', BTN.ATTACK], ['aim', BTN.ATTACK2]]) if (held(k, id)) buttons |= bit;
       // the phone and the shop counter take the mouse buttons
       if (this.mouseButtons & 1 && !this.fv.phoneOpen() && !this.fv.shop) buttons |= BTN.ATTACK;
       if (this.mouseButtons & 2 && !this.fv.phoneOpen() && !this.fv.shop) buttons |= BTN.ATTACK2;
@@ -2014,7 +2008,7 @@ export class Game {
       if (cam) { eye = cam.eye; lookAt = cam.at; roll = 0; }
     }
     const Wc = WEAPONS[ps.cur];
-    const aimHeld = !!(this.mouseButtons & 2 || (this.touch && this.touch.buttons & BTN.ATTACK2) || (this.pad && this.pad.buttons & BTN.ATTACK2));
+    const aimHeld = !!(this.mouseButtons & 2 || held(this.keys, 'aim') || (this.touch && this.touch.buttons & BTN.ATTACK2) || (this.pad && this.pad.buttons & BTN.ATTACK2));
     this.zoomed = this.connected && ps.alive && !!Wc.zoom && aimHeld && !this.typing;
     // every other gun aims down its sights: a little zoom, the gun brought up to the eye, a walk
     this.ads = this.connected && ps.alive && !Wc.zoom && !Wc.melee && aimHeld && !this.typing && !ps.car && !ps.seat && !this.myEmote && !this.fv.phoneOpen() && !this.fv.shop;
@@ -2096,7 +2090,7 @@ export class Game {
     if (this.voting) this.hud.vote(this.voting);
     this.hud.update(ps);
     if (this.timeLeft !== undefined && this.connected && this.mode !== 'freeplay') this.hud.setTimer(this.timeLeft, this.limitLabel());
-    if (!this.intermission) this.hud.scoreboard(this.keys.has('Tab') || !!this.touch?.scores || !!this.pad?.scores, this.info.values(), this.myId, this.mapName, this.scoreTeams(), this.scoreExtra());
+    if (!this.intermission) this.hud.scoreboard(held(this.keys, 'scores') || !!this.touch?.scores || !!this.pad?.scores, this.info.values(), this.myId, this.mapName, this.scoreTeams(), this.scoreExtra());
     if (this.renderer.shadowMap.enabled && this.frameNo++ % (this.q.shadowEvery || 1) === 0) this.renderer.shadowMap.needsUpdate = true;
     this.adaptResolution(dt);
     if (this.composer) this.composer.render(dt);
