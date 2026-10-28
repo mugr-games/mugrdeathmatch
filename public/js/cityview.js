@@ -33,8 +33,8 @@ function roadFromCost(i, j, d) {
   return k === 2 ? 0.6 : 1;
 }
 // draw distance in chunks: detailed, then simple shapes
-const RANGE = { potato: [1, 3], low: [2, 5], medium: [2, 7], high: [3, 8] };
-const FOG = { potato: 0.00009, low: 0.00006, medium: 0.000042, high: 0.000036 };
+const RANGE = { potato: [1, 3], low: [2, 4], medium: [2, 7], high: [3, 8] };
+const FOG = { potato: 0.00009, low: 0.000068, medium: 0.000042, high: 0.000036 };
 // full-detail distances: people (beyond: a simple figure), cars (beyond: a box), people sitting in cars
 const DETAIL = { potato: [700, 700, 500], low: [1000, 1000, 700], medium: [1700, 1600, 1100], high: [2400, 2200, 1500] };
 const TILE = 3; // far chunks are merged into tiles this many chunks across (one draw each)

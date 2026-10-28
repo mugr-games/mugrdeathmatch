@@ -11,10 +11,12 @@ export function setPotato(on) {
   POTATO = !!on;
 }
 export const isPotato = () => POTATO;
-// noise detail for the surface shaders (octaves): fewer is faster. Set from the graphics quality.
-let OCTAVES = 5;
-export function setDetail(octaves) {
+// noise detail for the surface shaders (octaves): fewer is faster; lite leaves out the weathering layer.
+// Set from the graphics quality.
+let OCTAVES = 5, LITE = false;
+export function setDetail(octaves, lite = false) {
   OCTAVES = octaves;
+  LITE = lite;
 }
 
 const NOISE = /* glsl */ `
@@ -291,6 +293,8 @@ vec4 surfacePattern(vec3 P, vec3 N, out float rough, out float wet) {
     h = up ? .5 : bz; rough = .7; weather = .6;
   }
   // weathering shared by every surface: big blotchy grime, rain streaks down walls, puddles on hard floors
+  // (left out on the cheapest settings)
+  #ifndef SURF_LITE
   float macro = fbm(P.xy * .0016 + P.z * .001);
   col *= mix(1., .86 + .28 * macro, weather);
   if (side) {
@@ -300,14 +304,17 @@ vec4 surfacePattern(vec3 P, vec3 N, out float rough, out float wet) {
     float base = 1. - smoothstep(0., 26. + 10. * gnoise(vec2(uv.x * .05, 0.)), P.z);
     col *= 1. - base * .28 * weather;
   }
+  #endif
   // cavities read darker (a cheap ambient occlusion from the height)
   col *= .82 + .36 * clamp(h, 0., 1.);
+  #ifndef SURF_LITE
   if (up && (t == 0 || t == 5 || t == 8)) {
     wet = smoothstep(.62, .7, fbm(uv * .006 + 17.));
     col *= 1. - wet * .35;
     h = mix(h, .5, wet);
     rough = mix(rough, .06, wet);
   }
+  #endif
   return vec4(col, h);
 }
 `;
@@ -352,7 +359,7 @@ export function surfaceMaterial(type, opts = {}) {
         vWPos = (modelMatrix * wp4).xyz;
         vWNrm = normalize(mat3(modelMatrix) * objectNormal);`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n#define FBM_OCT ${POTATO ? 3 : OCTAVES}\nvarying vec3 vWPos; varying vec3 vWNrm; uniform float uBump;\n${NOISE}\n${PATTERN}\n${PERTURB}`)
+      .replace('#include <common>', `#include <common>\n#define FBM_OCT ${POTATO ? Math.min(3, OCTAVES) : OCTAVES}\n${LITE ? '#define SURF_LITE\n' : ''}varying vec3 vWPos; varying vec3 vWNrm; uniform float uBump;\n${NOISE}\n${PATTERN}\n${PERTURB}`)
       .replace('#include <map_fragment>', `
         float sRough, sWet;
         vec4 sPat = surfacePattern(vWPos, normalize(vWNrm), sRough, sWet);
@@ -361,13 +368,13 @@ export function surfaceMaterial(type, opts = {}) {
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * sRough;')
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-          // fade fine bumps with distance so far walls don't shimmer
+          // fade fine bumps with distance so far walls don't shimmer (no extra fine grain on lite)
           float sFade = 1. / (1. + length(fwidth(vWPos)) * .35);
-          float sMicro = (gnoise(vWPos.xy * 1.7 + vWPos.z * .9) - .5) * .08 * smoothstep(.6, .95, sFade);
+          float sMicro = ${LITE ? '0.' : '(gnoise(vWPos.xy * 1.7 + vWPos.z * .9) - .5) * .08 * smoothstep(.6, .95, sFade)'};
           normal = bumpNormal(-vViewPosition, normal, sPat.a + sMicro, uBump * sFade * (1. - sWet * .8), faceDirection);`);
     }
   };
-  mat.customProgramCacheKey = () => (POTATO ? 'surface-potato' : 'surface' + OCTAVES);
+  mat.customProgramCacheKey = () => (POTATO ? 'surface-potato' : 'surface') + OCTAVES + (LITE ? 'lite' : '');
   mat.userData.uniforms = uniforms;
   cache.set(key, mat);
   return mat;

@@ -57,7 +57,7 @@ const canvas = $('view');
 // school Chromebooks and other small machines start on the lightest graphics (Options can change it)
 const CHROMEBOOK = /CrOS/.test(navigator.userAgent || '');
 const LOW_END = CHROMEBOOK || (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
-const DEFAULTS = { name: '', color: Math.floor(Math.random() * 8), model: Math.floor(Math.random() * MODELS.length), sens: 3, fov: 90, volume: 0.7, quality: CHROMEBOOK ? 'potato' : LOW_END || isTouch() ? 'low' : 'medium' };
+const DEFAULTS = { name: '', color: Math.floor(Math.random() * 8), model: Math.floor(Math.random() * MODELS.length), sens: 3, fov: 90, volume: 0.7, quality: LOW_END || isTouch() ? 'low' : 'medium' };
 let settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('arena.settings') || '{}')); } catch {}
 setBinds(settings.binds);

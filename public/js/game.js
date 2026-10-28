@@ -39,14 +39,18 @@ const TEAM_RGB = { red: '#e0473a', blue: '#3a7fe0' };
 const PROP_SIZE = { crate: { half: 20, h: 40 }, barrel: { half: 14, h: 40 } };
 
 export const QUALITY = {
-  // potato: for old phones and laptops. Draws at a third of the pixels with no shadows, post effects or
-  // bump mapping, simpler lighting, and keeps fewer bodies and bullet holes around.
-  // dprCap: most screen pixels per CSS pixel; shadowEvery: redraw the sun's shadows every n frames;
-  // octaves: surface shader detail
-  potato: { pixel: 0.55, dprCap: 1, ao: false, bloom: false, shadow: 0, msaa: 0, potato: true, ragdolls: 3, decals: 25, octaves: 3 },
-  low: { pixel: 0.75, dprCap: 1, ao: false, bloom: false, shadow: 1024, msaa: 0, shadowEvery: 3, octaves: 3 },
-  medium: { pixel: 1, dprCap: 1.5, ao: false, bloom: true, shadow: 2048, msaa: 4, shadowEvery: 2, octaves: 4 },
-  high: { pixel: 1.5, dprCap: 2, ao: true, bloom: true, shadow: 4096, msaa: 4, shadowEvery: 1, octaves: 5 },
+  // potato: for old phones and laptops. Full resolution (never blocky), simple lighting with no bump
+  // mapping or post effects, crisp sun shadows redrawn every few frames, and fewer bodies and bullet holes.
+  // low: school Chromebooks at 60 fps: the same cheap surfaces and shadows with the full lighting model.
+  // pixel, dprCap: drawing pixels per CSS pixel (and the most screen pixels used); minRes: how far the
+  // automatic resolution may drop when frames are slow; shadowEvery: redraw the sun's shadows every n frames;
+  // shadowReach: how far round you the sun's shadows go in big open maps; softShadows: the softer (dearer)
+  // shadow filter; octaves: surface shader detail; lite: skip the
+  // weathering layer (grime, streaks, puddles) on surfaces
+  potato: { pixel: 1, dprCap: 1, minRes: 0.8, ao: false, bloom: false, shadow: 1024, shadowReach: 1600, shadowEvery: 4, msaa: 0, potato: true, ragdolls: 3, decals: 25, octaves: 2, lite: true },
+  low: { pixel: 1, dprCap: 1, minRes: 0.8, ao: false, bloom: false, shadow: 1024, shadowReach: 1600, shadowEvery: 4, msaa: 0, octaves: 2, lite: true },
+  medium: { pixel: 1, dprCap: 1.5, minRes: 0.55, ao: false, bloom: true, shadow: 2048, msaa: 4, shadowEvery: 2, octaves: 4, softShadows: true },
+  high: { pixel: 1.5, dprCap: 2, minRes: 0.55, ao: true, bloom: true, shadow: 4096, msaa: 4, shadowEvery: 1, octaves: 5, softShadows: true },
 };
 
 function angDiff(a, b) {
@@ -252,7 +256,7 @@ export class Game {
     this.canvas = canvas;
     this.q = QUALITY[settings.quality] || QUALITY.medium;
     setPotato(this.q.potato);
-    setDetail(this.q.octaves || 5);
+    setDetail(this.q.octaves || 5, !!this.q.lite);
     this.occl = new Occlusion();
     this.resScale = 1; // adaptive resolution: drops when frames are slow, recovers when they're fast
     this.frameNo = 0;
@@ -263,7 +267,7 @@ export class Game {
     r.toneMappingExposure = 1.0;
     r.shadowMap.enabled = this.q.shadow > 0;
     r.shadowMap.autoUpdate = false; // redrawn every few frames instead (see frame)
-    r.shadowMap.type = THREE.PCFSoftShadowMap;
+    r.shadowMap.type = this.q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     this.sound = new Synth();
     this.sound.setVolume(settings.volume);
     this.hud = new Hud();
@@ -338,7 +342,8 @@ export class Game {
   }
 
   buildComposer() {
-    if (this.q.potato) return; // potato draws straight to the screen: no extra render targets
+    // with no post effects (potato, low) the game draws straight to the screen: no extra full-screen passes
+    if (!this.q.ao && !this.q.bloom && !this.q.msaa) return;
     const r = this.renderer;
     const w = innerWidth, h = innerHeight;
     const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: this.q.msaa });
@@ -2053,7 +2058,8 @@ export class Game {
       this.sun.position.set(cx + dir.x * 12000, cy + dir.y * 12000, dir.z * 12000);
       this.sun.target.updateMatrixWorld();
       const cam = this.sun.shadow.camera;
-      if (cam.right !== 3200) { cam.left = cam.bottom = -3200; cam.right = cam.top = 3200; cam.near = 100; cam.far = 26000; cam.updateProjectionMatrix(); }
+      const ext = this.q.shadowReach || 3200; // smaller on the cheap settings: the same map covers less, so edges stay sharp
+      if (cam.right !== ext) { cam.left = cam.bottom = -ext; cam.right = cam.top = ext; cam.near = 100; cam.far = 26000; cam.updateProjectionMatrix(); }
     }
     this.fv.update(dt, t, eye);
     this.sky.position.set(eye[0], eye[1], eye[2]);
@@ -2095,7 +2101,7 @@ export class Game {
     this.adaptResolution(dt);
     if (this.composer) this.composer.render(dt);
     else {
-      // potato: the world, then the weapon in hand over it
+      // no post effects: the world, then the weapon in hand over it
       const r = this.renderer;
       r.autoClear = false;
       r.clear();
@@ -2112,7 +2118,7 @@ export class Game {
     if (this.slowT < 1.5 || document.hidden) return;
     this.slowT = 0;
     const prev = this.resScale;
-    const floor = this.q.potato ? 0.4 : 0.55; // potato may go lower still to hold its frame rate
+    const floor = this.q.minRes || 0.55; // the cheap settings don't drop far: blurry is worse than a few frames
     if (this.dtAvg > 1 / 42 && this.resScale > floor) this.resScale = Math.max(floor, this.resScale * 0.88);
     else if (this.dtAvg < 1 / 70 && this.resScale < 1) this.resScale = Math.min(1, this.resScale * 1.08);
     if (this.resScale !== prev) this.resize();
