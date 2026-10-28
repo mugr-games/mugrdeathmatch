@@ -6,7 +6,7 @@ import { packCar, unpackCar } from './vehicle.js';
 
 export const MAX_HP = 100, MAX_ARMOR = 100;
 
-// mine: your own weapons for a custom-loadout room (primary first), else the preset's
+// mine: the weapons a slot machine room rolled for you, else the preset's
 export function initLoadout(ps, preset = 'default', mine = null) {
   const L0 = LOADOUTS[preset] || LOADOUTS.default;
   const L = L0.custom && mine ? { ...L0, weapons: mine } : L0;
@@ -19,8 +19,9 @@ export function initLoadout(ps, preset = 'default', mine = null) {
     giveWeapon(ps, i);
     if (L.full && WEAPONS[i].ammo) ps.ammo[WEAPONS[i].ammo] = WEAPONS[i].maxAmmo;
   }
-  // start holding your primary, or the SMG if we have one, otherwise the last weapon of the preset
-  ps.cur = L.custom ? WEAPON_INDEX[L.weapons[0]] : L.weapons.includes('smg1') ? WEAPON_INDEX.smg1 : WEAPON_INDEX[L.weapons[L.weapons.length - 1]];
+  // start holding the key 3 gun of a slot machine roll, or the SMG if we have one, otherwise the last weapon
+  const rifle = L.custom && L.weapons.find((id) => WEAPONS[WEAPON_INDEX[id]]?.slot === 2);
+  ps.cur = rifle ? WEAPON_INDEX[rifle] : L.weapons.includes('smg1') ? WEAPON_INDEX.smg1 : WEAPON_INDEX[L.weapons[L.weapons.length - 1]];
   ps.nextAttack = 0;
   ps.reloadEnd = 0;
   ps.time = ps.time || 0;

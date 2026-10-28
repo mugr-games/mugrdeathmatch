@@ -1,12 +1,11 @@
-// Own loadouts and flashbangs, against a running server. Usage: node tools/sim_loadout.mjs <port>
-// 1. A player saves a loadout (shotgun, knife) and spawns with exactly it in a custom-loadout room; a weapon
-//    they don't own can't go in it.
+// Slot machine loadouts and flashbangs, against a running server. Usage: node tools/sim_loadout.mjs <port>
+// 1. Spawning in a slot machine room rolls one weapon per number key from the right pools; you hold exactly
+//    those, starting with the key 3 gun.
 // 2. A flashbang thrown at your own feet while you look at it blinds you; someone far off isn't.
 import WebSocket from 'ws';
-import { WEAPONS, WEAPON_INDEX } from '../public/js/weapons.js';
+import { WEAPONS, WEAPON_INDEX, LOADOUT_PARTS, ROLL_POOLS, rollLoadout } from '../public/js/weapons.js';
 const port = process.argv[2] || 8099, base = `http://localhost:${port}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const api = async (route, body) => (await fetch(`${base}/api/${route}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
 function client(name, token) {
   const ws = new WebSocket(`ws://localhost:${port}`);
   const c = { ws, welcome: null, me: null, events: [], seq: 0 };
@@ -19,24 +18,21 @@ const owned = (me) => WEAPONS.filter((w, i) => (me.ow >> i) & 1).map((w) => w.id
 const out = {};
 let ok = true;
 
-// 1. the loadout
-const token = 'cd'.repeat(16);
-await api('profile', { token });
-const saved = await api('loadout', { token, loadout: { primary: 'shotgun', secondary: 'pistol', melee: 'knife', utility: 'grenade' } });
-const notOwned = await api('loadout', { token, loadout: { primary: 'railgun', secondary: 'deagle', melee: 'katana', utility: 'flashbang' } });
-out.saved = saved.loadout;
-out.unownedFallsBack = notOwned.loadout;
-await api('loadout', { token, loadout: { primary: 'shotgun', secondary: 'pistol', melee: 'knife', utility: 'grenade' } });
-const buy = await api('buy', { token, item: 'wpn_ak' });
-out.buyWithoutCoins = buy.error || 'bought';
-const A = await client('Loadout', token);
-A.send({ t: 'create', settings: { name: 'Loadout test', map: 'foundry', loadout: 'custom', private: true, maxPlayers: 4 } });
+// 1. the slot machine: spawning in a slot machine room rolls a loadout, sent only to that player
+const A = await client('Roller');
+A.send({ t: 'create', settings: { name: 'Slot test', map: 'foundry', loadout: 'custom', private: true, maxPlayers: 4 } });
 await sleep(1200);
+const roll = A.events.find((e) => e.e === 'roll')?.w;
 out.room = A.welcome?.room?.loadout;
+out.rolled = roll;
 out.spawnedWith = A.me && owned(A.me);
 out.holding = A.me && WEAPONS[A.me.cur]?.id;
-ok &&= JSON.stringify(out.spawnedWith?.sort()) === JSON.stringify(['grenade', 'knife', 'pistol', 'shotgun']) && out.holding === 'shotgun';
-ok &&= out.unownedFallsBack?.primary === 'smg1' && out.unownedFallsBack?.melee === 'crowbar';
+const parts = Object.keys(LOADOUT_PARTS);
+ok &&= !!roll && roll.length === 5 && roll.every((id, i) => ROLL_POOLS[parts[i]].includes(id));
+ok &&= JSON.stringify([...out.spawnedWith].sort()) === JSON.stringify([...new Set(roll)].sort()) && out.holding === roll[2];
+// rolls differ (40 rolls of the pools can't all be the same)
+out.distinctRolls = new Set(Array.from({ length: 40 }, () => rollLoadout().join())).size;
+ok &&= out.distinctRolls > 10;
 
 // 2. a flashbang: B lobs one at their own feet and watches it; C is somewhere else on the map
 const B = await client('Thrower');

@@ -51,32 +51,23 @@ export const WEAPONS = [
 
 export const WEAPON_INDEX = Object.fromEntries(WEAPONS.map((w, i) => [w.id, i]));
 
-// Your own loadout (rooms set to "your own loadouts"): one weapon for each part, from the ones you own.
-// STARTER: everyone has these; the rest are bought in the shop for coins (WEAPON_PRICE).
-export const LOADOUT_PARTS = { primary: 'Primary', secondary: 'Sidearm', melee: 'Melee', utility: 'Grenade' };
-export const partOf = (W) => (W.melee ? 'melee' : W.proj && (W.proj.kind === 'grenade' || W.proj.kind === 'flash') ? 'utility' : W.slot === 1 ? 'secondary' : 'primary');
-export const STARTER = ['crowbar', 'knife', 'pistol', 'smg1', 'shotgun', 'grenade'];
-export const DEFAULT_LOADOUT = { primary: 'smg1', secondary: 'pistol', melee: 'crowbar', utility: 'grenade' };
-export const WEAPON_PRICE = {
-  '357': 300, deagle: 450, uzi: 350, ar2: 400, ak: 500, lmg: 700, autoshotgun: 600, double: 400, crossbow: 350, sniper: 600, dmr: 550, rpg: 900, railgun: 1200,
-  flashbang: 250, bat: 150, pan: 150, golf: 200, wrench: 200, machete: 250, shovel: 250, axe: 300, sledge: 350, katana: 400,
-};
-export const ownsWeapon = (id, owned = []) => STARTER.includes(id) || owned.includes('wpn_' + id);
-// a loadout made good: each part a weapon of the right kind that you own, else the default for that part
-export function cleanLoadout(lo, owned) {
-  const out = {};
-  for (const k of Object.keys(LOADOUT_PARTS)) {
-    const id = lo?.[k], W = WEAPONS[WEAPON_INDEX[id]];
-    out[k] = W && !W.zombie && partOf(W) === k && ownsWeapon(id, owned) ? id : DEFAULT_LOADOUT[k];
-  }
-  return out;
+// Slot machine loadouts (rooms set to "slot machine"): every life one random weapon for each number key, rolled
+// by the server (each player sees the reels land): 1 melee, 2 sidearm, 3 rifle or SMG, 4 shotgun or sniper,
+// 5 an explosive. Every weapon is in the pools; nothing is bought.
+export const LOADOUT_PARTS = { melee: '1 · Melee', sidearm: '2 · Sidearm', rifle: '3 · Rifle / SMG', heavy: '4 · Shotgun / Sniper', explosive: '5 · Explosive' };
+export const partOf = (W) => Object.keys(LOADOUT_PARTS)[W.slot];
+export const ROLL_POOLS = Object.fromEntries(Object.keys(LOADOUT_PARTS).map((k) => [k, WEAPONS.filter((W) => !W.zombie && partOf(W) === k).map((W) => W.id)]));
+// a random loadout, one weapon per key: [melee, sidearm, rifle, heavy, explosive]
+export function rollLoadout(rand = Math.random) {
+  return Object.keys(LOADOUT_PARTS).map((k) => { const p = ROLL_POOLS[k]; return p[Math.floor(rand() * p.length) % p.length]; });
 }
 export const SLOT_COUNT = 5;
 
 // Room setting: what everyone spawns with.
 export const LOADOUTS = {
-  // custom: everyone spawns with their own loadout (weapons: the default one) and no guns lie around
-  custom: { name: 'Your own loadouts (no gun pickups)', weapons: ['smg1', 'pistol', 'crowbar', 'grenade'], full: true, noPickups: true, custom: true },
+  // custom: every life a random loadout from the slot machine (weapons: used only if there's no roll), and no
+  // guns lie around
+  custom: { name: 'Slot machine (a random loadout every life, no gun pickups)', weapons: ['smg1', 'pistol', 'crowbar', 'grenade'], full: true, noPickups: true, custom: true },
   default: { name: 'Standard (crowbar, pistol, SMG)', weapons: ['crowbar', 'pistol', 'smg1'], full: false },
   all: { name: 'Everything, full ammo', weapons: WEAPONS.filter((w) => !w.zombie).map((w) => w.id), full: true },
   melee: { name: 'Melee only (every melee weapon)', weapons: ['knife', 'bat', 'katana', 'axe', 'sledge', 'machete', 'pan', 'golf', 'wrench', 'shovel', 'crowbar'], full: false, noPickups: true },
@@ -127,6 +118,7 @@ export const GUN_SHOP = [
   ['crossbow', 2200, 150], ['sniper', 5000, 260], ['lmg', 7500, 320], ['grenade', 600, 300], ['rpg', 9500, 900], ['railgun', 15000, 700],
   ['knife', 150, 0], ['bat', 300, 0], ['axe', 800, 0], ['sledge', 1000, 0], ['katana', 1200, 0],
   ['pan', 200, 0], ['wrench', 350, 0], ['golf', 450, 0], ['machete', 600, 0], ['shovel', 700, 0],
+  ['flashbang', 500, 150], ['deagle', 1800, 100], ['uzi', 1400, 110], ['ak', 3400, 180], ['dmr', 4800, 240], ['double', 1600, 90],
 ];
 export const ARMOR_PRICE = 400;
 export const DROP_NAMES = { maxammo: 'MAX AMMO', instakill: 'INSTA-KILL', double: 'DOUBLE POINTS', nuke: 'KABOOM' };

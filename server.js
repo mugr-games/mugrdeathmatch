@@ -8,7 +8,7 @@ import { WebSocketServer } from 'ws';
 import { BoxWorld, MASK_SHOT } from './public/js/collide.js';
 import { CODE_MAPS, MODE_MAPS, HEIST_MAPS } from './public/js/mapdefs.js';
 import { pmove, newPlayerState, BTN } from './public/js/pmove.js';
-import { WEAPONS, WEAPON_INDEX, ITEMS, LOADOUTS, ITEM_ROTATION, ZOMBIE, cleanLoadout } from './public/js/weapons.js';
+import { WEAPONS, WEAPON_INDEX, ITEMS, LOADOUTS, ITEM_ROTATION, ZOMBIE, rollLoadout } from './public/js/weapons.js';
 import { initLoadout, zombieLoadout, giveWeapon, weaponThink, spreadDirs, eyePos, viewDir, hitTest, applyDamage, fallDamage, packOwn, MAX_HP, MAX_ARMOR } from './public/js/sim.js';
 import { launch, stepProj } from './public/js/projectiles.js';
 import { buildNav, boxBounds } from './public/js/nav.js';
@@ -348,24 +348,10 @@ let nextId = 1;
 
 const validModel = (m) => (Number.isInteger(m) && m >= 0 && m < NUM_MODELS ? m : 0);
 
-// custom-loadout rooms: everyone brings their own weapons (modes with weapons of their own, like zombies,
-// heists and free roam, ignore it and play standard)
-function ownLoadouts(R) {
+// slot machine rooms: a random loadout every life (modes with weapons of their own, like zombies, heists and
+// free roam, ignore it and play standard)
+function slotMachine(R) {
   return !!LOADOUTS[R.settings.loadout].custom && !R.cz && !R.fp && !R.heist && !R.mb && !R.pk;
-}
-// a player's own weapons for such a room, primary first (null elsewhere)
-function myLoadout(R, p) {
-  if (!ownLoadouts(R)) return null;
-  const L = cleanLoadout(p.profile?.loadout, p.profile?.owned || []);
-  return [L.primary, L.secondary, L.melee, L.utility];
-}
-// a profile arrived after spawning (it loads a moment after joining): swap to their own loadout, keeping health
-function giveOwnLoadout(R, p) {
-  if (!ownLoadouts(R) || !p.ps.alive) return;
-  const { hp, armor } = p.ps;
-  initLoadout(p.ps, R.settings.loadout, myLoadout(R, p));
-  p.ps.hp = hp;
-  p.ps.armor = armor;
 }
 
 function newPlayer(ws, name, color, model) {
@@ -415,7 +401,9 @@ function respawn(R, p) {
   p.ps = newPlayerState([best.origin[0], best.origin[1], best.origin[2] + 1]);
   p.ps.time = t;
   const S = LOADOUTS[R.settings.loadout];
-  initLoadout(p.ps, R.cz ? 'zombies' : S.custom && !ownLoadouts(R) ? 'default' : R.settings.loadout, myLoadout(R, p));
+  const roll = slotMachine(R) ? rollLoadout() : null;
+  initLoadout(p.ps, R.cz ? 'zombies' : S.custom && !roll ? 'default' : R.settings.loadout, roll);
+  if (roll && !p.bot) pushEvent(R, { e: 'roll', w: roll }, p.id); // they watch the reels land on it
   if (p.team === 'zombie') zombieLoadout(p.ps);
   if (R.cz) R.cz.loadout(p);
   if (R.heist) R.heist.loadout(p);
@@ -1266,7 +1254,6 @@ function profileApi(req, res, route) {
     let error = null;
     if (route === 'buy') error = profiles.buy(pr, String(m.item || ''));
     else if (route === 'equip') error = profiles.equip(pr, String(m.slot || ''), m.item === null ? null : String(m.item || ''));
-    else if (route === 'loadout') error = profiles.setLoadout(pr, m.loadout);
     else if (route === 'image') {
       error = await profiles.setImage(pr, m.data);
       // let the staff online know there's a picture to look at
@@ -1346,7 +1333,7 @@ const server = http.createServer((req, res) => {
     });
   }
   if (req.method === 'OPTIONS' && p.startsWith('/api/')) { res.writeHead(204, CORS); return res.end(); }
-  if (req.method === 'POST' && /^\/api\/(profile|buy|equip|loadout|image|register|login)$/.test(p)) return profileApi(req, res, p.slice(5));
+  if (req.method === 'POST' && /^\/api\/(profile|buy|equip|image|register|login)$/.test(p)) return profileApi(req, res, p.slice(5));
   // approved pictures for image capes and flags
   if (p.startsWith('/img/')) {
     const id = p.slice(5);
@@ -1827,7 +1814,6 @@ wss.on('connection', (ws, req) => {
           me.profile = pr;
           if (!pr) return;
           if (me.room?.fp) me.room.fp.profile(me);
-          if (me.room) giveOwnLoadout(me.room, me);
           send(me, { t: 'coins', coins: pr.coins });
           let changed = Object.keys(pr.eq).length > 0;
           // signed in: play under the account name. A guest using someone's account name gets a guest name.

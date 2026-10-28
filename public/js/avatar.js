@@ -332,15 +332,15 @@ export const HOLDS = {
   wrench: { right: [-0.3, 0, 0], left: null, melee: true },
   shovel: { right: [-0.34, 0, 0], left: null, melee: true },
   pistol: { right: [-0.18, 0, -0.42], left: [-0.2, 1.8, -0.48], mag: [-0.2, 0, -0.9], short: true },
-  revolver: { right: [-0.22, 0, -0.4], left: [-0.24, 1.8, -0.46], mag: [0.05, 2, 0], short: true },
+  revolver: { right: [-0.22, 0, -0.4], left: [-0.24, 1.8, -0.46], mag: [0.05, 2, 0], short: true, reload: 'cyl' },
   smg: { right: [-0.1, 0, -0.42], left: [0.22, 0, -0.32], mag: [0.02, 0, -0.85] },
   rifle: { right: [-0.08, 0, -0.42], left: [0.2, 0, -0.28], mag: [0.04, 0, -0.85] },
-  shotgun: { right: [-0.24, 0, -0.38], left: [0.16, 0, -0.32], mag: [0.05, 0, -0.5], pump: true },
+  shotgun: { right: [-0.24, 0, -0.38], left: [0.16, 0, -0.32], mag: [0.05, 0, -0.5], pump: true, reload: 'shell' },
   autoshotgun: { right: [-0.18, 0, -0.4], left: [0.16, 0, -0.3], mag: [0.02, 0, -0.85] },
-  sniper: { right: [-0.16, 0, -0.42], left: [0.16, 0, -0.3], mag: [-0.02, 0, -0.8], bolt: true },
-  crossbow: { right: [-0.16, 0, -0.4], left: [0.16, 0, -0.3], mag: [0.3, 0, 0.3] },
-  lmg: { right: [-0.14, 0, -0.42], left: [0.12, 0, -0.32], mag: [0.04, 3, -0.6] },
-  rocket: { right: [-0.02, 0, -0.5], left: [0.2, 0, -0.5], mag: [-0.4, 0, 0] },
+  sniper: { right: [-0.16, 0, -0.42], left: [0.16, 0, -0.3], mag: [-0.02, 0, -0.8], bolt: true, reload: 'bolt' },
+  crossbow: { right: [-0.16, 0, -0.4], left: [0.16, 0, -0.3], mag: [0.3, 0, 0.3], reload: 'xbow' },
+  lmg: { right: [-0.14, 0, -0.42], left: [0.12, 0, -0.32], mag: [0.04, 3, -0.6], reload: 'belt' },
+  rocket: { right: [-0.02, 0, -0.5], left: [0.2, 0, -0.5], mag: [-0.4, 0, 0], reload: 'tube' },
   railgun: { right: [-0.12, 0, -0.42], left: [0.18, 0, -0.3], mag: [0, 0, -0.8] },
   grenade: { right: [0, 0, 0], left: null },
   flashbang: { right: [0, 0, 0], left: null },
@@ -348,13 +348,30 @@ export const HOLDS = {
   uzi: { right: [-0.06, 0, -0.45], left: [0.12, 1.6, -0.5], mag: [-0.06, 0, -0.95], short: true },
   ak: { right: [-0.12, 0, -0.36], left: [0.24, 0, -0.06], mag: [0.06, 0, -0.75] },
   dmr: { right: [-0.1, 0, -0.38], left: [0.26, 0, -0.04], mag: [0.04, 0, -0.6] },
-  double: { right: [-0.18, 0, -0.3], left: [0.1, 0, -0.06], mag: [0.02, 0, 0.3] },
+  double: { right: [-0.18, 0, -0.3], left: [0.1, 0, -0.06], mag: [0.02, 0, 0.3], reload: 'break' },
 };
-// a hold's grip points in the weapon's own space, for a model of this size
-export function holdPoints(slot, size) {
+// where a named point of a gun model (gripR, gripL, magHold...) sits in the model's own space, or null
+export function markerAt(model, name) {
+  const o = model?.getObjectByName(name);
+  if (!o) return null;
+  const v = o.position.clone();
+  for (let p = o.parent; p && p !== model; p = p.parent) { p.updateMatrix(); v.applyMatrix4(p.matrix); }
+  return v;
+}
+// a hold's grip points in the weapon's own space, for a model of this size. A model that names its own hand
+// points (gripR, gripL and where the support hand goes to reload) uses those: hands sit right on the grip.
+export function holdPoints(slot, size, model) {
   const H = HOLDS[slot] || HOLDS.rifle;
   const pt = (p) => (p ? [p[0] * size.x, p[1], p[2] * size.z] : null);
-  return { ...H, right: pt(H.right), left: pt(H.left), mag: pt(H.mag || [0, 0, -0.8]) };
+  const out = { ...H, right: pt(H.right), left: pt(H.left), mag: pt(H.mag || [0, 0, -0.8]) };
+  if (model && !H.melee) {
+    const r = markerAt(model, 'gripR'), l = markerAt(model, 'gripL');
+    const m = ['magHold', 'port', 'cylHold', 'breech', 'rocketHold', 'rack'].map((n) => markerAt(model, n)).find(Boolean);
+    if (r) out.right = r.toArray();
+    if (l) out.left = l.toArray();
+    if (m) out.mag = m.toArray();
+  }
+  return out;
 }
 
 // two-bone arm IK: point the upper arm and forearm (both 12 long, hanging along -z) so the hand reaches `target`
@@ -710,10 +727,11 @@ export class Avatar {
     else if (glow) this.matSet.visor.emissive.set(glow);
   }
 
-  // what's in the hand: a hold from HOLDS (null: nothing). offset: where the model sits in the hand mount.
-  setHold(slot, size, offset = 4) {
+  // what's in the hand: a hold from HOLDS (null: nothing). offset: where the model sits in the hand mount;
+  // model: the gun, for its own hand points
+  setHold(slot, size, offset = 4, model = null) {
     if (!slot || !size) { this.grips = null; return; }
-    const H = holdPoints(slot, size);
+    const H = holdPoints(slot, size, model);
     const off = (p) => (p ? new THREE.Vector3(p[0] + offset, p[1], p[2]) : null);
     this.grips = { ...H, right: off(H.right), left: off(H.left), mag: off(H.mag) };
     this.weaponLen = size.x;

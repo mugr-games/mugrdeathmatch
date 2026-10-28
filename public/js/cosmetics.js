@@ -1,12 +1,10 @@
 // The cosmetics catalogue, shared by the server (prices, ownership) and the client (shop, wardrobe, drawing).
 // Cosmetics only change looks. Coins: 10 per kill, 100 for winning a team deathmatch or capture the flag match.
 
-import { WEAPONS, WEAPON_INDEX, WEAPON_PRICE } from './weapons.js';
-
 export const COIN_KILL = 10;
 export const COIN_TEAM_WIN = 100;
 
-export const COS_SLOTS = { hat: 'Hats', back: 'Back', glow: 'Visor glow', skin: 'Suit skins', wskin: 'Gun skins', charm: 'Gun charms', menu: 'Menu theme', emote: 'Emotes', body: 'Body', weapon: 'Weapons' };
+export const COS_SLOTS = { hat: 'Hats', back: 'Back', glow: 'Visor glow', skin: 'Suit skins', wskin: 'Gun skins', charm: 'Gun charms', menu: 'Menu theme', emote: 'Emotes', body: 'Body' };
 
 export const COSMETICS = [
   // helmets take the wearer's suit colours; free to pick up in the shop
@@ -111,10 +109,4 @@ export const EMOTE = Object.fromEntries(EMOTES.map((e) => [e.id, e]));
 // in the shop as emote_<id>; owned: the profile's owned items. Staff and the owner have them all.
 for (const e of EMOTES) if (e.price) COSMETICS.push({ id: 'emote_' + e.id, slot: 'emote', name: e.name, price: e.price });
 for (const c of COSMETICS) if (c.slot === 'emote') COSMETIC[c.id] = c;
-// weapons for your loadout, in the shop as wpn_<id> (owning one puts it in your armoury, not on you)
-const title = (s) => s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-for (const [id, price] of Object.entries(WEAPON_PRICE)) {
-  const W = WEAPONS[WEAPON_INDEX[id]];
-  if (W) COSMETICS.push((COSMETIC['wpn_' + id] = { id: 'wpn_' + id, slot: 'weapon', name: title(W.name), price, weapon: id }));
-}
 export const hasEmote = (id, owned = [], staff = false) => !!EMOTE[id] && (!EMOTE[id].price || staff || owned.includes('emote_' + id));

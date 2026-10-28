@@ -15,7 +15,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { COSMETIC, COS_SLOTS } from './public/js/cosmetics.js';
-import { cleanLoadout } from './public/js/weapons.js';
 import { badName } from './filter.js';
 
 const TOKEN = /^[a-f0-9]{32}$/;
@@ -247,7 +246,7 @@ export function createProfiles(file) {
     return pr;
   }
 
-  const view = (pr) => ({ coins: pr.coins, owned: pr.owned, eq: pr.eq, loadout: cleanLoadout(pr.loadout, pr.owned), name: pr.name || null, stats: pr.stats || {}, role: pr.role || null, img: pr.img || null, imgSt: pr.imgSt || null });
+  const view = (pr) => ({ coins: pr.coins, owned: pr.owned, eq: pr.eq, name: pr.name || null, stats: pr.stats || {}, role: pr.role || null, img: pr.img || null, imgSt: pr.imgSt || null });
   const newToken = () => crypto.randomBytes(16).toString('hex');
 
   // give the owner their coins (once) and items
@@ -572,14 +571,7 @@ export function createProfiles(file) {
       if (pr.coins < item.price) return `You need ${item.price - pr.coins} more coins.`;
       pr.coins -= item.price;
       pr.owned.push(id);
-      if (item.slot !== 'emote' && item.slot !== 'weapon') pr.eq[item.slot] = id; // wear it straight away (emotes go on the wheel, weapons in your armoury)
-      touch(pr);
-      return null;
-    },
-    // your own loadout for custom-loadout rooms (anything you don't own goes back to the default)
-    setLoadout(pr, lo) {
-      if (!lo || typeof lo !== 'object') return 'That loadout isn\'t right.';
-      pr.loadout = cleanLoadout(lo, pr.owned);
+      if (item.slot !== 'emote') pr.eq[item.slot] = id; // wear it straight away (emotes just go on the wheel)
       touch(pr);
       return null;
     },

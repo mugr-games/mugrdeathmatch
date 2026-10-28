@@ -677,11 +677,24 @@ html, body { font: 14px/1.45 var(--ui); }
 @keyframes hpulse { 0% { background: rgba(255,255,255,.25); } 100% { background: var(--hud-bg); } }
 #crosshair::before, #crosshair::after { background: rgba(255,255,255,.95); box-shadow: 0 0 0 1px rgba(0,0,0,.55); }
 #crosshair { width: 26px; height: 26px; }
-/* the loadout tab */
-.lo-row { display: grid; grid-template-columns: 90px 1fr; gap: 10px; align-items: center; margin-bottom: 10px; }
-.lo-row label { color: var(--text-dim); font-weight: 600; }
-.lo-row select { width: 100%; background: var(--panel-dark); border: 1px solid rgba(255,255,255,.12); border-radius: 4px; padding: 7px 8px; color: #fff; }
-.lo-note { color: var(--text-dim); font-size: 12px; line-height: 1.5; }
+/* the starter tutorial */
+#dlg-tutorial { width: min(520px, calc(100vw - 32px)); z-index: 45; }
+#dlg-tutorial .tut-step { font: 600 11px var(--ui); color: var(--accent); letter-spacing: .14em; margin-bottom: 6px; }
+#dlg-tutorial p { color: var(--text); }
+#dlg-tutorial .tut-dim { color: var(--text-dim); font-size: 12px; }
+#dlg-tutorial ul.tut-keys { list-style: none; padding: 0; margin: 0 0 12px; display: grid; gap: 7px; }
+#dlg-tutorial kbd { display: inline-block; min-width: 20px; padding: 2px 6px; margin-right: 3px; border-radius: 4px; border: 1px solid rgba(255,255,255,.2); border-bottom-width: 2px; background: rgba(255,255,255,.07); font: 600 11px var(--ui); color: #fff; text-align: center; }
+/* the slot machine: four reels at the top of the screen that spin and land on your loadout when you spawn */
+#slots { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); display: flex; gap: 8px; padding: 10px 12px 12px; border-radius: 12px; background: rgba(10, 12, 16, .82); border: 2px solid rgba(var(--accent-rgb), .7); box-shadow: 0 10px 30px rgba(0,0,0,.5), inset 0 0 18px rgba(var(--accent-rgb), .15); z-index: 25; pointer-events: none; transition: opacity .4s; }
+#slots.gone { opacity: 0; }
+#slots .reel { width: 122px; text-align: center; }
+#slots .reel small { display: block; font: 700 9px var(--ui); letter-spacing: .16em; color: var(--accent); margin-bottom: 4px; text-transform: uppercase; }
+#slots .win { height: 38px; overflow: hidden; border-radius: 6px; background: linear-gradient(#0b0d11, #1b1f27 50%, #0b0d11); border: 1px solid rgba(255,255,255,.12); position: relative; }
+#slots .strip { position: absolute; left: 0; right: 0; top: 0; }
+#slots .strip div { height: 38px; line-height: 38px; font: 800 12px var(--num); letter-spacing: .04em; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 6px; }
+#slots .reel.done .win { border-color: var(--accent); box-shadow: 0 0 12px rgba(var(--accent-rgb), .55); }
+#slots .reel.done .strip div:last-child { color: var(--accent); }
+@media (max-width: 720px) { #slots { top: 56px; gap: 4px; padding: 8px; } #slots .reel { width: 17.5vw; } #slots .reel small { font-size: 8px; letter-spacing: .06em; } #slots .strip div { font-size: 9px; padding: 0 3px; } }
 /* blinded by a flashbang */
 #flashout { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 40; }
 /* the hit marker */
@@ -849,7 +862,6 @@ html, body { font: 14px/1.45 var(--ui); }
   <div class="tabs" role="tablist">
     <button class="tab lk-tab" data-tab="shop" role="tab">Shop</button>
     <button class="tab lk-tab" data-tab="wardrobe" role="tab">Wardrobe</button>
-    <button class="tab lk-tab" data-tab="loadout" role="tab">Loadout</button>
   </div>
   <div class="lk-body">
     <div>
@@ -1037,7 +1049,7 @@ html, body { font: 14px/1.45 var(--ui); }
   <div class="row"><label for="o-vol">Volume</label><div><input type="range" id="o-vol" min="0" max="1" step="0.05"><span class="val" id="o-vol-v"></span></div></div>
   <div class="row"><label for="o-quality">Graphics</label><select id="o-quality"><option value="potato">Potato: for old or slow devices, plain look, fastest</option><option value="low">Low: no bloom, simple shadows</option><option value="medium">Medium: bloom, soft shadows</option><option value="high">High: adds ambient occlusion and sharper shadows</option></select></div>
   <p style="margin-top:8px">Graphics changes apply straight away from the main menu. During a match they apply the next time the page loads.</p>
-  <div class="actions"><button class="btn" id="o-controls">Controls…</button><button class="btn primary" id="o-ok">OK</button></div>
+  <div class="actions"><button class="btn" id="o-tutorial">How to play</button><button class="btn" id="o-controls">Controls…</button><button class="btn primary" id="o-ok">OK</button></div>
 </div>
 
 <div class="dialog" id="dlg-binds" hidden role="dialog" aria-labelledby="dlg-binds-title">

@@ -11,6 +11,7 @@ import { Voice } from './voice.js';
 import { HeistMenu } from './planning.js';
 import { COSMETICS, COSMETIC, hasEmote, EMOTE } from './cosmetics.js';
 import { EmoteWheel } from './emotewheel.js';
+import { showTutorial, tutorialSeen } from './tutorial.js';
 import { ACTIONS, setBinds, getBinds, isKey, keysFor, padFor, bindKey, bindPad, resetBinds, keyName, padName } from './binds.js';
 import { DEVLOG } from './devlog.js';
 import { api, pageUrl, SERVER } from './net.js';
@@ -186,6 +187,8 @@ async function boot() {
     $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = true;
     status('Disconnected from the server.');
   };
+  // new players: how to play, buying guns and the loadout (once; again from Options → How to play)
+  if (!tutorialSeen() && !/^#[A-Za-z0-9]{4}$/.test(location.hash)) setTimeout(() => showTutorial(), 600);
   // invite links: /#CODE opens straight into that game
   const invite = /^#([A-Za-z0-9]{4})$/.exec(location.hash);
   if (invite) {
@@ -719,6 +722,7 @@ function waitPad() {
 }
 $('o-controls').onclick = () => { hide('dlg-options'); capture = null; renderBinds(); show('dlg-binds'); };
 $('b-reset').onclick = () => { resetBinds(); saveBinds(); };
+$('o-tutorial').onclick = () => { hide('dlg-options'); showTutorial(); };
 $('b-ok').onclick = () => { capture = null; hide('dlg-binds'); show('dlg-options'); };
 document.addEventListener('keyup', (e) => game?.keys.delete(e.code));
 function numberKey(n) {
@@ -766,7 +770,7 @@ requestAnimationFrame(loop);
 // ------------------------------------------------------------------ helpers
 function show(id) { $(id).hidden = false; }
 function hide(id) { $(id).hidden = true; }
-function closeDialogs() { hide('dlg-binds'); capture = null; hide('dlg-heist'); hide('dlg-leaders'); hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
+function closeDialogs() { hide('dlg-binds'); if ($('dlg-tutorial')) hide('dlg-tutorial'); capture = null; hide('dlg-heist'); hide('dlg-leaders'); hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
 function status(t) { $('menu-status').textContent = t; }
 function loading(t) { $('loading').hidden = !t; $('loading-text').textContent = t; }
 

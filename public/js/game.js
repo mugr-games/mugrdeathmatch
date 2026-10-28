@@ -8,7 +8,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { BoxWorld, MASK_SHOT } from './collide.js';
 import { pmove, newPlayerState, BTN, eyeHeight } from './pmove.js';
-import { WEAPONS, WEAPON_INDEX, ITEMS } from './weapons.js';
+import { WEAPONS, WEAPON_INDEX, ITEMS, LOADOUT_PARTS, ROLL_POOLS } from './weapons.js';
 import { initLoadout, weaponThink, spreadDirs, viewDir, unpackOwn, hitTest } from './sim.js';
 import { loadMap } from './maps.js';
 import { stepProj } from './projectiles.js';
@@ -17,7 +17,7 @@ import { Occlusion, setDrawn, seesAny, HIDDEN_LAYER } from './occlusion.js';
 import { loadSlot, instance, WEAPON_SLOT, ITEM_SLOT } from './assets.js';
 import { Synth } from './synth.js';
 import { Hud } from './hud.js';
-import { Avatar, ZOMBIE_SKIN, MODELS, HOLDS, holdPoints, reachArm, avatarMaterials } from './avatar.js';
+import { Avatar, ZOMBIE_SKIN, MODELS, HOLDS, holdPoints, reachArm, avatarMaterials, markerAt } from './avatar.js';
 import { EMOTE, COSMETIC } from './cosmetics.js';
 import { held } from './binds.js';
 import { applyGunSkin, addCharm, swingCharm, finishMaterial } from './skins.js';
@@ -214,7 +214,7 @@ class Character {
     this.weapon.rotation.x = HOLDS[slot]?.spin || 0;
     gunLook(this.weapon, this.cos, proto.object?.userData.size || proto.userData?.size, HOLDS[slot]);
     this.mount.add(this.weapon);
-    this.avatar?.setHold(slot, proto.object?.userData.size || proto.userData?.size, 4);
+    this.avatar?.setHold(slot, proto.object?.userData.size || proto.userData?.size, 4, proto.object);
     if (this.root.userData.drawn === false) this.weapon.traverse((o) => o.layers.set(HIDDEN_LAYER));
   }
 
@@ -842,6 +842,10 @@ export class Game {
         else this.explosion(ev.o);
         break;
       }
+      // the slot machine rolled your loadout for this life
+      case 'roll':
+        this.slotMachine(ev.w);
+        break;
       // a flashbang blinded you (s: how badly, 0..1)
       case 'flash':
         this.blind(ev.s);
@@ -1305,13 +1309,24 @@ export class Game {
     model.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
     const size = proto.object.userData.size || new THREE.Vector3(20, 3, 6);
     model.rotation.x = HOLDS[slot]?.spin || 0;
-    vm.sight = size.z * 0.42; // from the gun's middle up to its sights
+    vm.sight = model.getObjectByName('sight') ? markerAt(model, 'sight').z : size.z * 0.42; // from the gun's middle up to its sights
     vm.cosKey = this.gunCosKey();
     gunLook(model, this.cosFor(this.info.get(this.myId)), size, HOLDS[slot]);
     vm.model = model;
     vm.len = size.x;
-    vm.hold = holdPoints(slot, size);
+    vm.hold = holdPoints(slot, size, model);
     vm.slot = slot;
+    // the parts that move (with where they rest) and the points the hands use
+    vm.parts = {};
+    for (const n of ['slide', 'bolt', 'pump', 'mag', 'cyl', 'crane', 'barrels', 'cover', 'rocket', 'arrow', 'string']) {
+      const o = model.getObjectByName(n);
+      if (o) vm.parts[n] = { o, x: o.position.x, y: o.position.y, z: o.position.z, rx: o.rotation.x, ry: o.rotation.y, rz: o.rotation.z };
+    }
+    vm.marks = {};
+    for (const n of ['gripR', 'gripL', 'magHold', 'rack', 'port', 'breech', 'cylHold', 'rocketHold', 'sight']) { const o = model.getObjectByName(n); if (o) vm.marks[n] = o; }
+    vm.reloadKind = HOLDS[slot]?.reload || (vm.marks.magHold ? 'mag' : vm.marks.port ? 'shell' : '');
+    vm.shotT = 0;
+    vm.cylA = vm.cylT = 0;
     vm.muzzle = new THREE.Vector3(size.x / 2 + 1, 0, size.z * 0.18);
     // melee weapons turn about the hand: the model sits so its grip is the pivot's origin
     if (vm.hold.melee) model.position.set(-vm.hold.right[0], -vm.hold.right[1], -vm.hold.right[2]);
@@ -1360,10 +1375,100 @@ export class Game {
       thumb.rotation.y = -0.5;
       fore.add(glove, thumb);
       root.add(upper);
-      return { upper, fore, s, shoulder: new THREE.Vector3(-7, s * 10.5, -13) };
+      return { upper, fore, s, shoulder: new THREE.Vector3(s > 0 ? -1 : -7, s * 10.5, -13) }; // the support arm reaches further forward
     });
     vm.arms = { root, arms };
     this.vmScene.add(root);
+  }
+
+  // a named point of the gun in your hands, where it is right now in the gun's space (its parts move), or the
+  // fallback ([x, y, z]) when the gun doesn't name it
+  gunPoint(vm, name, fallback) {
+    const o = vm.marks?.[name];
+    if (!o) return fallback ? new THREE.Vector3(...fallback) : null;
+    const v = o.position.clone();
+    for (let p = o.parent; p && p !== vm.model; p = p.parent) { p.updateMatrix(); v.applyMatrix4(p.matrix); }
+    return v;
+  }
+
+  // where the support hand is: on the fore-end, or partway through the reload (k: 0..1)
+  supportHand(vm, H) {
+    const grip = this.gunPoint(vm, 'gripL', H.left || H.right);
+    const k = vm.reload > 0 ? vm.reload : 0;
+    if (!k) return grip;
+    const seg = (a, b) => { const u = Math.min(1, Math.max(0, (k - a) / (b - a))); return u * u * (3 - 2 * u); };
+    const at = (n) => this.gunPoint(vm, n) || grip;
+    const dips = (n, depth) => Math.abs(Math.sin(k * Math.PI * n)) * depth;
+    const p = grip.clone();
+    switch (vm.reloadKind) {
+      case 'mag': case 'bolt': case 'belt': {
+        // grab the magazine, ride it down and away, drop out of sight for a fresh one, push it home, then rack
+        p.lerp(at('magHold'), seg(0.04, 0.14));
+        p.z -= 6 * Math.sin(seg(0.3, 0.52) * Math.PI);
+        if (vm.reloadKind !== 'bolt') p.lerp(at('rack'), seg(0.72, 0.8));
+        break;
+      }
+      case 'shell': // thumb shells into the loading port one by one
+        p.lerp(at('port'), seg(0.04, 0.12)).z -= dips(5, 2.4) * seg(0.12, 0.2);
+        break;
+      case 'break': // to the open breech, two shells in
+        p.lerp(at('breech'), seg(0.2, 0.3)).z -= dips(4, 2.6) * seg(0.3, 0.36) * (1 - seg(0.66, 0.72));
+        p.lerp(grip, seg(0.72, 0.8));
+        break;
+      case 'cyl': // a speed loader into the swung-out cylinder
+        p.lerp(at('cylHold'), seg(0.12, 0.24)).z -= 4 * Math.sin(seg(0.3, 0.62) * Math.PI);
+        break;
+      case 'tube': // fetch a rocket from below and slide it into the front
+        p.z -= 9 * seg(0.06, 0.28) * (1 - seg(0.3, 0.36));
+        p.lerp(at('rocketHold'), seg(0.3, 0.36));
+        p.lerp(grip, seg(0.74, 0.9));
+        break;
+      case 'xbow': // draw the string back to the latch, lay a bolt on the rail
+        p.lerp(at('rack'), seg(0.1, 0.2));
+        p.lerp(grip, seg(0.66, 0.78));
+        break;
+    }
+    if (vm.reloadKind === 'bolt') p.lerp(grip, seg(0.72, 0.8));
+    else p.lerp(grip, seg(0.92, 1));
+    return p;
+  }
+
+  // the gun's moving parts for this frame
+  animateGun(vm, dt) {
+    const P = vm.parts || {}, k = vm.reload > 0 ? vm.reload : 0, kind = vm.reloadKind;
+    const seg = (a, b) => { const u = Math.min(1, Math.max(0, (k - a) / (b - a))); return u * u * (3 - 2 * u); };
+    const set = (n, dx = 0, dy = 0, dz = 0, rx = 0, ry = 0, rz = 0) => {
+      const p = P[n];
+      if (!p) return;
+      p.o.position.set(p.x + dx, p.y + dy, p.z + dz);
+      p.o.rotation.set(p.rx + rx, p.ry + ry, p.rz + rz);
+    };
+    vm.shotT = Math.max(0, (vm.shotT || 0) - dt / 0.1);
+    const kick = vm.shotT > 0 ? Math.sin((1 - vm.shotT) * Math.PI) : 0; // back and home in a tenth of a second
+    const rack = k > 0 && (kind === 'mag' || kind === 'belt') ? Math.sin(seg(0.8, 0.93) * Math.PI) : 0; // racked to finish a reload
+    set('slide', -1.4 * Math.max(kick, rack));
+    if (vm.hold?.bolt) {
+      // a bolt action: up, back, forward, down after each shot, and to finish a reload
+      const u = vm.pump > 0 ? vm.pump : k > 0.74 ? (k - 0.74) / 0.26 : 0;
+      const lift = Math.min(1, u / 0.2) * (1 - Math.max(0, (u - 0.8) / 0.2)), back = Math.sin(Math.min(1, Math.max(0, (u - 0.2) / 0.6)) * Math.PI);
+      set('bolt', -2.6 * back, 0, 0, u > 0 ? lift * 1.1 : 0);
+    } else set('bolt', -1.6 * Math.max(kick * 0.8, rack));
+    set('pump', -(vm.len || 20) * 0.12 * Math.sin((vm.pump || 0) * Math.PI));
+    // the magazine out and a fresh one in (hidden while it's out of sight)
+    const drop = k > 0 && (kind === 'mag' || kind === 'bolt' || kind === 'belt') ? seg(0.12, 0.3) - seg(0.52, 0.7) : 0;
+    set('mag', -0.6 * drop, 0, -12 * drop);
+    if (P.mag) P.mag.o.visible = !(k > 0.32 && k < 0.5 && drop > 0.9);
+    set('cover', 0, 0, 0, 0, -0.9 * (seg(0.06, 0.16) - seg(0.8, 0.9)) * (kind === 'belt' ? 1 : 0)); // the top cover lifts
+    set('barrels', 0, 0, 0, 0, 0.5 * (seg(0.08, 0.2) - seg(0.8, 0.9)) * (kind === 'break' ? 1 : 0)); // broken open
+    // the revolver: a chamber round with each shot, the cylinder swung out on its crane to load
+    vm.cylA = (vm.cylA || 0) + ((vm.cylT || 0) - (vm.cylA || 0)) * Math.min(1, dt * 30);
+    set('cyl', 0, 0, 0, vm.cylA + (k > 0 ? seg(0.62, 0.78) * Math.PI * 2 : 0));
+    set('crane', 0, 0, 0, -1.25 * (seg(0.1, 0.22) - seg(0.8, 0.9)) * (kind === 'cyl' ? 1 : 0));
+    // the rocket and the crossbow bolt: gone once fired, loaded back by hand
+    const loaded = (this.ps.clips?.[this.ps.cur] || 0) > 0;
+    if (P.rocket) { P.rocket.o.visible = loaded || k > 0.3; set('rocket', k > 0 ? 18 * (1 - seg(0.36, 0.7)) : 0); }
+    if (P.arrow) P.arrow.o.visible = loaded || k > 0.7;
+    if (P.string) set('string', k > 0 ? 3.2 * (1 - seg(0.2, 0.6)) : loaded ? 0 : 3.2);
   }
 
   vmEvent(name, dur) {
@@ -1375,6 +1480,7 @@ export class Game {
       vm.rollV += (Math.random() - 0.5) * (WEAPONS[this.ps.cur].semi ? 0.02 : 0.06);
       if (vm.hold?.pump || vm.hold?.bolt) vm.pump = 0.0001;
     }
+    if (name === 'fire') { vm.shotT = 1; vm.cylT = (vm.cylT || 0) + Math.PI / 3; }
     if (name === 'swing') vm.swing = 0;
     if (name === 'reload') { vm.reload = 0.0001; vm.reloadDur = dur; vm.shell = dur < 0.6; }
     const me = this.self?.obj;
@@ -1465,7 +1571,10 @@ export class Game {
     vm.holder.matrix.copy(m);
     vm.holder.matrixWorldNeedsUpdate = true;
     vm.pivot.updateMatrix();
-    // the hands: right on the grip, left on the support grip (to the magazine for a reload, sliding the pump)
+    // the gun's own moving parts: slides and bolts kick back with each shot, the pump racks, reloads work it
+    if (!H.melee) this.animateGun(vm, dt);
+    // the hands: right on the grip, left on the support grip, following the parts (the pump, the magazine, the
+    // barrels) and reaching for whatever the reload needs
     if (vm.arms && show) {
       vm.model.updateMatrix();
       const toBody = (v) => v.applyMatrix4(vm.model.matrix).applyMatrix4(vm.pivot.matrix).applyMatrix4(m).applyMatrix4(FROM_VIEW);
@@ -1479,12 +1588,15 @@ export class Game {
           continue;
         }
         A.upper.visible = true;
-        const target = new THREE.Vector3(...g);
-        if (!right && rl > 0 && H.mag) {
-          const out = Math.min(1, vm.reload * 2.2);
-          target.lerp(new THREE.Vector3(...H.mag), out).add(new THREE.Vector3(0, 0, -Math.sin(Math.min(1, vm.reload * 1.4) * Math.PI) * (vm.shell ? 2 : 9)));
+        let target;
+        if (right) target = this.gunPoint(vm, 'gripR', g);
+        else if (vm.marks.gripL || vm.reloadKind) target = this.supportHand(vm, H);
+        else {
+          // a gun without its own points: the old way (to the magazine for a reload, sliding the pump)
+          target = new THREE.Vector3(...g);
+          if (rl > 0 && H.mag) target.lerp(new THREE.Vector3(...H.mag), Math.min(1, vm.reload * 2.2)).add(new THREE.Vector3(0, 0, -Math.sin(Math.min(1, vm.reload * 1.4) * Math.PI) * (vm.shell ? 2 : 9)));
+          if (vm.pump > 0) target.x -= Math.sin(vm.pump * Math.PI) * L * 0.13;
         }
-        if (!right && vm.pump > 0) target.x -= Math.sin(vm.pump * Math.PI) * L * 0.13;
         reachArm(A.upper, A.fore, A.shoulder, toBody(target), A.s, 16, 16);
       }
     }
@@ -1795,6 +1907,43 @@ export class Game {
       // the server decides when it explodes; just stop drawing it inside the wall meanwhile
       if (res && res.hit && pr.kind !== 'bolt') pr.obj.visible = false;
     }
+  }
+
+  // The slot machine: a reel for each number key spins through the weapons and lands, one after another, on
+  // what you rolled (w: one weapon per key), with a tick per weapon and a ding when each stops.
+  slotMachine(w) {
+    let el = document.getElementById('slots');
+    if (!el) { el = document.createElement('div'); el.id = 'slots'; document.body.append(el); }
+    clearTimeout(this.slotsGone);
+    const parts = Object.keys(LOADOUT_PARTS);
+    const name = (id) => WEAPONS[WEAPON_INDEX[id]]?.name || id;
+    const rows = 22;
+    el.className = '';
+    el.innerHTML = parts.map((k, i) => {
+      // a strip of random weapons from that reel's pool, ending on the one rolled
+      const pool = ROLL_POOLS[k], list = [];
+      for (let r = 0; r < rows + i * 5; r++) list.push(pool[Math.floor(Math.random() * pool.length)]);
+      list.push(w[i]);
+      return `<div class="reel" data-n="${list.length}"><small>${LOADOUT_PARTS[k]}</small><div class="win"><div class="strip">${list.map((id) => `<div>${name(id)}</div>`).join('')}</div></div></div>`;
+    }).join('');
+    const reels = [...el.querySelectorAll('.reel')];
+    const t0 = performance.now(), H = 38;
+    let lastTick = -1;
+    const spin = (now) => {
+      let going = false;
+      reels.forEach((r, i) => {
+        const n = +r.dataset.n - 1, dur = 900 + i * 320; // each reel stops a little after the one before
+        const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+        r.querySelector('.strip').style.transform = `translateY(${-e * n * H}px)`;
+        if (k < 1) going = true;
+        else if (!r.classList.contains('done')) { r.classList.add('done'); this.sound.ui(1500 + i * 180); }
+      });
+      const tick = Math.floor((now - t0) / 70);
+      if (going && tick !== lastTick) { lastTick = tick; this.sound.click(null, 1.6, 0.18); }
+      if (going) requestAnimationFrame(spin);
+      else this.slotsGone = setTimeout(() => el.classList.add('gone'), 1800);
+    };
+    requestAnimationFrame(spin);
   }
 
   // a flashbang going off where you can see it: a burst of white light and a bang (no smoke or fire)
