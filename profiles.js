@@ -200,7 +200,7 @@ export function createProfiles(file) {
   // uploaded pictures for image capes and flags, by hash: { data, status: pending|ok|rejected, by, at, tokens }
   const images = cachedStore(mk(path.join(path.dirname(file), 'images.json'), 'mugr:i:'), 'images', storage);
   console.log(`[profiles] saving coins, cosmetics and accounts to ${profiles.name}`);
-  if (profiles.kind === 'file' && process.env.RENDER) console.warn('[profiles] WARNING: Render forgets files when it restarts. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to keep accounts.');
+  if (profiles.kind === 'file' && (process.env.RENDER || process.env.KOYEB_SERVICE_NAME)) console.warn('[profiles] WARNING: the host forgets files when it sleeps or restarts. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to keep accounts.');
   const stores = [profiles, accounts, dms, bans, boards, images];
 
   // the leaderboard: the top 100 signed-in players in each category, kept as one saved document

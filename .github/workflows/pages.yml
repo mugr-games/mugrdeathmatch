@@ -1,6 +1,6 @@
 # Publishes the game page to GitHub Pages (https://<user>.github.io/<repo>) on every push to main.
 # Needs: Settings → Pages → Source "GitHub Actions", and a repository variable GAME_SERVER_URL holding the
-# online game server's address (for example the Render URL).
+# online game server's address (for example the Koyeb URL).
 name: Publish the game page
 
 on:

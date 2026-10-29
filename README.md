@@ -38,31 +38,38 @@ cloudflared tunnel --url http://localhost:8027
 Settings (environment variables): `PORT` (default 8027), `MAPS` (rotation, default `csdm,foundry`),
 `FRAGLIMIT` (30), `TIMELIMIT` in minutes (15).
 
-## Online hosting (free): a GitHub link plus a Render server
+## Online hosting (free): Koyeb
 
-The game page lives on GitHub Pages at `https://<your-username>.github.io/<repo>`. GitHub Pages only serves
-files, so the multiplayer server runs on Render's free plan and the page connects to it.
+The game server (which also serves the game page) runs on Koyeb's free instance. It needs an always-on Node
+server with WebSockets, so hosts that only run short functions (Vercel, Netlify, Cloudflare Pages) can't run it.
 
-1. Push this folder to a public GitHub repository (free GitHub Pages needs a public repository).
-2. On render.com, sign in with GitHub, choose New → Blueprint, pick the repository and apply (`render.yaml`
-   describes the server). Note the address it gets, like `https://mugr-deathmatch.onrender.com`.
-3. In the GitHub repository: Settings → Secrets and variables → Actions → Variables, add `GAME_SERVER_URL` with
-   that address. Then Settings → Pages → Source: GitHub Actions, and re-run the "Publish the game page"
-   workflow from the Actions tab.
-4. The owner account: in Render open the service → Environment and add `OWNER_PASSWORD` with the password you
-   want for the account `watermelon` (1,000,000 coins and the Owner cape). The server creates the account when
-   it starts; change the variable to change the password. Nobody can register that name.
-5. Moderation reports: in Discord, open a channel's settings → Integrations → Webhooks → New Webhook → Copy
-   Webhook URL. Add it in Render's Environment as `DISCORD_WEBHOOK_URL`. Filtered chat and direct messages,
-   bans, unbans and kicks are posted there. Keep that address private: anyone with it can post to the channel.
-6. Strongly recommended, so accounts and coins survive: Render's free servers lose their files when they sleep (after
-   15 idle minutes) or restart. Create a free Redis database on upstash.com, then in Render open the service →
-   Environment and add `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` from the database's REST API
-   section. Without them, accounts, coins and cosmetics reset whenever the server restarts.
+1. Push this folder to a GitHub repository.
+2. On koyeb.com, sign in with GitHub and choose Create Web Service → GitHub, then pick the repository and the
+   `main` branch. Leave the builder on Buildpack: it finds `package.json` and runs `npm start`. Pick the Free
+   instance. Under Ports keep 8000 (HTTP, path `/`): Koyeb passes it to the server in `PORT`.
+3. Under Environment variables add these (never put their values in a file in the repository):
+   - `OWNER_PASSWORD`: the password for the owner account `watermelon` (1,000,000 coins and the Owner cape).
+     The server creates the account when it starts; change the variable to change the password. Nobody can
+     register that name.
+   - `DISCORD_WEBHOOK_URL`: moderation reports. In Discord, open a channel's settings → Integrations → Webhooks →
+     New Webhook → Copy Webhook URL. Filtered chat and direct messages, bans, unbans and kicks are posted there.
+     Keep that address private: anyone with it can post to the channel.
+   - `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`: strongly recommended, so accounts and coins
+     survive. Free servers lose their files when they sleep or restart. Create a free Redis database on
+     upstash.com and copy these from its REST API section. Without them, accounts, coins and cosmetics reset
+     whenever the server restarts.
+4. Deploy. The game is at the address Koyeb gives the service, like `https://<service>-<org>.koyeb.app`.
 
-The free server sleeps when nobody has played for 15 minutes; the page wakes it, which takes about a minute.
-Every push redeploys both. Guests' coins belong to the browser and the address; signed-in players keep theirs
-on any device. Share one link (the GitHub one).
+Every push to `main` redeploys. The free instance sleeps after an hour with nobody connected and wakes when
+someone opens the page. Guests' coins belong to the browser and the address; signed-in players keep theirs on
+any device.
+
+Optional GitHub Pages copy of the page: in the GitHub repository, Settings → Secrets and variables → Actions →
+Variables, add `GAME_SERVER_URL` with the server's address, then Settings → Pages → Source: GitHub Actions. The
+"Publish the game page" workflow publishes `https://<your-username>.github.io/<repo>`, which connects to that
+server.
+
+`render.yaml` still describes the same server for Render (New → Blueprint), with the same environment variables.
 
 ## Models
 
