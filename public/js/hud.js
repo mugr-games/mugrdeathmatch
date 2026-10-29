@@ -129,6 +129,17 @@ export class Hud {
     this.dmg.classList.add('flash');
   }
 
+  // the kill cam panel: who you're watching, their health when they got you and how to respawn (null hides it)
+  killCam(kc) {
+    const el = this.kc || (this.kc = $('killcam'));
+    if (!el) return;
+    const html = kc ? `<small>SPECTATING YOUR KILLER</small><b>${esc(kc.name)}</b><span>${esc(WEAPONS.find((w) => w.id === kc.w)?.name || '')}${kc.hs ? ' · HEADSHOT' : ''}${kc.hp != null ? ` · <i>${kc.hp} HP</i> left` : ''}</span>${kc.sub ? `<em>${esc(kc.sub)}</em>` : ''}` : '';
+    if (html === this.kcHtml) return;
+    this.kcHtml = html;
+    el.innerHTML = html;
+    el.hidden = !kc;
+  }
+
   message(text, sub = '') {
     this.center.innerHTML = text ? `<div>${esc(text)}</div>${sub ? `<small>${esc(sub)}</small>` : ''}` : '';
   }

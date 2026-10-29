@@ -625,6 +625,19 @@ export class Game {
     this.clearRagdolls();
   }
 
+  // the kill cam (like CS): just over your killer's shoulder, looking where they look, not through walls
+  killCamera(pl, dt) {
+    const yaw = pl.yaw, pitch = Math.max(-70, Math.min(70, pl.pitch || 0));
+    const head = [pl.pos[0], pl.pos[1], pl.pos[2] + 26];
+    const f = viewDir(yaw, pitch), y = yaw * DEG, right = [Math.sin(y), -Math.cos(y), 0];
+    const want = [head[0] - f[0] * 88 + right[0] * 30, head[1] - f[1] * 88 + right[1] * 30, head[2] - f[2] * 88 + 14];
+    const goal = this.world.trace(head, want, [-5, -5, -5], [5, 5, 5]).endpos;
+    if (!this.killEye) this.killEye = goal.slice();
+    const k = Math.min(1, dt * 14);
+    for (let i = 0; i < 3; i++) this.killEye[i] += (goal[i] - this.killEye[i]) * k;
+    return { eye: this.killEye.slice(), yaw, pitch };
+  }
+
   // chase camera for watching: follow one live player for a while, then switch, preferring real people
   spectateCamera(dt, now) {
     let pl = this.players.get(this.watchId);
@@ -683,6 +696,8 @@ export class Game {
     this.hud.teamPick(null);
     this.hud.powers([]);
     this.hud.vote(null);
+    this.hud.killCam(null);
+    this.killCam = null;
     this.fv.clear();
     this.sound?.rain?.(false);
     this.ps.alive = true;
@@ -894,12 +909,17 @@ export class Game {
         if (ev.k === me && ev.v !== me) { this.sound.crit(); this.hud.hitMarker('kill'); }
         const pl = this.players.get(ev.v);
         if (pl) pl.deathAt = performance.now() / 1000;
-        if (ev.v === me) { this.deathAt = performance.now() / 1000; this.killer = ev.k !== me ? k?.name : null; }
+        if (ev.v === me) {
+          this.deathAt = performance.now() / 1000;
+          this.killer = ev.k !== me ? k?.name : null;
+          this.killCam = ev.k && ev.k !== me ? { id: ev.k, name: k?.name || '?', w: ev.w, hp: ev.kh, hs: !!ev.hs } : null;
+          this.killEye = null;
+        }
         this.spawnRagdoll(ev.v, ev.o, ev.y, ev.vv || [0, 0, 0], ev.dk);
         break;
       }
       case 'spawn':
-        if (ev.id === me) { this.yaw = ev.y; this.pitch = 0; this.deathAt = 0; this.hud.message(''); this.setupViewmodel(true); }
+        if (ev.id === me) { this.yaw = ev.y; this.pitch = 0; this.deathAt = 0; this.killCam = null; this.hud.message(''); this.hud.killCam(null); this.setupViewmodel(true); }
         else { const pl = this.players.get(ev.id); if (pl) { pl.snaps.length = 0; pl.deathAt = 0; } }
         break;
       case 'item': {
@@ -985,6 +1005,7 @@ export class Game {
       const speed = Math.hypot(vel[0], vel[1]);
       pl.pos = [o[0], o[1], o[2] + 36];
       pl.yaw = yaw;
+      pl.pitch = pitch;
       if (alive && flags & 2 && speed > 140) {
         pl.stepDist += speed * dt;
         if (pl.stepDist > 80) { pl.stepDist = 0; this.sound.step(o, 0.5, this.surfaceAt(o)); }
@@ -2189,9 +2210,15 @@ export class Game {
       pitch += Math.abs(Math.cos(ph)) * 0.35 * b;
     }
     let lookAt = null;
+    let killCam = null;
     if (!ps.alive && this.connected) {
       const rd = this.ragdolls.find((r) => r.id === this.myId);
-      if (rd) {
+      // the kill cam: once your body has hit the floor, watch whoever killed you until you respawn
+      const kp = this.killCam && now - this.deathAt > 0.9 && this.players.get(this.killCam.id);
+      if (kp && kp.obj?.root.visible && kp.snaps.length) {
+        killCam = this.killCamera(kp, dt);
+        eye = killCam.eye; yaw = killCam.yaw; pitch = killCam.pitch; roll = 0;
+      } else if (rd) {
         // death camera: back off from your body and watch it fall, without going through walls
         const c = rd.doll.center();
         const k = Math.min(1, (now - this.deathAt) / 1.2);
@@ -2205,7 +2232,11 @@ export class Game {
         eye = [ps.origin[0], ps.origin[1], ps.origin[2] + 64 - 52 * k];
         roll = 30 * k;
       }
-      if (this.deathAt && now - this.deathAt > 1.5) this.hud.message(this.killer ? `Killed by ${this.killer}` : 'You died', this.mode === 'zombies' ? 'You will be back next round' : this.pad?.active ? 'Press RT to respawn' : this.touch ? 'Tap FIRE to respawn' : 'Click to respawn');
+      const ready = this.deathAt && now - this.deathAt > 3;
+      const how = this.mode === 'zombies' ? 'You will be back next round' : !ready ? '' : this.pad?.active ? 'Press RT to respawn' : this.touch ? 'Tap FIRE to respawn' : 'Click to respawn';
+      this.hud.killCam(killCam ? { ...this.killCam, sub: how } : null);
+      if (killCam) this.hud.message('');
+      else if (this.deathAt && now - this.deathAt > 1.5) this.hud.message(this.killer ? `Killed by ${this.killer}` : 'You died', how || 'Respawning soon');
     }
     this.sound.setScene(this.watching && !this.connected ? 0.3 : 1);
     if (this.watching && !this.connected) {

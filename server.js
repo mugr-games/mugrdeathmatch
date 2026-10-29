@@ -911,8 +911,8 @@ function kill(R, victim, attacker, weapon, head) {
   victim.ps.alive = false;
   victim.ps.hp = 0;
   victim.deaths++;
-  // zombies: back next round
-  victim.respawnAt = R.cz ? Infinity : R.heist ? R.time + R.heist.respawnDelay() : R.time + 2;
+  // zombies: back next round. Otherwise 3 seconds watching your killer (the kill cam) first
+  victim.respawnAt = R.cz ? Infinity : R.heist ? R.time + R.heist.respawnDelay() : R.time + 3;
   R.heist?.died(victim);
   R.fp?.died(victim, attacker);
   if (attacker && attacker !== victim) {
@@ -927,7 +927,7 @@ function kill(R, victim, attacker, weapon, head) {
   dropFlag(R, victim);
   R.mb?.drop(victim);
   // velocity at death (after the hit's knockback) lets clients throw the ragdoll the right way
-  pushEvent(R, { e: 'kill', k: attacker ? attacker.id : 0, v: victim.id, w: weapon, hs: head ? 1 : 0, o: victim.ps.origin.map(Math.round), y: Math.round(victim.yaw), vv: victim.ps.velocity.map(Math.round), dk: victim.ps.ducked ? 1 : 0 });
+  pushEvent(R, { e: 'kill', k: attacker ? attacker.id : 0, v: victim.id, w: weapon, hs: head ? 1 : 0, o: victim.ps.origin.map(Math.round), y: Math.round(victim.yaw), vv: victim.ps.velocity.map(Math.round), dk: victim.ps.ducked ? 1 : 0, kh: attacker && attacker !== victim && attacker.ps ? Math.max(0, Math.round(attacker.ps.hp)) : undefined });
   // a survivor who dies after the outbreak comes back as a zombie
   if (R.zm && R.zm.started && victim.team === 'human') infect(R, victim, attacker, false);
   // the frag limit ends deathmatch, and team deathmatch on team frags; flags and zombies end otherwise
