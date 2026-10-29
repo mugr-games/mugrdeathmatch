@@ -38,16 +38,18 @@ cloudflared tunnel --url http://localhost:8027
 Settings (environment variables): `PORT` (default 8027), `MAPS` (rotation, default `csdm,foundry`),
 `FRAGLIMIT` (30), `TIMELIMIT` in minutes (15).
 
-## Online hosting (free): Koyeb
+## Online hosting (free): Northflank
 
-The game server (which also serves the game page) runs on Koyeb's free instance. It needs an always-on Node
-server with WebSockets, so hosts that only run short functions (Vercel, Netlify, Cloudflare Pages) can't run it.
+The game server (which also serves the game page) runs on Northflank's free plan from the `Dockerfile`. It
+needs an always-on Node server with WebSockets, so hosts that only run short functions (Vercel, Netlify,
+Cloudflare Pages) can't run it. The same `Dockerfile` works on any host that builds containers.
 
 1. Push this folder to a GitHub repository.
-2. On koyeb.com, sign in with GitHub and choose Create Web Service → GitHub, then pick the repository and the
-   `main` branch. Leave the builder on Buildpack: it finds `package.json` and runs `npm start`. Pick the Free
-   instance. Under Ports keep 8000 (HTTP, path `/`): Koyeb passes it to the server in `PORT`.
-3. Under Environment variables add these (never put their values in a file in the repository):
+2. On northflank.com, sign up (the free plan asks for a card to check you're real) and link your GitHub account.
+3. Create a project, then Create new → Service → Combined service (it builds and runs). Pick the repository and
+   the `main` branch, and set the build type to Dockerfile (`/Dockerfile`, context `/`).
+4. Resources: the free plan's smallest size. Networking: port 8080, HTTP, public, so it gets a public address.
+5. Runtime variables (never put their values in a file in the repository):
    - `OWNER_PASSWORD`: the password for the owner account `watermelon` (1,000,000 coins and the Owner cape).
      The server creates the account when it starts; change the variable to change the password. Nobody can
      register that name.
@@ -55,14 +57,13 @@ server with WebSockets, so hosts that only run short functions (Vercel, Netlify,
      New Webhook → Copy Webhook URL. Filtered chat and direct messages, bans, unbans and kicks are posted there.
      Keep that address private: anyone with it can post to the channel.
    - `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`: strongly recommended, so accounts and coins
-     survive. Free servers lose their files when they sleep or restart. Create a free Redis database on
+     survive. Containers lose their files when they restart or redeploy. Create a free Redis database on
      upstash.com and copy these from its REST API section. Without them, accounts, coins and cosmetics reset
      whenever the server restarts.
-4. Deploy. The game is at the address Koyeb gives the service, like `https://<service>-<org>.koyeb.app`.
+6. Create the service. The game is at the public address Northflank shows for port 8080 (ending in `.code.run`).
 
-Every push to `main` redeploys. The free instance sleeps after an hour with nobody connected and wakes when
-someone opens the page. Guests' coins belong to the browser and the address; signed-in players keep theirs on
-any device.
+Every push to `main` rebuilds and redeploys. Guests' coins belong to the browser and the address; signed-in
+players keep theirs on any device.
 
 Optional GitHub Pages copy of the page: in the GitHub repository, Settings → Secrets and variables → Actions →
 Variables, add `GAME_SERVER_URL` with the server's address, then Settings → Pages → Source: GitHub Actions. The
