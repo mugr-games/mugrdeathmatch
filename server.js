@@ -3,10 +3,11 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { BoxWorld, MASK_SHOT } from './public/js/collide.js';
-import { CODE_MAPS, MODE_MAPS, HEIST_MAPS } from './public/js/mapdefs.js';
+import { CODE_MAPS, MODE_MAPS, HEIST_MAPS, checkLevel, levelProblem, isLevelId, registerLevel, unregisterLevel } from './public/js/mapdefs.js';
 import { pmove, newPlayerState, BTN } from './public/js/pmove.js';
 import { WEAPONS, WEAPON_INDEX, ITEMS, LOADOUTS, ITEM_ROTATION, ZOMBIE, rollLoadout } from './public/js/weapons.js';
 import { initLoadout, zombieLoadout, giveWeapon, weaponThink, spreadDirs, eyePos, viewDir, hitTest, applyDamage, fallDamage, packOwn, MAX_HP, MAX_ARMOR } from './public/js/sim.js';
@@ -19,6 +20,7 @@ import { createVoice } from './voice.js';
 import { createHeist } from './heist.js';
 import { createFreeplay } from './freeplay.js';
 import { createProfiles, OWNER_NAME } from './profiles.js';
+import { createWorkshop } from './workshop.js';
 import { checkText, badName } from './filter.js';
 import { createReporter } from './moderation.js';
 import { COIN_KILL, COIN_TEAM_WIN, COSMETIC, EMOTE, hasEmote, BATTLE_PASS } from './public/js/cosmetics.js';
@@ -40,6 +42,11 @@ function readGameFile(rel) {
 }
 // coins and cosmetics, saved beside the server (the .exe, or this folder when run from source)
 const profiles = createProfiles(process.env.PROFILES || path.join(ROOT, 'data', 'profiles.json'));
+// workshop levels and charms, in the same database; a charm put on shows at once on anyone playing with that profile
+const workshop = createWorkshop({
+  profiles, ownerName: OWNER_NAME, checkText, badName,
+  changed: (pr) => { for (const R of rooms.values()) for (const p of R.players.values()) if (p.profile === pr) broadcast(R, { t: 'info', p: info(p) }); },
+});
 // filtered messages and the owner's bans go to a Discord channel (set DISCORD_WEBHOOK_URL)
 const reporter = createReporter(process.env.DISCORD_WEBHOOK_URL);
 const PORT = +(process.env.PORT || 8027);
@@ -80,6 +87,34 @@ function mapDef(id) {
 }
 const mapName = (id) => (CODE_MAPS[id] ? CODE_MAPS[id].name : mapDef(id).name);
 
+// workshop levels: loaded (and checked) when a game is created on one, forgotten when no game uses it any more.
+// s: the new game's settings. A level sent along to be tested (s.level) gets a private game of its own.
+async function prepareLevel(s, token) {
+  if (s.level) {
+    const r = checkLevel(s.level);
+    if (r.error) return r.error;
+    const problem = levelProblem(r.level);
+    if (problem) return problem;
+    if (badName(r.level.name) || checkText(r.level.name).level) return 'Please pick a different name for the level.';
+    s.map = 'wt_' + crypto.createHash('sha1').update(JSON.stringify(r.level)).digest('hex').slice(0, 16);
+    s.private = true;
+    if (!CODE_MAPS[s.map]) registerLevel(s.map, r.level);
+  } else if (isLevelId(s.map) && s.map.startsWith('ws_') && !CODE_MAPS[s.map]) {
+    const level = await workshop.level(s.map.slice(3));
+    if (!level) return 'That workshop level has been deleted.';
+    registerLevel(s.map, level);
+  }
+  if (isLevelId(s.map) && s.map.startsWith('ws_')) workshop.played(s.map.slice(3), token);
+  delete s.level;
+  return null;
+}
+function dropLevel(id) {
+  if (!isLevelId(id) || [...rooms.values()].some((R) => R.map.id === id)) return;
+  unregisterLevel(id);
+  mapCache.delete(id);
+  navCache.delete(id);
+}
+
 // where bots and zombies can walk (built once per map, doors tagged so zombies wait for them to open)
 const navCache = new Map();
 function navFor(id) {
@@ -107,7 +142,7 @@ function sanitize(s = {}) {
     name: clean(s.name).slice(0, 32) || 'Untitled game',
     mode,
     caplimit: Math.round(num(s.caplimit, 1, 30, mode === 'soccer' ? 5 : mode === 'mugrball' ? 10 : 3)),
-    map: mode === 'heist' ? (HEIST_MAPS.includes(s.map) ? s.map : 'bank') : MODE_MAPS[mode] || (s.map === 'rotation' || MAP_IDS.includes(s.map) ? s.map : 'rotation'),
+    map: mode === 'heist' ? (HEIST_MAPS.includes(s.map) ? s.map : 'bank') : MODE_MAPS[mode] || (s.map === 'rotation' || MAP_IDS.includes(s.map) || (isLevelId(s.map) && CODE_MAPS[s.map] && mode !== 'zombies') ? s.map : mode === 'zombies' ? 'city' : 'rotation'),
     maxPlayers: mode === 'heist' ? 4 : Math.round(num(s.maxPlayers, 2, 16, mode === 'freeplay' ? 16 : 12)),
     fraglimit: mode === 'heist' || mode === 'freeplay' ? 0 : Math.round(num(s.fraglimit, 0, 200, 30)),
     // infection always has a round timer (the survivors win when it runs out); zombies goes on until everyone's down
@@ -294,6 +329,7 @@ function welcome(R, p) {
     cz: R.cz ? R.cz.welcome() : null,
     heist: R.heist ? R.heist.welcome() : null,
     fp: R.fp ? R.fp.welcome(p) : null,
+    level: isLevelId(R.map.id) ? CODE_MAPS[R.map.id]?.level : undefined, // a workshop level: everyone needs its boxes
   };
 }
 
@@ -324,6 +360,8 @@ function cosOf(pr) {
   if (!pr) return {};
   const c = { ...pr.eq };
   if (COSMETIC[c.back]?.custom) c.img = pr.img && pr.imgSt === 'ok' ? pr.img : pr.imgSt === 'rejected' ? 'x' : 'p';
+  // a workshop charm carries its design
+  if (c.charm === 'ws') { if (pr.wc) c.cc = pr.wc; else delete c.charm; }
   return c;
 }
 
@@ -1352,6 +1390,8 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === 'OPTIONS' && p.startsWith('/api/')) { res.writeHead(204, CORS); return res.end(); }
   if (req.method === 'POST' && /^\/api\/(profile|buy|pass|equip|image|register|login)$/.test(p)) return profileApi(req, res, p.slice(5));
+  if (p === '/api/workshop' && req.method === 'GET') return workshop.http(req, res, 'list', json, url);
+  if (req.method === 'POST' && /^\/api\/workshop\/(get|publish|rate|delete|equip)$/.test(p)) return workshop.http(req, res, p.slice(14), json, url);
   // approved pictures for image capes and flags
   if (p.startsWith('/img/')) {
     const id = p.slice(5);
@@ -1413,7 +1453,7 @@ function serveFile(res, file, req, fromDisk = false) {
 }
 
 // ------------------------------------------------------------------ websocket
-const wss = new WebSocketServer({ server, perMessageDeflate: false, maxPayload: 64 * 1024 });
+const wss = new WebSocketServer({ server, perMessageDeflate: false, maxPayload: 128 * 1024 }); // room settings may carry a workshop level being tested
 wss.on('error', () => {}); // listen errors are handled on the http server below
 // ------------------------------------------------------------------ people: who's online, friends, messages, bans
 // signed-in sockets by account key (lower-case name). A socket says who it is with 'hello' as soon as it opens.
@@ -1810,12 +1850,15 @@ wss.on('connection', (ws, req) => {
     if (m.t === 'join' || m.t === 'create') {
       unwatch(ws);
       // banned people (by account, save code or address) can't play
-      return void profiles.isBanned(banKeys(ws, m.token)).then((ban) => {
+      return void profiles.isBanned(banKeys(ws, m.token)).then(async (ban) => {
         if (ban) return bounce(ws, ban);
         let R;
         if (m.t === 'create') {
           if (rooms.size >= MAX_ROOMS) return fail('The server has too many games running. Join one from the list instead.');
-          R = createRoom({ ...m.settings });
+          const s = { ...m.settings };
+          const bad = await prepareLevel(s, m.token).catch((e) => e.message);
+          if (bad) return fail(bad);
+          R = createRoom(s);
         } else {
           const key = String(m.room || '').trim().toUpperCase();
           if (key === 'HEIST') {
@@ -1889,6 +1932,7 @@ setInterval(() => {
   for (const R of [...rooms.values()]) {
     if (!R.permanent && !humanCount(R) && Date.now() - R.emptySince > 30000) {
       rooms.delete(R.id);
+      dropLevel(R.map.id);
       for (const ws of R.watchers) wsSend(ws, { t: 'watch-none' });
       console.log(`[room] #${R.id} closed`);
     }

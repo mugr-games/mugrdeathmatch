@@ -15,6 +15,8 @@ import { showTutorial, tutorialSeen } from './tutorial.js';
 import { ACTIONS, setBinds, getBinds, isKey, keysFor, padFor, bindKey, bindPad, resetBinds, keyName, padName } from './binds.js';
 import { DEVLOG } from './devlog.js';
 import { api, pageUrl, SERVER } from './net.js';
+import { LevelEditor } from './editor.js';
+import { WorkshopView } from './workshopview.js';
 
 // the emote wheel (0)
 const wheel = new EmoteWheel((id) => game?.emote(id), (id) => ownsEmote(id));
@@ -74,6 +76,8 @@ let pad = null;
 let social = null;
 let voice = null; // voice chat channels
 let heistMenu = null; // the heist dialog and planning screen
+let editor = null; // the level editor (draws instead of the game while it's open)
+let workshop = null; // the Workshop screen
 let serverInfo = null;
 let playing = false;
 const touchMode = isTouch();
@@ -104,6 +108,21 @@ async function boot() {
     pause: () => { playing = false; if (document.pointerLockElement) document.exitPointerLock(); hide('menu'); closeDialogs(); game.hud.show(false); touch?.show(false); document.body.classList.remove('playing'); },
   });
   game.hv.onPlan = (plan, was) => heistMenu.update(plan, was);
+  workshop = new WorkshopView({
+    token: () => locker.token, account: () => account, profile: () => locker.profile, status,
+    equip: (id) => locker.api('workshop/equip', { id }),
+    host: (id) => hostLevel(id),
+    editor: () => openEditor(),
+  });
+  editor = new LevelEditor({
+    game: () => game,
+    library: () => workshop.library(),
+    fetchLevel: (id) => workshop.level(id),
+    publish: (level) => workshop.publish('level', level),
+    // try it out: a private game of its own with a few bots
+    test: (level, mode) => { show('menu'); play({ t: 'create', settings: { name: `Testing ${level.name}`.slice(0, 32), mode, private: true, bots: 3, map: 'rotation', level } }, $('menu-status')); },
+    close: () => { show('menu'); game.watch(); },
+  });
   // free roam: straight into the busiest public county
   $('btn-freeroam').onclick = () => { game.sound.start(); play({ t: 'join', room: 'FREEROAM' }, $('menu-status')); };
   social = new Social({
@@ -208,6 +227,45 @@ async function boot() {
 }
 
 $('btn-join').onclick = () => openLobby();
+
+// ------------------------------------------------------------------ workshop and level editor
+// their menu entries go in with the others (the screens build their own page parts)
+{
+  const icon = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const add = (id, svg, label) => {
+    const b = document.createElement('button');
+    b.id = id;
+    b.innerHTML = `${icon(svg)}<span>${label}</span>`;
+    $('menu').querySelector('nav').insertBefore(b, $('btn-shop'));
+    return b;
+  };
+  add('btn-workshop', '<path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M4 7l8 4 8-4M12 11v10"/>', 'Workshop').onclick = () => { if (!game) return; game.sound.start(); closeDialogs(); workshop.open(); };
+  add('btn-editor', '<path d="M3 21h18M5 17l10-10 3 3-10 10H5z"/><path d="M13 9l3 3"/>', 'Level Editor').onclick = () => openEditor();
+}
+function openEditor() {
+  if (!game || !editor) return;
+  if (game.connected) {
+    if (!confirm('Leave this game to open the level editor?')) return;
+    game.leave();
+    $('room-tag').hidden = true;
+    $('btn-join').querySelector('span').textContent = 'Play';
+    $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = true;
+  }
+  // the menu's background game stops while you build
+  clearInterval(game.watchTimer);
+  game.send({ t: 'unwatch' });
+  game.stopWatching();
+  closeDialogs();
+  hide('menu');
+  editor.open();
+}
+// Create game with a workshop level already picked
+function hostLevel(id) {
+  openLobby();
+  $('l-create').click();
+  $('c-map').value = 'ws_' + id;
+  $('c-name').value = `${settings.name}'s game`;
+}
 
 // ------------------------------------------------------------------ coins, shop, wardrobe, devlog
 let toastTimer = 0;
@@ -452,6 +510,9 @@ $('l-create').onclick = () => {
     $('c-caps-v').textContent = `${n} ${unit}${n === 1 ? '' : 's'}`;
   };
   $('c-map').innerHTML = '<option value="rotation">Map rotation (vote at the end)</option>' + serverInfo.maps.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+  // levels saved from the workshop (Workshop → Save or Play)
+  const wlib = workshop?.library() || [];
+  if (wlib.length) $('c-map').innerHTML += `<optgroup label="Workshop levels">${wlib.map((e) => `<option value="ws_${esc(e.id)}">${esc(e.name)} · by ${esc(e.by)}</option>`).join('')}</optgroup>`;
   $('c-map').value = 'rotation';
   $('c-loadout').innerHTML = Object.entries(serverInfo.loadouts).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
   $('c-loadout').value = d.loadout;
@@ -808,6 +869,7 @@ function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (!game || !game.world) return;
+  if (editor?.active) return editor.frame(dt);
   if (!game.connected) {
     // menu: slow look-around from a spawn point
     game.yaw += dt * 3;
@@ -836,7 +898,7 @@ setInterval(() => game?.sound.lobby(!playing && !game.spec, settings.music ?? 0.
 
 function show(id) { $(id).hidden = false; }
 function hide(id) { $(id).hidden = true; }
-function closeDialogs() { hide('dlg-binds'); if ($('dlg-tutorial')) hide('dlg-tutorial'); capture = null; hide('dlg-heist'); hide('dlg-leaders'); hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
+function closeDialogs() { workshop?.close(); hide('dlg-binds'); if ($('dlg-tutorial')) hide('dlg-tutorial'); capture = null; hide('dlg-heist'); hide('dlg-leaders'); hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
 function status(t) { $('menu-status').textContent = t; }
 function loading(t) { $('loading').hidden = !t; $('loading-text').textContent = t; }
 

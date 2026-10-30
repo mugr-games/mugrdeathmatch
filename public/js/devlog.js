@@ -2,6 +2,17 @@
 export const DEVLOG = [
   {
     date: '2026-10-30',
+    title: 'Level editor and the Workshop',
+    notes: [
+      'Level Editor (main menu): build your own map out of boxes. Place, move, resize and delete boxes in 22 materials, pick the colours and lighting, and fly around it (right-drag to look, WASD to move).',
+      'Place spawn points, items and both CTF flags yourself, or leave them out and the game spreads them over your floors automatically ("Show automatic" shows where).',
+      'Test play drops you into a private game on your level with a few bots, in deathmatch, team deathmatch, capture the flag or infection. Levels save in your browser.',
+      'Workshop (main menu): publish your levels for everyone, then browse, search, rate and play other people\'s. Press Play on a level, or pick it under Workshop levels when you create a game, and everyone who joins gets it.',
+      'Gun charms in the Workshop: make your own (shape, two colours, up to six letters, glow or metal), publish it, and wear anyone\'s on every gun you hold. Publishing and rating need an account.',
+    ],
+  },
+  {
+    date: '2026-10-30',
     title: 'Mugr.lol, and a new look on phones',
     notes: [
       'The game is now called Mugr.lol, with a new logo to match.',

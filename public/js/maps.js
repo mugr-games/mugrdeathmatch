@@ -98,6 +98,14 @@ function bankSign() {
   return (bankSignMat = new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: 0xffffff, emissiveIntensity: 0.5, roughness: 0.5 }));
 }
 
+// a surface as a map would draw it, in one of the maps' colours (the level editor)
+const editorMats = new Map();
+export function levelMaterial(mat, theme) {
+  const key = mat + '|' + theme;
+  if (!editorMats.has(key)) editorMats.set(key, mat === 'clip' ? new THREE.MeshBasicMaterial({ color: 0x7fd4ff, transparent: true, opacity: 0.25, depthWrite: false }) : surf(mat, PALETTES[theme] || PALETTES.foundry));
+  return editorMats.get(key);
+}
+
 function surf(mat, pal) {
   if (mat === 'neon') return neonMaterial(pal.neon);
   if (mat === 'line') return surfaceMaterial('concrete', { color: '#f4f4ee', bump: 0.2 });
@@ -247,7 +255,7 @@ export async function loadMap(id, progress = () => {}) {
 }
 
 function codeMap(id, def) {
-  const pal = PALETTES[id] || PALETTES.foundry;
+  const pal = PALETTES[def.theme] || PALETTES[id] || PALETTES.foundry; // workshop levels pick a map's colours
   // the map in square chunks, one merged mesh per material in each: the renderer skips chunks off screen,
   // and occlusion culling skips the ones hidden behind walls (each box goes in the chunk of its centre)
   const chunks = new Map(); // "cx,cy" -> { byMat: Map(mat -> geometries), box: [min xyz, max xyz] }

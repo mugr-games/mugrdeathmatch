@@ -199,9 +199,11 @@ export function createProfiles(file) {
   const boards = cachedStore(mk(path.join(path.dirname(file), 'leaderboard.json'), 'mugr:l:'), 'leaderboard', storage);
   // uploaded pictures for image capes and flags, by hash: { data, status: pending|ok|rejected, by, at, tokens }
   const images = cachedStore(mk(path.join(path.dirname(file), 'images.json'), 'mugr:i:'), 'images', storage);
+  // the workshop (workshop.js): published levels and charms, their ratings and the index
+  const workshop = cachedStore(mk(path.join(path.dirname(file), 'workshop.json'), 'mugr:w:'), 'workshop', storage);
   console.log(`[profiles] saving coins, cosmetics and accounts to ${profiles.name}`);
   if (profiles.kind === 'file' && (process.env.RENDER || process.env.NODE_ENV === 'production')) console.warn('[profiles] WARNING: the host forgets files when it sleeps or restarts. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to keep accounts.');
-  const stores = [profiles, accounts, dms, bans, boards, images];
+  const stores = [profiles, accounts, dms, bans, boards, images, workshop];
 
   // the leaderboard: the top 100 signed-in players in each category, kept as one saved document
   let board = null;
@@ -246,7 +248,7 @@ export function createProfiles(file) {
     return pr;
   }
 
-  const view = (pr) => ({ coins: pr.coins, owned: pr.owned, eq: pr.eq, name: pr.name || null, stats: pr.stats || {}, role: pr.role || null, img: pr.img || null, imgSt: pr.imgSt || null, bp: passOf(pr) });
+  const view = (pr) => ({ coins: pr.coins, owned: pr.owned, eq: pr.eq, name: pr.name || null, stats: pr.stats || {}, role: pr.role || null, img: pr.img || null, imgSt: pr.imgSt || null, bp: passOf(pr), wc: pr.wc || null });
 
   // ---------------------------------------------------------------- battle pass
   // pr.bp: { s: season, xp, prem: bought premium, f/p: the last tier whose free/premium reward was given }.
@@ -301,6 +303,7 @@ export function createProfiles(file) {
     // keep changes made to a profile elsewhere (free roam money and garage)
     save: (pr) => touch(pr),
     storage,
+    workshop,
     // save everything now (before the server stops)
     flush: () => Promise.all(stores.map((s) => s.flush())),
     // is this name (any capitalisation) a registered account or the reserved owner name?

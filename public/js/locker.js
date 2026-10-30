@@ -70,6 +70,7 @@ class Preview {
     if (!H?.melee) {
       if (COSMETIC[cos.wskin]?.slot === 'wskin') applyGunSkin(g, COSMETIC[cos.wskin].finish);
       if (COSMETIC[cos.charm]?.slot === 'charm') addCharm(g, COSMETIC[cos.charm].charm, size, H);
+      else if (cos.charm === 'ws' && cos.cc) addCharm(g, cos.cc, size, H); // a workshop charm
     }
     g.scale.setScalar(Math.min(3.4, 80 / (size?.x || 24)));
     g.position.z = 46;
@@ -250,7 +251,7 @@ export class Locker {
   // what the preview wears: equipped items, or the one being looked at in the shop
   refreshPreview(trying) {
     if (!this.preview) return;
-    const cos = { ...this.profile.eq };
+    const cos = { ...this.profile.eq, cc: this.profile.wc || undefined }; // cc: a workshop charm's design
     if (trying) cos[COSMETIC[trying].slot] = trying;
     const slot = trying ? COSMETIC[trying].slot : this.slot;
     // a menu theme shows on the menus themselves while you point at it
@@ -316,6 +317,8 @@ export class Locker {
       else action = worn ? `<button type="button" class="btn" data-off="${c.slot}">Take off</button>` : `<button type="button" class="btn primary" data-wear="${c.id}">Wear</button>`;
       return `<div class="lk-card${worn ? ' worn' : ''}" data-id="${c.id}">${swatch}<b>${esc(c.name)}</b><span class="lk-price">${this.tab === 'shop' && !owned ? (c.price ? `${c.price} coins` : 'Free') : worn ? 'Wearing' : ''}</span>${action}</div>`;
     });
+    // a charm from the workshop (put on in the Workshop)
+    if (this.slot === 'charm' && this.tab === 'wardrobe' && P.wc && P.eq.charm === 'ws') cards.unshift(`<div class="lk-card worn"><i class="lk-sw" style="background:${esc(P.wc.c1)}"></i><b>${esc(P.wc.name || 'Workshop charm')}</b><span class="lk-price">Workshop · Wearing</span><button type="button" class="btn" data-off="charm">Take off</button></div>`);
     $('lk-items').innerHTML = (cards.join('') || `<p class="lk-empty">${this.tab === 'wardrobe' ? 'Nothing here yet. Buy something in the shop.' : ''}</p>`) + this.pictureCard();
     $('lk-msg').textContent = '';
     for (const card of $('lk-items').querySelectorAll('.lk-card')) {

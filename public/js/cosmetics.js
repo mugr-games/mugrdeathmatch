@@ -149,3 +149,16 @@ export const EMOTE = Object.fromEntries(EMOTES.map((e) => [e.id, e]));
 for (const e of EMOTES) if (e.price) COSMETICS.push({ id: 'emote_' + e.id, slot: 'emote', name: e.name, price: e.price });
 for (const c of COSMETICS) if (c.slot === 'emote') COSMETIC[c.id] = c;
 export const hasEmote = (id, owned = [], staff = false) => !!EMOTE[id] && (!EMOTE[id].price || staff || owned.includes('emote_' + id));
+
+// ---------------------------------------------------------------- workshop charms
+// Made in the workshop's charm maker and shared there: a shape in one or two colours, maybe a few letters on
+// it. Worn as eq.charm 'ws' with the design in the profile (drawn by skins.js).
+export const CHARM_SHAPES = { disc: 'Disc', hex: 'Hexagon', star: 'Star', heart: 'Heart', diamond: 'Diamond', shield: 'Shield', cube: 'Cube', ball: 'Ball', tag: 'Dog tag' };
+export const CHARM_TEXT = 6;
+// a design as sent by a player: { charm } tidied, or { error }
+export function checkCharm(raw) {
+  if (!raw || typeof raw !== 'object' || !CHARM_SHAPES[raw.shape]) return { error: 'Pick a shape for the charm.' };
+  const col = (c, d) => (/^#[0-9a-f]{6}$/i.test(String(c)) ? String(c).toLowerCase() : d);
+  const text = String(raw.text || '').replace(/[^\p{L}\p{N} !?#+.\-]/gu, '').trim().slice(0, CHARM_TEXT);
+  return { charm: { shape: raw.shape, c1: col(raw.c1, '#ff8c14'), c2: col(raw.c2, '#ffffff'), text, glow: !!raw.glow, metal: !!raw.metal } };
+}

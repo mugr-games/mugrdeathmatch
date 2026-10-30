@@ -294,11 +294,78 @@ const CHARM_BUILD = {
 };
 export const CHARM_IDS = Object.keys(CHARM_BUILD);
 
+// ---------------------------------------------------------------- workshop charms
+// a design from the charm maker (checkCharm in cosmetics.js): { shape, c1, c2, text, glow, metal }. The shape in
+// c1 with a c2 rim or spots; letters, when there are some, on both faces in c2.
+const flatShape = {
+  disc: () => { const s = new THREE.Shape(); s.absarc(0, 0, 0.7, 0, Math.PI * 2, false); return s; },
+  hex: () => new THREE.Shape(Array.from({ length: 6 }, (_, i) => new THREE.Vector2(Math.cos((i / 6) * Math.PI * 2) * 0.75, Math.sin((i / 6) * Math.PI * 2) * 0.75))),
+  diamond: () => new THREE.Shape([new THREE.Vector2(0, 0.85), new THREE.Vector2(0.6, 0), new THREE.Vector2(0, -0.85), new THREE.Vector2(-0.6, 0)]),
+  star: () => new THREE.Shape(Array.from({ length: 10 }, (_, i) => { const a = Math.PI / 2 + (i / 10) * Math.PI * 2, r = i % 2 ? 0.36 : 0.85; return new THREE.Vector2(Math.cos(a) * r, Math.sin(a) * r); })),
+  heart: () => {
+    const s = new THREE.Shape();
+    s.moveTo(0, -0.7);
+    s.bezierCurveTo(-0.9, -0.1, -0.7, 0.55, 0, 0.25);
+    s.bezierCurveTo(0.7, 0.55, 0.9, -0.1, 0, -0.7);
+    return s;
+  },
+  shield: () => {
+    const s = new THREE.Shape();
+    s.moveTo(-0.6, 0.6); s.lineTo(0.6, 0.6); s.lineTo(0.6, 0.05);
+    s.quadraticCurveTo(0.55, -0.55, 0, -0.85); s.quadraticCurveTo(-0.55, -0.55, -0.6, 0.05);
+    return s;
+  },
+};
+function letters(text, color) {
+  return faceMat('txt|' + text + '|' + color, (g, S) => {
+    g.fillStyle = color;
+    g.font = `900 ${Math.round(S * (text.length > 3 ? 0.62 / Math.sqrt(text.length / 3) : 0.62))}px Verdana, Arial, sans-serif`;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineWidth = S * 0.04; g.strokeStyle = 'rgba(0,0,0,.55)';
+    g.strokeText(text, S / 2, S * 0.53, S * 0.94);
+    g.fillText(text, S / 2, S * 0.53, S * 0.94);
+  }, 128);
+}
+function customCharm(d) {
+  return (add) => {
+    const main = cmat(d.c1, d.metal ? 0.25 : 0.45, d.metal ? 1 : 0, d.glow ? 0.6 : 0), trim = cmat(d.c2, 0.35, d.metal ? 1 : 0, d.glow ? 0.4 : 0);
+    let face = 0.62; // how far out the letters go (the body's half thickness and a little)
+    if (flatShape[d.shape]) {
+      const g = new THREE.ExtrudeGeometry(flatShape[d.shape](), { depth: 0.2, bevelEnabled: true, bevelSize: 0.07, bevelThickness: 0.07, bevelSegments: 2 }).translate(0, 0, -0.1).rotateX(Math.PI / 2);
+      add(g, main, 0, 0, -1.0);
+      // a rim in the second colour, just bigger, behind the body
+      const rim = new THREE.ExtrudeGeometry(flatShape[d.shape](), { depth: 0.12, bevelEnabled: false }).translate(0, 0, -0.06).rotateX(Math.PI / 2);
+      add(rim, trim, 0, 0, -1.0).scale.set(1.14, 1, 1.14);
+      face = 0.19;
+    } else if (d.shape === 'cube') {
+      add(new RoundedBoxGeometry(1.05, 1.05, 1.05, 2, 0.18), main, 0, 0, -0.95);
+      for (const s of [-1, 1]) add(new THREE.BoxGeometry(1.1, 0.02, 0.16), trim, 0, s * 0.535, -0.6);
+      face = 0.54;
+    } else if (d.shape === 'ball') {
+      add(sph(0.62, 18, 12), main, 0, 0, -0.98);
+      add(new THREE.TorusGeometry(0.62, 0.06, 6, 24).rotateY(Math.PI / 2), trim, 0, 0, -0.98);
+      face = 0.64;
+    } else { // tag
+      add(new RoundedBoxGeometry(0.9, 0.1, 1.35, 2, 0.05), main, 0, 0, -1.05);
+      add(new RoundedBoxGeometry(0.96, 0.06, 1.41, 2, 0.03), trim, 0, 0, -1.05);
+      face = 0.06;
+    }
+    if (d.text) {
+      const t = letters(d.text, d.c2);
+      for (const s of [-1, 1]) {
+        const p = new THREE.PlaneGeometry(1.1, 1.1).rotateX(Math.PI / 2);
+        if (s < 0) p.rotateZ(Math.PI);
+        add(p, t, 0, s * face, -1.0);
+      }
+    }
+  };
+}
+
 // a charm on a gun: a little chain from a ring on the gun's left side (the side you see), swinging, hung where
-// no hand goes: off the stock behind the grip on long guns, under the muzzle end on pistols. size: the gun
-// model's size; hold: how it's held (HOLDS). Returns the pivot it swings on.
+// no hand goes: off the stock behind the grip on long guns, under the muzzle end on pistols. id: a charm's
+// name, or a workshop design; size: the gun model's size; hold: how it's held (HOLDS). Returns the pivot it swings on.
 export function addCharm(gun, id, size, hold) {
-  const build = CHARM_BUILD[id];
+  const build = id && typeof id === 'object' ? customCharm(id) : CHARM_BUILD[id];
   if (!build || !size) return null;
   const pivot = new THREE.Group();
   const short = !hold || hold.short;

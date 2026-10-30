@@ -1711,3 +1711,108 @@ const backrooms = (() => {
 })();
 
 export const CODE_MAPS = { county, arthouse, mansion, foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court, bank, asylum, harvest, hollow, titanic, backrooms };
+
+// ------------------------------------------------------------------ workshop levels
+// Levels made in the level editor (editor.js) and shared in the workshop. Saved compact:
+//   { v: 1, name, theme, mood, boxes: [[x0, y0, z0, x1, y1, z1, mat]], spawns: [[x, y, z, yaw]], items: [[kind, x, y, z]], flags: [[x, y, z], [x, y, z]] | null }
+// and turned into the same shape as the maps above (box() output fed to autoLayout): whatever the maker didn't
+// place (spawns, items, flags) is spread out automatically.
+export const LEVEL_MATS = ['concrete', 'plate', 'metal', 'panel', 'hazard', 'neon', 'stone', 'marble', 'brick', 'wood', 'tile', 'cobble', 'grass', 'sand', 'asphalt', 'glass', 'water', 'ice', 'gold', 'carpet', 'wallpaper', 'clip'];
+export const LEVEL_THEMES = { foundry: 'Foundry', courtyard: 'Courtyard', skyline: 'Skyline', warehouse: 'Warehouse', rooftops: 'Rooftops', bunker: 'Bunker', ziggurat: 'Ziggurat', docks: 'Docks', canyon: 'Canyon', office: 'Office', station: 'Station', backrooms: 'Backrooms' };
+export const LEVEL_MOODS = { day: 'Day', fall: 'Autumn', night: 'Night', storm: 'Storm', backrooms: 'Fluorescent' };
+export const LEVEL_ITEMS = [...new Set(ITEM_ROTATION)];
+export const LEVEL_LIMITS = { boxes: 1200, spawns: 32, items: 48, xy: 6000, zlo: -1500, zhi: 3000, size: 12000, name: 32 };
+// a workshop map's id: ws_ and the item's id (published), or wt_ and a hash (a level being tested)
+export const isLevelId = (id) => /^w[st]_[a-z0-9]{6,24}$/.test(String(id));
+// names: letters, numbers, spaces and a little punctuation (never anything that could be markup)
+export const cleanLevelName = (s) => String(s || '').replace(/[^\p{L}\p{N} _\-.!?'()]/gu, '').replace(/\s+/g, ' ').trim().slice(0, LEVEL_LIMITS.name);
+
+// a level as sent by a player: { level } tidied (numbers rounded, inside the limits), or { error }
+export function checkLevel(raw) {
+  const L = LEVEL_LIMITS;
+  if (!raw || typeof raw !== 'object') return { error: 'That isn\'t a level.' };
+  const name = cleanLevelName(raw.name);
+  if (name.length < 3) return { error: 'Give the level a name (3 to 32 letters or numbers).' };
+  const int = (v, lo, hi) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(Math.max(lo, Math.min(hi, v))) : null);
+  const pt = (a, i = 0) => {
+    const x = int(a[i], -L.xy, L.xy), y = int(a[i + 1], -L.xy, L.xy), z = int(a[i + 2], L.zlo, L.zhi);
+    return x === null || y === null || z === null ? null : [x, y, z];
+  };
+  if (!Array.isArray(raw.boxes) || !raw.boxes.length) return { error: 'The level has no boxes.' };
+  if (raw.boxes.length > L.boxes) return { error: `A level can have at most ${L.boxes} boxes.` };
+  const boxes = [];
+  for (const b of raw.boxes) {
+    if (!Array.isArray(b) || b.length !== 7 || !LEVEL_MATS.includes(b[6])) return { error: 'A box in the level is broken.' };
+    const a = pt(b, 0), c = pt(b, 3);
+    if (!a || !c) return { error: 'A box in the level is broken.' };
+    const mins = a.map((v, i) => Math.min(v, c[i])), maxs = a.map((v, i) => Math.max(v, c[i]));
+    if (maxs.some((v, i) => v - mins[i] < 1)) return { error: 'A box in the level is flat (every side needs some size).' };
+    boxes.push([...mins, ...maxs, b[6]]);
+  }
+  const list = (arr, max) => (arr === undefined || arr === null ? [] : Array.isArray(arr) && arr.length <= max ? arr : null);
+  const sp = list(raw.spawns, L.spawns), its = list(raw.items, L.items);
+  if (!sp) return { error: `A level can have at most ${L.spawns} spawn points.` };
+  if (!its) return { error: `A level can have at most ${L.items} items.` };
+  const spawns = [];
+  for (const s of sp) {
+    const p = Array.isArray(s) && pt(s);
+    if (!p) return { error: 'A spawn point is broken.' };
+    spawns.push([...p, int(s[3], -180, 180) ?? 0]);
+  }
+  const items = [];
+  for (const s of its) {
+    if (!Array.isArray(s) || !LEVEL_ITEMS.includes(s[0])) return { error: 'An item in the level is broken.' };
+    const p = pt(s, 1);
+    if (!p) return { error: 'An item in the level is broken.' };
+    items.push([s[0], ...p]);
+  }
+  let flags = null;
+  if (raw.flags) {
+    const r = Array.isArray(raw.flags) && Array.isArray(raw.flags[0]) && pt(raw.flags[0]), b = Array.isArray(raw.flags[1]) && pt(raw.flags[1]);
+    if (!r || !b) return { error: 'Place both flags (red and blue), or neither.' };
+    flags = [r, b];
+  }
+  const lo = [0, 1].map((i) => Math.min(...boxes.map((b) => b[i]))), hi = [0, 1].map((i) => Math.max(...boxes.map((b) => b[i + 3])));
+  if (hi[0] - lo[0] > L.size || hi[1] - lo[1] > L.size) return { error: `The level is too big (at most ${L.size} units across).` };
+  return { level: { v: 1, name, theme: LEVEL_THEMES[raw.theme] ? raw.theme : 'foundry', mood: LEVEL_MOODS[raw.mood] ? raw.mood : 'day', boxes, spawns, items, flags } };
+}
+
+// a (checked) level as a map definition, like the code-built maps
+export function levelMap(L) {
+  const boxes = L.boxes.map((b) => ({ mins: b.slice(0, 3), maxs: b.slice(3, 6), mat: b[6] }));
+  const lo = [0, 1, 2].map((i) => Math.min(...boxes.map((b) => b.mins[i]))), hi = [0, 1, 2].map((i) => Math.max(...boxes.map((b) => b.maxs[i])));
+  const m = autoLayout({
+    name: L.name, theme: L.theme, mood: L.mood, boxes, sun: [0.35, -0.45, 0.82], killZ: lo[2] - 600, pads: [],
+    bounds: [[lo[0] - 32, lo[1] - 32, lo[2]], [hi[0] + 32, hi[1] + 32, Math.max(hi[2], lo[2] + 400) + 256]],
+  }, { spawns: 16, items: 20, props: 0 });
+  // what the maker placed wins; the rest comes from the automatic layout (or a fallback when there's nowhere to stand)
+  const auto = Object.fromEntries(['spawns', 'items', 'flags'].map((k) => [k, Object.getOwnPropertyDescriptor(m, k).get]));
+  const tryAuto = (k) => { try { return auto[k](); } catch { return null; } };
+  let spawns = null, items = null, flags = null;
+  const get = {
+    spawns: () => (spawns ||= L.spawns.length ? L.spawns.map(([x, y, z, yaw]) => ({ origin: [x, y, z + 1], yaw })) : tryAuto('spawns') || [{ origin: [0, 0, hi[2] + 1], yaw: 0 }]),
+    items: () => (items ||= L.items.length ? L.items.map(([kind, x, y, z]) => ({ kind, o: [x, y, z] })) : tryAuto('items') || []),
+    flags: () => (flags ||= L.flags ? { red: L.flags[0], blue: L.flags[1] } : tryAuto('flags') || { red: get.spawns()[0].origin.slice(), blue: get.spawns().at(-1).origin.slice() }),
+  };
+  for (const k of ['spawns', 'items', 'flags']) Object.defineProperty(m, k, { get: get[k], enumerable: true, configurable: true });
+  Object.defineProperty(m, 'props', { value: [], enumerable: true, configurable: true });
+  m.level = L;
+  return m;
+}
+
+// can people play it? Without spawn points placed, there has to be a floor to stand on. Returns a problem or null.
+export function levelProblem(L) {
+  if (L.spawns.length) return null;
+  try { if (computeLayout(levelMap(L), { spawns: 2, items: 0, props: 0 }, 32).spawns.length) return null; } catch {}
+  return 'Nowhere to stand: add a floor, or place spawn points.';
+}
+
+// make a level loadable by its map id (the server and the browser both look maps up in CODE_MAPS)
+export function registerLevel(id, L) {
+  if (!isLevelId(id)) return null;
+  CODE_MAPS[id] = levelMap(L);
+  return CODE_MAPS[id];
+}
+export function unregisterLevel(id) {
+  if (isLevelId(id)) delete CODE_MAPS[id];
+}

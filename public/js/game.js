@@ -11,6 +11,7 @@ import { pmove, newPlayerState, BTN, eyeHeight } from './pmove.js';
 import { WEAPONS, WEAPON_INDEX, ITEMS, LOADOUT_PARTS, ROLL_POOLS } from './weapons.js';
 import { initLoadout, weaponThink, spreadDirs, viewDir, unpackOwn, hitTest } from './sim.js';
 import { loadMap } from './maps.js';
+import { CODE_MAPS, registerLevel } from './mapdefs.js';
 import { stepProj } from './projectiles.js';
 import { makeSky, haloMaterial, setPotato, setDetail } from './shaders.js';
 import { Occlusion, setDrawn, seesAny, HIDDEN_LAYER } from './occlusion.js';
@@ -256,7 +257,8 @@ function gunLook(gun, cos, size, hold) {
   const sk = COSMETIC[cos?.wskin], ch = COSMETIC[cos?.charm];
   if (sk?.slot === 'wskin') applyGunSkin(gun, sk.finish);
   const thrown = hold && !hold.left && !hold.short;
-  if (ch?.slot === 'charm' && hold && !hold.melee && !thrown) addCharm(gun, ch.charm, size, hold);
+  const charm = ch?.slot === 'charm' ? ch.charm : cos?.charm === 'ws' && cos.cc ? cos.cc : null; // a workshop charm carries its design
+  if (charm && hold && !hold.melee && !thrown) addCharm(gun, charm, size, hold);
 }
 
 // ------------------------------------------------------------------ game
@@ -790,6 +792,7 @@ export class Game {
     this.info.clear();
     for (const p of m.players) this.info.set(p.id, p);
     for (const pl of [...this.players.values()]) this.removePlayer(pl.id);
+    if (m.level && !CODE_MAPS[m.map]) registerLevel(m.map, m.level); // a workshop level comes with the welcome
     await this.loadMap(m.map, this.onProgress || (() => {}));
     this.setupItems(m.items);
     this.mode = m.mode;
@@ -1436,7 +1439,7 @@ export class Game {
   // what your own gun looks like (its skin and charm), to notice when it changes
   gunCosKey() {
     const c = this.cosFor(this.info.get(this.myId));
-    return `${c.wskin || ''}|${c.charm || ''}`;
+    return `${c.wskin || ''}|${c.charm || ''}|${c.cc?.id || ''}`;
   }
 
   // your arms, in your suit colour or suit skin (rebuilt when it changes)
