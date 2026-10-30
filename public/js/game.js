@@ -69,6 +69,8 @@ const MOODS = {
   city: { sun: 0xfff1dc, sunI: 3.2, sky: 0xbfd6ff, ground: 0x5a4a3a, hemi: 0.6, hemiP: 2.6, top: '#2a64c8', horizon: '#c9d9ee', groundSky: '#8a98a8', glow: 1, cloud: '#ffffff', fog: 0xc4d4e6, fogD: 0.00004, exposure: 1 },
   // a stormy night at sea: darker and bluer, rain (not below decks), lightning and thunder
   storm: { sun: 0x8fa0d0, sunI: 0.35, sky: 0x2a3450, ground: 0x0c0d10, hemi: 0.15, hemiP: 0.85, top: '#020306', horizon: '#0e1420', groundSky: '#040506', glow: 0.05, cloud: '#161c28', fog: 0x0a0e16, fogD: 0.0005, exposure: 1.1, flashlight: true, rain: true, lightning: true, dryBelow: -40 },
+  // the backrooms: flat yellow light from the ceiling panels, a haze down the long rooms, the lights humming
+  backrooms: { sun: 0xfff2c4, sunI: 2.4, sky: 0xf0e0a0, ground: 0x8a7a40, hemi: 0.75, hemiP: 2.4, top: '#e8d890', horizon: '#e8d890', groundSky: '#8a7a40', glow: 0, cloud: '#e8d890', fog: 0xcbb978, fogD: 0.00045, exposure: 1, hum: true },
   night: { sun: 0x8fa8ff, sunI: 0.45, sky: 0x3a4a7a, ground: 0x140f0c, hemi: 0.16, hemiP: 0.9, top: '#020308', horizon: '#121826', groundSky: '#050506', glow: 0.08, cloud: '#1c2230', fog: 0x0b0f17, fogD: 0.00055, exposure: 1.1, flashlight: true },
 };
 
@@ -511,6 +513,7 @@ export class Game {
     if (this.rain) this.rain.visible = !!M.rain;
     this.storm = M.lightning ? { next: 3 + Math.random() * 5, flash: 0, boom: 0, base: this.hemi.intensity, sun: M.sunI } : null;
     this.sound?.rain?.(!!M.rain);
+    this.sound?.hum?.(!!M.hum);
   }
 
   // per frame: the flashlight follows your view; leaves drift down around you
@@ -588,20 +591,21 @@ export class Game {
       const was = this.connected;
       this.connected = false;
       this.stopWatching();
+      if (this.spec && !this.pending) { this.spec = null; this.hud.spec(null); this.onSpecEnd?.(); }
       this.settle(new Error('Lost connection to the server.'));
       if (was && this.onDisconnect) this.onDisconnect();
     };
     ws.onmessage = async (e) => {
       const m = JSON.parse(e.data);
       if (m.t === 'welcome' && m.watch) {
-        // the menu background: a public game in progress, watched from a chase camera
-        if (this.connected || this.pending) return;
-        try { await this.onWelcome(m); this.resetView(); this.watching = m.room; this.onWatch?.(m.room); } catch { this.stopWatching(); }
+        // the menu background (a public game in progress, watched from a chase camera), or a game picked to spectate
+        if (this.connected || (this.pending && !this.spec) || !!m.spec !== !!this.spec) return;
+        try { await this.onWelcome(m); this.resetView(); this.watching = m.room; this.settle(); this.onWatch?.(m.room); } catch (err) { this.stopWatching(); this.settle(err); }
       } else if (m.t === 'welcome') {
         this.watching = null;
         this.connected = false;
         try { await this.onWelcome(m); this.resetView(); this.connected = true; this.settle(); } catch (err) { this.settle(err); }
-      } else if (m.t === 'watch-none') { this.stopWatching(); this.onWatch?.(null); }
+      } else if (m.t === 'watch-none') { this.stopWatching(); if (this.spec) { this.spec = null; this.hud.spec(null); this.onSpecEnd?.(); } else this.onWatch?.(null); }
       else if (m.t === 'voice') this.onVoice?.(m);
       else if (SOCIAL.has(m.t)) this.onSocial?.(m);
       else if (m.t === 'coins' && !this.connected) this.onCoins?.(m);
@@ -622,6 +626,46 @@ export class Game {
       const alive = [...this.players.values()].some((pl) => pl.obj?.root.visible);
       if (!this.watching || !alive) ask();
     }, 15000);
+  }
+
+  // spectate a game picked from the list (its number or code): you choose who to follow and how
+  spectate(room, password) {
+    clearInterval(this.watchTimer);
+    this.stopWatching();
+    this.spec = { mode: 'chase' };
+    this.watchId = null;
+    return new Promise((resolve, reject) => {
+      this.pending = { resolve, reject };
+      this.socket(() => this.send({ t: 'watch', room, password }));
+    }).catch((err) => { this.spec = null; throw err; });
+  }
+
+  stopSpectating() {
+    if (!this.spec) return;
+    this.spec = null;
+    this.specHide(null);
+    this.send({ t: 'unwatch' });
+    this.stopWatching();
+    this.hud.spec(null);
+  }
+
+  // looking through a player's eyes: their model isn't drawn (it still casts its shadow, like occlusion culling);
+  // null puts the last one back
+  specHide(pl) {
+    const old = this.specHidden;
+    this.specHidden = pl;
+    if (old && old !== pl && old.obj) setDrawn(old.obj.root, true);
+    if (pl?.obj) setDrawn(pl.obj.root, false);
+  }
+
+  // spectating: the next (dir 1) or previous (-1) live player
+  specNext(dir) {
+    const live = [...this.players.values()].filter((p) => p.obj?.root.visible && p.snaps.length).sort((a, b) => a.id - b.id);
+    if (!live.length) return;
+    const i = live.findIndex((p) => p.id === this.watchId);
+    const pl = live[(i + dir + live.length) % live.length];
+    if (pl.id !== this.watchId) this.watchEye = null;
+    this.watchId = pl.id;
   }
 
   stopWatching() {
@@ -657,7 +701,20 @@ export class Game {
   // chase camera for watching: follow one live player for a while, then switch, preferring real people
   spectateCamera(dt, now) {
     let pl = this.players.get(this.watchId);
-    if (!pl || !pl.obj?.root.visible || now > (this.watchUntil || 0)) {
+    if (this.spec && (!pl || !pl.obj?.root.visible)) { this.specNext(1); pl = this.players.get(this.watchId); }
+    if (this.spec) {
+      if (!pl?.snaps.length) { this.hud.spec({ name: 'Nobody alive yet', mode: this.spec.mode, touch: !!this.touch }); return null; }
+      const snap = pl.snaps[pl.snaps.length - 1];
+      const info = this.info.get(pl.id);
+      this.hud.spec({ name: info?.name || '', team: info?.team, mode: this.spec.mode, touch: !!this.touch });
+      this.specHide(this.spec.mode === 'eyes' ? pl : null);
+      // through their eyes: where they stand, looking where they look (their own body hidden, it's in the way)
+      if (this.spec.mode === 'eyes') {
+        const pitch = Math.max(-89, Math.min(89, snap.pitch || 0)), f = viewDir(snap.yaw, pitch);
+        return { eye: [pl.pos[0] + f[0] * 10, pl.pos[1] + f[1] * 10, pl.pos[2] + 28], yaw: snap.yaw, pitch };
+      }
+    }
+    if (!pl || !pl.obj?.root.visible || (!this.spec && now > (this.watchUntil || 0))) {
       const live = [...this.players.values()].filter((p) => p.obj?.root.visible && p.snaps.length);
       const people = live.filter((p) => !this.info.get(p.id)?.bot);
       const pool = people.length ? people : live;
@@ -716,6 +773,7 @@ export class Game {
     this.killCam = null;
     this.fv.clear();
     this.sound?.rain?.(false);
+    this.sound?.hum?.(false);
     this.ps.alive = true;
   }
 
@@ -1051,7 +1109,7 @@ export class Game {
         const e = this.eyePos;
         const near = Math.hypot(o[0] - e[0], o[1] - e[1]) < 220;
         if (near || !this.occl.enabled || seesAny(this.world, e, [[o[0], o[1], o[2] + 64], [o[0], o[1], o[2] + 40]], null)) pl.seenAt = now;
-        setDrawn(pl.obj.root, now - (pl.seenAt || 0) < 0.3);
+        setDrawn(pl.obj.root, pl !== this.specHidden && now - (pl.seenAt || 0) < 0.3);
       }
     }
   }
@@ -2255,10 +2313,10 @@ export class Game {
       if (killCam) this.hud.message('');
       else if (this.deathAt && now - this.deathAt > 1.5) this.hud.message(this.killer ? `Killed by ${this.killer}` : 'You died', how || 'Respawning soon');
     }
-    this.sound.setScene(this.watching && !this.connected ? 0.3 : 1);
+    this.sound.setScene(this.watching && !this.connected && !this.spec ? 0.3 : 1);
     if (this.watching && !this.connected) {
       const cam = this.spectateCamera(dt, now);
-      if (cam) { eye = cam.eye; lookAt = cam.at; roll = 0; }
+      if (cam) { eye = cam.eye; lookAt = cam.at; roll = 0; if (cam.yaw != null) { yaw = cam.yaw; pitch = cam.pitch; } }
     }
     const Wc = WEAPONS[ps.cur];
     const aimHeld = !!(this.mouseButtons & 2 || held(this.keys, 'aim') || (this.touch && this.touch.buttons & BTN.ATTACK2) || (this.pad && this.pad.buttons & BTN.ATTACK2));

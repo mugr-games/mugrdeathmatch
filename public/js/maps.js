@@ -32,6 +32,7 @@ const PALETTES = {
   harvest: { concrete: '#a8a090', plate: '#5a5048', metal: '#8a8e90', panel: ['#b89a70', '#8a7050'], hazard: '#d8a040', neon: '#ffd890', stone: ['#9a9284', '#7a7264'], wood: ['#8a6440', '#5a4028'], grass: ['#8a8a3a', '#6a4a2c'], corn: ['#c8b058', '#8a7a34'], foliage: ['#d06a1e', '#8a2e10'] },
   hollow: { concrete: '#9a948a', plate: '#4a4440', metal: '#7a7a7a', panel: ['#b0a080', '#8a7a5a'], hazard: '#c84a2a', neon: '#ffcf80', stone: ['#9a948a', '#6e685e'], wood: ['#7a5636', '#503622'], grass: ['#7a7a34', '#5a4028'], cobble: ['#8e887c', '#4a4238'], foliage: ['#e0821e', '#9a3812'] },
   titanic: { concrete: '#8a8e94', plate: '#3a3d42', metal: '#5a5f66', panel: ['#ece6d8', '#d2c8b2'], hazard: '#c8a040', neon: '#ffe0a0', stone: ['#c8c2b8', '#a8a294'], wood: ['#6a4428', '#4a2c18'] },
+  backrooms: { concrete: '#a89a5a', plate: '#7a6e40', metal: '#8a8468', panel: ['#c9b45e', '#a8913e'], hazard: '#c8a040', neon: '#fff6d0' },
   course: { concrete: '#c8c2b8', plate: '#4f5a6e', metal: '#9aa4b0', panel: ['#8a92a8', '#6a7288'], hazard: '#ffcf1a', neon: '#ff4fd8' },
 };
 // goal nets: a white grid you can see through
@@ -143,6 +144,13 @@ function surf(mat, pal) {
   if (mat === 'furnace') return neonMaterial('#ff6a1a');
   if (mat === 'porthole' || mat === 'lamp') return neonMaterial('#ffd890');
   if (mat === 'chandelier') return neonMaterial('#fff0c8');
+  if (mat === 'wallpaper') return surfaceMaterial('wallpaper', { color: '#cdb860', color2: '#a8923e' });
+  if (mat === 'damp') return surfaceMaterial('carpet', { color: '#a08e50', color2: '#6a5c30' });
+  if (mat === 'ceiling') return surfaceMaterial('tile', { color: '#d6d0ae', color2: '#cec7a2', bump: 0.6 });
+  if (mat === 'fluoro') return neonMaterial('#fff8dc');
+  if (mat === 'fluorodead') return surfaceMaterial('clay', { color: '#8e8a74' });
+  if (mat === 'leak') return new THREE.MeshBasicMaterial({ color: 0x6a5a30, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  if (mat === 'exit') return neonMaterial('#ff2a1a');
   if (mat === 'ice') return new THREE.MeshStandardMaterial({ color: 0xdfeef8, roughness: 0.4, metalness: 0.05 });
   if (mat === 'sea') return new THREE.MeshStandardMaterial({ color: 0x08141c, metalness: 0.5, roughness: 0.12 });
   if (mat === 'grass') return surfaceMaterial('grass', { color: (pal.grass || ['#4e7a36'])[0], color2: (pal.grass || [0, '#3a5a28'])[1] });
@@ -260,7 +268,7 @@ function codeMap(id, def) {
     const objects = [];
     for (const [mat, geos] of c.byMat) {
       const mesh = new THREE.Mesh(mergeGeometries(geos), surf(mat, pal));
-      mesh.castShadow = mat !== 'neon';
+      mesh.castShadow = mat !== 'neon' && mat !== 'ceiling'; // a ceiling lets the light from above through (indoor maps lit from overhead)
       mesh.receiveShadow = true;
       group.add(mesh);
       objects.push(mesh);
@@ -302,12 +310,12 @@ function codeMap(id, def) {
   }
   for (const [mat, geos] of decoMats) {
     const mesh = new THREE.Mesh(mergeGeometries(geos), mat === 'net' ? net() : surf(mat, pal));
-    mesh.castShadow = mat !== 'net' && mat !== 'line' && mat !== 'neon';
+    mesh.castShadow = !['net', 'line', 'neon', 'fluoro', 'fluorodead', 'leak', 'exit'].includes(mat); // nothing flush with a surface or giving light
     mesh.receiveShadow = true;
     group.add(mesh);
   }
   // the pitch stays clean: no litter, tufts or wall clutter on a football ground
-  const detail = def.soccer || def.heist || def.stream ? { group: new THREE.Group(), tick: () => {} } : decorate(id, def.boxes.filter((b) => b.mat !== 'clip'), def.bounds, pal);
+  const detail = def.soccer || def.heist || def.stream || def.bare ? { group: new THREE.Group(), tick: () => {} } : decorate(id, def.boxes.filter((b) => b.mat !== 'clip'), def.bounds, pal);
   group.add(detail.group);
   return { id, name: def.name, group, cells, boxes: def.boxes, spawns: def.spawns, bounds: def.bounds, sun: (Array.isArray(def.sun) ? def.sun : def.sun?.dir) || [0.3, 0.3, 0.85], pads: def.pads || [], killZ: def.killZ, tick: detail.tick, mood: def.mood || 'day', stream: !!def.stream };
 }

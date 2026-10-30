@@ -187,6 +187,7 @@ async function boot() {
     status(room ? `Watching ${room.name} · ${room.map} · ${room.players + room.bots} playing` : `${serverInfo.mapName} · ${serverInfo.players} playing`);
   };
   game.watch();
+  game.onSpecEnd = () => stopSpectating('The game you were watching has ended.');
   game.onDisconnect = () => {
     playing = false;
     openMenu();
@@ -384,10 +385,12 @@ async function refreshRooms() {
     const full = r.players >= r.max;
     return `<tr class="${full ? 'full' : ''}"><td>${r.locked ? '🔒 ' : ''}${esc(r.name)}<small>${esc(rules.join(' · '))}</small></td>
       <td>${esc(r.map)}${r.rotation ? '<small>map rotation</small>' : ''}</td><td>${r.players}/${r.max}</td><td>${esc(r.loadout)}</td>
-      <td><button class="btn" data-room="${r.id}" data-locked="${r.locked ? 1 : 0}" data-name="${esc(r.name)}" ${full ? 'disabled' : ''}>${full ? 'Full' : 'Join'}</button></td></tr>`;
+      <td class="room-go"><button class="btn" data-room="${r.id}" data-locked="${r.locked ? 1 : 0}" data-name="${esc(r.name)}" ${full ? 'disabled' : ''}>${full ? 'Full' : 'Join'}</button>${r.mode === 'freeplay' ? '' : `<button class="btn" data-watch="${r.id}" data-locked="${r.locked ? 1 : 0}" data-name="${esc(r.name)}" title="Watch without playing">Watch</button>`}</td></tr>`;
   }).join('') : '<tr><td colspan="5" class="empty">No public games right now. Create one.</td></tr>';
 }
 $('l-rooms').addEventListener('click', (e) => {
+  const w = e.target.closest('button[data-watch]');
+  if (w) return w.dataset.locked === '1' ? askPassword(w.dataset.watch, w.dataset.name, true) : spectate(w.dataset.watch, $('l-err'));
   const b = e.target.closest('button[data-room]');
   if (!b) return;
   if (b.dataset.locked === '1') askPassword(b.dataset.room, b.dataset.name);
@@ -398,11 +401,17 @@ $('l-join-code').onclick = () => {
   if (!/^[A-Z0-9]{4}$/.test(code)) { $('l-err').textContent = 'Room codes are 4 letters and numbers.'; return; }
   play({ t: 'join', room: code }, $('l-err'), code);
 };
+$('l-watch-code').onclick = () => {
+  const code = $('l-code').value.trim().toUpperCase();
+  if (!/^[A-Z0-9]{4}$/.test(code)) { $('l-err').textContent = 'Room codes are 4 letters and numbers.'; return; }
+  spectate(code, $('l-err'));
+};
 $('l-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('l-join-code').click(); });
 
-let passTarget = null;
-function askPassword(room, name) {
+let passTarget = null, passWatch = false;
+function askPassword(room, name, watch = false) {
   passTarget = room;
+  passWatch = watch;
   $('p-what').textContent = `“${name}” needs a password.`;
   $('p-err').textContent = '';
   $('p-pass').value = '';
@@ -410,7 +419,7 @@ function askPassword(room, name) {
   $('p-pass').focus();
 }
 $('p-cancel').onclick = () => hide('dlg-pass');
-$('p-go').onclick = () => play({ t: 'join', room: passTarget, password: $('p-pass').value }, $('p-err'));
+$('p-go').onclick = () => (passWatch ? spectate(passTarget, $('p-err'), $('p-pass').value) : play({ t: 'join', room: passTarget, password: $('p-pass').value }, $('p-err')));
 $('p-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('p-go').click(); });
 
 // create game: fields mirror the server's room settings
@@ -485,6 +494,38 @@ async function play(action, errEl, code) {
   $('btn-join').querySelector('span').textContent = 'Find another game';
   $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = false;
   resume();
+}
+
+// ------------------------------------------------------------------ spectating: watch a game without playing in it
+async function spectate(room, errEl, password) {
+  errEl.textContent = '';
+  if (!game) return;
+  loading('Joining as a spectator…');
+  try {
+    if (game.connected) game.leave();
+    await game.spectate(room, password);
+  } catch (e) {
+    loading('');
+    if (/password/i.test(e.message) && password === undefined) return askPassword(room, `Room ${room}`, true);
+    errEl.textContent = e.message;
+    game.watch();
+    return;
+  }
+  loading('');
+  closeLobby();
+  hide('dlg-pass');
+  closeDialogs();
+  hide('menu');
+  $('room-tag').hidden = true;
+  $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = true;
+  $('btn-join').querySelector('span').textContent = 'Play';
+}
+function stopSpectating(text) {
+  game.stopSpectating();
+  game.watch();
+  openMenu();
+  openLobby();
+  if (text) $('l-err').textContent = text;
 }
 
 function showRoom(room) {
@@ -581,7 +622,7 @@ function fillOptions() {
 function applyLive() {
   if (!game) return;
   game.sound.setVolume(settings.volume);
-  game.sound.lobby(!playing, settings.music ?? 0.5);
+  game.sound.lobby(!playing && !game.spec, settings.music ?? 0.5);
   game.resize();
 }
 
@@ -631,6 +672,16 @@ document.addEventListener('mousedown', (e) => {
 });
 document.addEventListener('mouseup', (e) => { if (game) game.mouseButtons &= ~(e.button === 0 ? 1 : e.button === 2 ? 2 : 0); });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
+// spectating: click for the next player, right click for the one before, Space to look through their eyes, Esc to leave
+const spectating = () => game?.spec && !playing && $('menu').hidden;
+canvas.addEventListener('mousedown', (e) => { if (spectating()) game.specNext(e.button === 2 ? -1 : 1); });
+document.addEventListener('keydown', (e) => {
+  if (!spectating() || e.target.closest?.('input, textarea, select')) return;
+  if (e.code === 'ArrowRight') game.specNext(1);
+  else if (e.code === 'ArrowLeft') game.specNext(-1);
+  else if (e.code === 'Space') { e.preventDefault(); game.spec.mode = game.spec.mode === 'eyes' ? 'chase' : 'eyes'; game.watchEye = null; }
+  else if (e.code === 'Escape') stopSpectating();
+});
 document.addEventListener('wheel', (e) => { if (playing && game && !game.fv.bigMapWheel(e.deltaY) && !game.fv.wheel(e.deltaY)) game.cycleWeapon(e.deltaY > 0 ? 1 : -1); }, { passive: true });
 
 let chatOpen = false;
@@ -780,7 +831,7 @@ requestAnimationFrame(loop);
 // ------------------------------------------------------------------ helpers
 // lobby music: on in the menus, off while you play. Browsers only allow sound after a click or key press.
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => game?.sound.start(), { once: true, capture: true });
-setInterval(() => game?.sound.lobby(!playing, settings.music ?? 0.5), 300);
+setInterval(() => game?.sound.lobby(!playing && !game.spec, settings.music ?? 0.5), 300);
 
 function show(id) { $(id).hidden = false; }
 function hide(id) { $(id).hidden = true; }

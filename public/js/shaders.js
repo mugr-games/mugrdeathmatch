@@ -3,7 +3,7 @@
 // layer (grime, streaks, puddles) so large walls don't look tiled. Units: 40 = one block.
 import * as THREE from 'three';
 
-const TYPES = { stone: 0, brick: 1, clay: 2, wood: 3, metal: 4, plate: 5, panel: 6, hazard: 7, concrete: 8, grass: 9, dirt: 10, grassside: 11, crate: 12, barrel: 13, asphalt: 14, marble: 15, tile: 16, cobble: 17, leaves: 18, facade: 19, curtain: 20, brickwin: 21, siding: 22, stuccowin: 23 };
+const TYPES = { stone: 0, brick: 1, clay: 2, wood: 3, metal: 4, plate: 5, panel: 6, hazard: 7, concrete: 8, grass: 9, dirt: 10, grassside: 11, crate: 12, barrel: 13, asphalt: 14, marble: 15, tile: 16, cobble: 17, leaves: 18, facade: 19, curtain: 20, brickwin: 21, siding: 22, stuccowin: 23, wallpaper: 24, carpet: 25 };
 
 // Potato mode: cheap Lambert lighting, fewer noise octaves, no bump mapping. Set before any map loads.
 let POTATO = false;
@@ -291,6 +291,19 @@ vec4 surfacePattern(vec3 P, vec3 N, out float rough, out float wet) {
     float n = gnoise(vec2(uv.x * .02, floor(P.z / 9.) * 3.1));
     col = up ? uTintA * .8 : uTintA * (.86 + .18 * n) * (.72 + .28 * lip);
     h = up ? .5 : bz; rough = .7; weather = .6;
+  } else if (t == 24) { // old office wallpaper: faint stripes and a repeating chevron, yellowed, water stains creeping down
+    float stripe = smoothstep(.42, .5, abs(fract(uv.x / 14.) - .5));
+    vec2 m = vec2(fract(uv.x / 28.), fract(P.z / 18. + abs(fract(uv.x / 28.) - .5)));
+    float chev = 1. - smoothstep(.06, .12, abs(m.y - .5));
+    float stain = smoothstep(.55, .85, fbm(vec2(uv.x * .012, P.z * .03) + 11.)) * smoothstep(40., 130., P.z); // leaks from the ceiling
+    float base = 1. - smoothstep(4., 6., P.z); // the skirting board at the floor
+    col = mix(uTintA, uTintB, stripe * .35 + chev * .25) * (1. - stain * .3) * (1. - base * .45);
+    h = .5 + stripe * .05; rough = .85; weather = .2;
+  } else if (t == 25) { // damp office carpet: fine fibres, darker soaked patches, worn paths
+    float fib = gnoise(uv * 1.7) * .5 + gnoise(uv * 4.3) * .5;
+    float damp = smoothstep(.5, .8, fbm(uv * .004 + 2.));
+    col = mix(uTintA, uTintB, damp * .8) * (.9 + .14 * fib);
+    h = .45 + fib * .1; rough = .95 - damp * .25; wet = damp * .3; weather = 0.;
   }
   // weathering shared by every surface: big blotchy grime, rain streaks down walls, puddles on hard floors
   // (left out on the cheapest settings)

@@ -48,7 +48,7 @@ const SNAP_EVERY = 2; // 30 snapshots/s
 const MAX_ROOMS = 30;
 const NUM_COLORS = 8; // suit colours; the client owns the palette
 const NUM_MODELS = 4; // player characters, also drawn by the client
-const MAP_IDS = ['csdm', 'foundry', 'courtyard', 'skyline', 'warehouse', 'rooftops', 'bunker', 'ziggurat', 'docks', 'canyon', 'office', 'station', 'city', 'asylum', 'harvest', 'hollow', 'titanic'];
+const MAP_IDS = ['csdm', 'foundry', 'courtyard', 'skyline', 'warehouse', 'rooftops', 'bunker', 'ziggurat', 'docks', 'canyon', 'office', 'station', 'city', 'asylum', 'harvest', 'hollow', 'titanic', 'backrooms'];
 const MODES = { dm: 'Deathmatch', tdm: 'Team deathmatch', ctf: 'Capture the flag', zombies: 'Zombies (rounds, co-op)', infection: 'Infection', soccer: 'Soccer', parkour: 'Parkour', mugrball: 'Mugrball', heist: 'Heist', freeplay: 'Free roam (Mugr County)' };
 // modes without weapons or damage
 const PEACEFUL = new Set(['soccer', 'parkour']);
@@ -204,7 +204,7 @@ function startMatch(R, mapId) {
     respawn(R, p);
     send(p, welcome(R, p));
   }
-  for (const ws of R.watchers || []) wsSend(ws, watchWelcome(R));
+  for (const ws of R.watchers || []) wsSend(ws, watchWelcome(R, ws.spec));
 }
 
 function nextMap(R) {
@@ -298,8 +298,9 @@ function welcome(R, p) {
 }
 
 // main-menu spectators: a socket watching a public game in the background, not a player in it
-function watchWelcome(R) {
-  return { ...welcome(R, { id: -1 }), watch: 1 }; // -1: no id an event can name (0 means "the world")
+// (spec: someone who picked this game to watch, rather than the menu's background)
+function watchWelcome(R, spec = false) {
+  return { ...welcome(R, { id: -1 }), watch: 1, spec: spec ? 1 : undefined }; // -1: no id an event can name (0 means "the world")
 }
 
 // the public game with the most going on (people first, then bots); null when every public game is empty
@@ -1788,10 +1789,22 @@ wss.on('connection', (ws, req) => {
     if (m.t === 'watch') {
       if (p && p.room) return;
       unwatch(ws);
-      const R = pickWatchRoom();
-      if (!R) return wsSend(ws, { t: 'watch-none' });
+      ws.spec = m.room != null;
+      let R;
+      if (ws.spec) {
+        // a game picked to spectate: by its number (the list) or its code, the same rules as joining
+        const key = String(m.room).trim().toUpperCase();
+        R = /^\d+$/.test(key) ? rooms.get(+key) : [...rooms.values()].find((r) => r.code === key);
+        if (!R) return fail(/^\d+$/.test(key) ? 'That game has ended.' : `No game with the code ${key}.`);
+        if (R.settings.private && !/^[A-Z0-9]{4}$/.test(key)) return fail('That game is private. Ask for its code.');
+        if (R.settings.password && m.password !== R.settings.password) return fail('Wrong password.');
+        if (R.heist || R.fp) return fail('Heists and free roam can’t be watched.');
+      } else {
+        R = pickWatchRoom();
+        if (!R) return wsSend(ws, { t: 'watch-none' });
+      }
       R.watchers.add(ws);
-      return wsSend(ws, watchWelcome(R));
+      return wsSend(ws, watchWelcome(R, ws.spec));
     }
     if (m.t === 'unwatch') return unwatch(ws);
     if (m.t === 'join' || m.t === 'create') {

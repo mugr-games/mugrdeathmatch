@@ -116,6 +116,8 @@ button, input, select { font: inherit; color: inherit; }
 .rooms th { text-align: left; font: bold 10px var(--ui); color: var(--text-dim); padding: 6px 10px; background: var(--panel-dark); position: sticky; top: 0; }
 .rooms td { padding: 7px 10px; border-top: 1px solid rgba(255,255,255,.06); }
 .rooms td small { display: block; color: var(--text-dim); font-size: 11px; }
+.rooms td.room-go { white-space: nowrap; text-align: right; }
+.rooms td.room-go .btn + .btn { margin-left: 4px; }
 .rooms tr.full td { opacity: .5; }
 .rooms .empty { color: var(--text-dim); text-align: center; padding: 18px; }
 label.check { display: flex; gap: 8px; align-items: center; color: var(--text-dim); }
@@ -276,14 +278,16 @@ body.touch #netinfo { display: none; }
 
 #center-msg { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); text-align: center; color: #fff; text-shadow: 0 1px 4px #000; font: bold 18px var(--ui); }
 #center-msg small { display: block; font: 12px var(--ui); color: var(--text-dim); margin-top: 4px; }
-#killcam { position: absolute; left: 50%; bottom: 128px; transform: translateX(-50%); min-width: 260px; padding: 10px 22px 12px; text-align: center; color: #fff; background: linear-gradient(180deg, rgba(10,12,16,.82), rgba(10,12,16,.62)); border-top: 2px solid var(--accent, #ff8a1a); border-radius: 6px; box-shadow: 0 6px 24px rgba(0,0,0,.45); animation: kcIn .25s ease-out; pointer-events: none; }
-#killcam[hidden] { display: none; }
-#killcam small { display: block; font: 700 10px var(--ui); letter-spacing: .14em; color: var(--accent, #ff8a1a); }
-#killcam b { display: block; font: 800 22px var(--ui); letter-spacing: .02em; margin: 2px 0; text-shadow: 0 2px 8px rgba(0,0,0,.7); }
-#killcam span { display: block; font: 600 12px var(--ui); color: #d6dbe2; letter-spacing: .04em; }
-#killcam i { font-style: normal; color: #ff5a5a; font-weight: 800; }
-#killcam em { display: block; margin-top: 6px; font: 600 12px var(--ui); font-style: normal; color: #fff; opacity: .85; }
+#killcam, #spec { position: absolute; left: 50%; bottom: 128px; transform: translateX(-50%); min-width: 260px; padding: 10px 22px 12px; text-align: center; color: #fff; background: linear-gradient(180deg, rgba(10,12,16,.82), rgba(10,12,16,.62)); border-top: 2px solid var(--accent, #ff8a1a); border-radius: 6px; box-shadow: 0 6px 24px rgba(0,0,0,.45); animation: kcIn .25s ease-out; pointer-events: none; }
+#killcam[hidden], #spec[hidden] { display: none; }
+#killcam small, #spec small { display: block; font: 700 10px var(--ui); letter-spacing: .14em; color: var(--accent, #ff8a1a); }
+#killcam b, #spec b { display: block; font: 800 22px var(--ui); letter-spacing: .02em; margin: 2px 0; text-shadow: 0 2px 8px rgba(0,0,0,.7); }
+#killcam span, #spec span { display: block; font: 600 12px var(--ui); color: #d6dbe2; letter-spacing: .04em; }
+#killcam i, #spec i { font-style: normal; color: #ff5a5a; font-weight: 800; }
+#killcam em, #spec em { display: block; margin-top: 6px; font: 600 12px var(--ui); font-style: normal; color: #fff; opacity: .85; }
 @keyframes kcIn { from { opacity: 0; transform: translate(-50%, 10px); } }
+#spec { position: fixed; z-index: 4; bottom: 40px; }
+@media (max-width: 720px) { #spec { bottom: 24px; } }
 @media (max-width: 720px) { #killcam { bottom: 170px; min-width: 0; width: calc(100% - 32px); } }
 #timer { position: absolute; top: 18px; left: 24px; color: var(--hud-dim); font: bold 11px var(--ui); letter-spacing: .06em; }
 #netinfo { position: absolute; bottom: 4px; right: 8px; color: rgba(255,255,255,.35); font: 10px var(--ui); }
@@ -763,6 +767,7 @@ html, body { font: 14px/1.45 var(--ui); }
 <div id="rotate"><div><div style="font-size:42px">⟲</div>Turn your phone sideways to play</div></div>
 <canvas id="view"></canvas>
 
+<div id="spec" hidden></div>
 <div id="hud" hidden>
   <div id="timer"></div>
   <div id="crosshair"></div>
@@ -841,6 +846,7 @@ html, body { font: 14px/1.45 var(--ui); }
   <div class="lobby-bar">
     <input type="text" id="l-code" maxlength="4" placeholder="Room code" autocomplete="off" aria-label="Room code">
     <button class="btn" id="l-join-code">Join with code</button>
+    <button class="btn" id="l-watch-code" title="Watch the game without playing">Watch</button>
     <span class="grow"></span>
     <button class="btn primary" id="l-create">Create game</button>
   </div>

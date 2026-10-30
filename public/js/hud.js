@@ -140,6 +140,18 @@ export class Hud {
     el.hidden = !kc;
   }
 
+  // spectating a game: who you're following and the keys (null hides it)
+  spec(s) {
+    const el = this.sp || (this.sp = $('spec'));
+    if (!el) return;
+    const keys = s?.touch ? 'Tap: next player' : `Click / → next · Right click / ← previous · Space: ${s?.mode === 'eyes' ? 'chase camera' : 'their eyes'} · Esc: leave`;
+    const html = s ? `<small>SPECTATING</small><b>${esc(s.name)}</b>${s.team ? `<span>${esc(s.team.toUpperCase())} TEAM</span>` : ''}<em>${esc(keys)}</em>` : '';
+    if (html === this.spHtml) return;
+    this.spHtml = html;
+    el.innerHTML = html;
+    el.hidden = !s;
+  }
+
   message(text, sub = '') {
     this.center.innerHTML = text ? `<div>${esc(text)}</div>${sub ? `<small>${esc(sub)}</small>` : ''}` : '';
   }

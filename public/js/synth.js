@@ -775,6 +775,28 @@ export class Synth {
     if (this.rainGain) this.rainGain.gain.value = muffled ? 0.02 : 0.06;
   }
 
+  // the backrooms: fluorescent lights buzzing at mains hum, swelling and fading a little
+  hum(on) {
+    if (!this.ctx) return;
+    if (on && !this.humNodes) {
+      const c = this.ctx, g = c.createGain(), f = c.createBiquadFilter();
+      g.gain.value = 0.018;
+      f.type = 'lowpass'; f.frequency.value = 900;
+      const buzz = c.createOscillator(), low = c.createOscillator(), lfo = c.createOscillator(), depth = c.createGain();
+      buzz.type = 'sawtooth'; buzz.frequency.value = 120;
+      low.type = 'sine'; low.frequency.value = 60;
+      lfo.frequency.value = 0.23; depth.gain.value = 0.008;
+      lfo.connect(depth).connect(g.gain);
+      buzz.connect(f); low.connect(f);
+      f.connect(g).connect(this.master);
+      for (const o of [buzz, low, lfo]) o.start();
+      this.humNodes = [buzz, low, lfo];
+    } else if (!on && this.humNodes) {
+      for (const o of this.humNodes) o.stop();
+      this.humNodes = null;
+    }
+  }
+
   // a dancer's music (an emote id), from where they are (null: your own, not placed in the world). Returns
   // { move(pos), stop() }; the music starts as soon as it's rendered (the first time takes a moment).
   emote(id, pos) {

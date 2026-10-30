@@ -1,6 +1,16 @@
 // The in-game devlog (main menu → Devlog), newest first. Add an entry at the top for each update.
 export const DEVLOG = [
   {
+    date: '2026-10-30',
+    title: 'The Backrooms, spectating and a battle pass',
+    notes: [
+      'New map: The Backrooms. Endless yellow rooms under humming lights, damp carpet, a big pillared hall in the middle, and exit signs that lead nowhere.',
+      'Spectate any game: press Watch next to a game in the list (or type its code and press Watch). Click for the next player, right click for the one before, Space to look through their eyes, Esc to leave.',
+      'Season 1 battle pass: 30 tiers of gun skins, suit skins and charms. Earn XP from kills, wins and time in matches; premium costs coins.',
+      'Lobby music in the menus (volume in Options), and the dance songs play again.',
+    ],
+  },
+  {
     date: '2026-10-25',
     title: 'Planes, new heists and a more real world',
     notes: [

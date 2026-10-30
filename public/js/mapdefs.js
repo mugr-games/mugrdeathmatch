@@ -1643,4 +1643,71 @@ const titanic = (() => {
   return autoLayout({ name: 'Titanic', mood: 'storm', boxes: B, decor: D, sun: [0.25, -0.45, 0.55], bounds: [[-2400, -420, -480], [2400, 420, 820]], killZ: -560, pads: [], doors, buys, zstart: [420, 0, 1] }, { spawns: 18, items: 24, props: 8 });
 })();
 
-export const CODE_MAPS = { county, arthouse, mansion, foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court, bank, asylum, harvest, hollow, titanic };
+// ------------------------------------------------------------------ The Backrooms: endless yellow office rooms under humming lights
+// A grid of rooms with walls where a seeded coin says so, a low ceiling, damp carpet, and one big pillared hall in
+// the middle. Every room can be reached: wherever a wall would shut a part off, it gets a doorway instead.
+const backrooms = (() => {
+  const { B, box } = builder();
+  const D = [];
+  const deco = (x0, y0, z0, x1, y1, z1, mat) => D.push({ mins: [Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)], maxs: [Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)], mat });
+  const C = 256, N = 16, X = (C * N) / 2, H = 136, T = 6, GAP = 50, DOOR = 100;
+  let seed = 0x6261636b;
+  const R = () => ((seed = (Math.imul(seed ^ (seed >>> 15), 0x2c1b3c6d) + 0x9e3779b9) >>> 0) / 4294967296);
+  box(-X - 64, -X - 64, -64, X + 64, X + 64, 0, 'damp');
+  box(-X - 64, -X - 64, H, X + 64, X + 64, H + 16, 'ceiling');
+  box(-X - 64, -X - 64, 0, -X, X + 64, H, 'wallpaper'); box(X, -X - 64, 0, X + 64, X + 64, H, 'wallpaper');
+  box(-X, -X - 64, 0, X, -X, H, 'wallpaper'); box(-X, X, 0, X, X + 64, H, 'wallpaper');
+  // the big hall: the middle 4 x 4 rooms have no walls, just pillars
+  const hall = (i) => i >= N / 2 - 2 && i < N / 2 + 2;
+  // every wall segment on the grid (on line k, along cell j) and the two rooms either side of it
+  const segs = [];
+  for (let k = 1; k < N; k++) for (let j = 0; j < N; j++) {
+    const open = hall(k - 1) && hall(k) && hall(j);
+    segs.push({ v: true, k, j, a: (k - 1) * N + j, b: k * N + j, open });
+    segs.push({ v: false, k, j, a: j * N + k - 1, b: j * N + k, open });
+  }
+  const up = Array.from({ length: N * N }, (_, i) => i);
+  const find = (i) => (up[i] === i ? i : (up[i] = find(up[i])));
+  for (const s of segs) {
+    s.wall = !s.open && R() < 0.5;
+    s.door = s.wall && R() < 0.3;
+    if (!s.wall || s.door) up[find(s.a)] = find(s.b);
+  }
+  for (const s of segs.map((s) => [R(), s]).sort((p, q) => p[0] - q[0]).map((p) => p[1])) {
+    if (s.wall && !s.door && find(s.a) !== find(s.b)) { s.door = true; up[find(s.a)] = find(s.b); }
+  }
+  const piece = (v, line, from, to, z0 = 0, z1 = H) => (v ? box(line - T, from, z0, line + T, to, z1, 'wallpaper') : box(from, line - T, z0, to, line + T, z1, 'wallpaper'));
+  const doors = [];
+  for (const s of segs) {
+    if (!s.wall) continue;
+    const line = -X + s.k * C, from = -X + s.j * C, to = from + C;
+    if (!s.door) { piece(s.v, line, from, to); continue; }
+    const mid = Math.round(from + C / 2 + (R() - 0.5) * 80);
+    piece(s.v, line, from, mid - GAP); piece(s.v, line, mid + GAP, to);
+    piece(s.v, line, mid - GAP, mid + GAP, DOOR, H); // the header over the doorway
+    doors.push(s.v ? [line, mid] : [mid, line]);
+  }
+  // pillars in the hall, and a few standing alone where walls meet
+  for (let i = -1.5; i <= 1.5; i++) for (let j = -1.5; j <= 1.5; j++) box(i * C - 16, j * C - 16, 0, i * C + 16, j * C + 16, H, 'wallpaper');
+  for (let i = 1; i < N; i++) for (let j = 1; j < N; j++) {
+    if (hall(i - 1) && hall(i) && hall(j - 1) && hall(j)) continue;
+    if (R() < 0.12) box(-X + i * C - 14, -X + j * C - 14, 0, -X + i * C + 14, -X + j * C + 14, H, 'wallpaper');
+  }
+  // knee-high partition walls left behind in some rooms (cover)
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    if ((hall(i) && hall(j)) || R() > 0.1) continue;
+    const cx = -X + (i + 0.5) * C, cy = -X + (j + 0.5) * C, len = 60 + R() * 50;
+    if (R() < 0.5) box(cx - len, cy - 5, 0, cx + len, cy + 5, 44, 'wallpaper'); else box(cx - 5, cy - len, 0, cx + 5, cy + len, 44, 'wallpaper');
+  }
+  // fluorescent panels in the ceiling, two to a room, some of them dead; stains where it leaked
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    const cx = -X + (i + 0.5) * C, cy = -X + (j + 0.5) * C;
+    for (const d of [-64, 64]) deco(cx - 24, cy + d - 12, H - 1.5, cx + 24, cy + d + 12, H, R() < 0.1 ? 'fluorodead' : 'fluoro');
+    if (R() < 0.15) { const w = 30 + R() * 50, sx = cx + (R() - 0.5) * 120, sy = cy + (R() - 0.5) * 120; deco(sx - w, sy - w * 0.7, H - 0.6, sx + w, sy + w * 0.7, H, 'leak'); }
+  }
+  // red EXIT signs over a few doorways, none of which lead out
+  for (const [x, y] of doors.filter(() => R() < 0.18)) deco(x - 10, y - 10, DOOR + 8, x + 10, y + 10, DOOR + 18, 'exit');
+  return autoLayout({ name: 'The Backrooms', mood: 'backrooms', bare: true, boxes: B, decor: D, sun: [0.12, 0.18, 0.98], bounds: [[-X, -X, 0], [X, X, H]], killZ: -500, pads: [] }, { spawns: 18, items: 26, props: 10 });
+})();
+
+export const CODE_MAPS = { county, arthouse, mansion, foundry, courtyard, skyline, warehouse, rooftops, bunker, ziggurat, docks, canyon, office, station, city, pitch, course, court, bank, asylum, harvest, hollow, titanic, backrooms };
