@@ -2,6 +2,17 @@
 export const DEVLOG = [
   {
     date: '2026-10-30',
+    title: 'Mugr.lol, and a new look on phones',
+    notes: [
+      'The game is now called Mugr.lol, with a new logo to match.',
+      'Phones: new touch controls with icons, in an arc round the fire button. The move stick shows where it rests, and the top bar has pause, chat, scores and dance.',
+      'AIM on phones stays on after you tap it, until you tap it again.',
+      'Tap the left or right half of the weapon box at the bottom to switch weapons.',
+      'Health and the clock sit top left, out of your thumbs’ way. The menu fits on one screen with your phone on its side, and the game list shows each game as a card when you hold your phone upright.',
+    ],
+  },
+  {
+    date: '2026-10-30',
     title: 'The Backrooms, spectating and a battle pass',
     notes: [
       'New map: The Backrooms. Endless yellow rooms under humming lights, damp carpet, a big pillared hall in the middle, and exit signs that lead nowhere.',

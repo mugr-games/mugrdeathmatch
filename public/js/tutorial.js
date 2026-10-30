@@ -9,7 +9,7 @@ const key = (id) => `<kbd>${esc(keysFor(id).map(keyName).join(' / ') || '—')}<
 function steps() {
   return [
     {
-      title: 'Welcome to MUGR DEATHMATCH',
+      title: 'Welcome to Mugr.lol',
       body: `<p>Here's how to play. It takes a minute.</p>
         <ul class="tut-keys">
           <li>${key('fwd')}${key('left')}${key('back')}${key('right')} move · <kbd>mouse</kbd> look</li>

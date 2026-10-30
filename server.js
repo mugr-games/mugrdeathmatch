@@ -1,4 +1,4 @@
-// MUGR DEATHMATCH server: serves the web client and runs any number of rooms, each an authoritative simulation.
+// Mugr.lol server: serves the web client and runs any number of rooms, each an authoritative simulation.
 // Public rooms show in the lobby list; private rooms are joined with a short code. "Main" always exists.
 import http from 'node:http';
 import fs from 'node:fs';
@@ -1936,7 +1936,7 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
 export const ready = new Promise((resolve) => {
   let port = PORT;
   server.on('listening', () => {
-    console.log(`MUGR DEATHMATCH server on http://localhost:${port}`);
+    console.log(`Mugr.lol server on http://localhost:${port}`);
     resolve(port);
   });
   server.on('error', (e) => {

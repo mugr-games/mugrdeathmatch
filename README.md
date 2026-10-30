@@ -1,4 +1,4 @@
-# MUGR DEATHMATCH
+# Mugr.lol
 
 A multiplayer deathmatch that runs in the browser. Nothing to install for players: they open the link.
 Movement is tuned to Garry's Mod sandbox defaults; the server is authoritative with client prediction and

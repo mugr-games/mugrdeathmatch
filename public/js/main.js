@@ -817,6 +817,7 @@ function loop(now) {
   // touch: the phone button only in free roam; the other buttons step aside while the phone or a shop is up
   if (touch) {
     touch.el.classList.toggle('fp', !!game.fv.active);
+    touch.el.classList.toggle('drive', !!(game.fv.active && game.ps?.car));
     touch.el.classList.toggle('ui', !!(game.fv.phoneOpen() || game.fv.shop));
   }
   game.frame(dt, now / 1000);

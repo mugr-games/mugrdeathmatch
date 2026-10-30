@@ -73,12 +73,19 @@ export class Hud {
     const W = WEAPONS[ps.cur];
     const key = `${ps.alive}|${ps.cur}|${ps.clips?.[ps.cur]}|${W.ammo ? ps.ammo?.[W.ammo] : ''}`;
     if (key !== this.last.ammo) {
-      this.ammoBox.hidden = !W.ammo || !ps.alive;
+      // on a phone the box is also the weapon switcher, so it stays up for weapons without ammo
+      const touch = document.body.classList.contains('touch');
+      this.ammoBox.hidden = !ps.alive || (!W.ammo && !touch);
       if (W.ammo) {
         this.clip.textContent = ps.clips[ps.cur];
         if (this.ammoName) this.ammoName.textContent = W.name;
         this.res.textContent = ps.ammo[W.ammo];
         this.ammoBox.classList.toggle('low', ps.clips[ps.cur] === 0);
+      } else if (touch) {
+        if (this.ammoName) this.ammoName.textContent = W.name;
+        this.clip.textContent = '–';
+        this.res.textContent = '';
+        this.ammoBox.classList.remove('low');
       }
       this.last.ammo = key;
     }

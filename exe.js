@@ -7,7 +7,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { ready } from './server.js';
 
-process.title = 'MUGR DEATHMATCH server';
+process.title = 'Mugr.lol server';
 const line = '-'.repeat(64);
 
 ready.then((port) => {
@@ -15,7 +15,7 @@ ready.then((port) => {
   const lan = Object.values(os.networkInterfaces()).flat()
     .filter((a) => a && a.family === 'IPv4' && !a.internal)
     .map((a) => `http://${a.address}:${port}`);
-  console.log(`\n${line}\n  MUGR DEATHMATCH SERVER is running. Close this window to stop it.\n${line}`);
+  console.log(`\n${line}\n  MUGR.LOL SERVER is running. Close this window to stop it.\n${line}`);
   console.log(`  You:                 ${local}`);
   for (const u of lan) console.log(`  Same Wi-Fi / LAN:    ${u}`);
   console.log(line);

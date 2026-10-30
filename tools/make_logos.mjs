@@ -1,5 +1,5 @@
 // Draws the game's logos as SVG files in public/: the badge (the player character on a hexagon), the wordmark
-// (badge + MUGR / DEATHMATCH), a stacked version and the favicon. The letters are solid block shapes drawn
+// (badge + MUGR.LOL), a stacked version and the favicon. The letters are solid block shapes drawn
 // here on a 10-unit grid (one stem width, 45° cut corners), so the logos look the same everywhere and need
 // no font.
 //   node tools/make_logos.mjs
@@ -27,7 +27,11 @@ const GLYPHS = {
   T: [8, [[0, 0], [8, 0], [8, 2.4], [5.2, 2.4], [5.2, 10], [2.8, 10], [2.8, 2.4], [0, 2.4]]],
   H: [8, [[0, 0], [2.4, 0], [2.4, 3.8], [5.6, 3.8], [5.6, 0], [8, 0], [8, 10], [5.6, 10], [5.6, 6.2], [2.4, 6.2], [2.4, 10], [0, 10]]],
   C: [8, [[1.6, 0], [8, 0], [8, 2.4], [2.4, 2.4], [2.4, 7.6], [8, 7.6], [8, 10], [1.6, 10], [0, 8.4], [0, 1.6]]],
+  L: [7, [[0, 0], [2.4, 0], [2.4, 7.6], [7, 7.6], [7, 10], [0, 10]]],
+  O: [8, [[1.6, 0], [6.4, 0], [8, 1.6], [8, 8.4], [6.4, 10], [1.6, 10], [0, 8.4], [0, 1.6]], [[2.4, 2.4], [5.6, 2.4], [5.6, 7.6], [2.4, 7.6]]],
+  '.': [2.6, [[0, 7.4], [2.6, 7.4], [2.6, 10], [0, 10]]],
 };
+const NAME = 'Mugr.lol';
 const wordWidth = (text, gap) => [...text].reduce((w, ch) => w + GLYPHS[ch][0], 0) + gap * (text.length - 1);
 
 // a word as one path, `scale` pixels per unit, top-left at (x, y)
@@ -50,20 +54,19 @@ function word(text, { x, y, scale, gap, fill, side }) {
   return out + `<path d="${d}" fill="${fill}" fill-rule="evenodd"/>`;
 }
 
-// MUGR over DEATHMATCH, the small word spaced out to the same width, both leaning forward
+// MUGR.LOL on one line, leaning forward: MUGR and the dot in amber, LOL in white
 function title(id, x, y, big) {
-  const gapBig = 1.1, wBig = wordWidth('MUGR', gapBig) * big;
-  const small = big * 0.34, gapSmall = (wBig / small - wordWidth('DEATHMATCH', 0)) / 9;
-  const ySmall = y + big * 10 + big * 1.9;
-  const base = ySmall + small * 10;
-  const defs = `<linearGradient id="${id}a" x1="0" y1="${y}" x2="0" y2="${y + big * 10}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffd24a"/><stop offset=".55" stop-color="${AMBER}"/><stop offset="1" stop-color="#f08a00"/></linearGradient>`
-    + `<linearGradient id="${id}w" x1="0" y1="${ySmall}" x2="0" y2="${base}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfd5de"/></linearGradient>`;
+  const gap = 1.1, base = y + big * 10;
+  const defs = `<linearGradient id="${id}a" x1="0" y1="${y}" x2="0" y2="${base}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffd24a"/><stop offset=".55" stop-color="${AMBER}"/><stop offset="1" stop-color="#f08a00"/></linearGradient>`
+    + `<linearGradient id="${id}w" x1="0" y1="${y}" x2="0" y2="${base}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfd5de"/></linearGradient>`;
+  const xLol = x + (wordWidth('MUGR.', gap) + gap) * big;
   const body = `<g transform="translate(0 ${f(base)}) skewX(-11) translate(0 ${f(-base)})">`
-    + word('MUGR', { x, y, scale: big, gap: gapBig, fill: `url(#${id}a)`, side: '#7a3a00' })
-    + word('DEATHMATCH', { x, y: ySmall, scale: small, gap: gapSmall, fill: `url(#${id}w)`, side: '#2a2e36' })
+    + word('MUGR.', { x, y, scale: big, gap, fill: `url(#${id}a)`, side: '#7a3a00' })
+    + word('LOL', { x: xLol, y, scale: big, gap, fill: `url(#${id}w)`, side: '#2a2e36' })
     + '</g>';
-  const lean = Math.tan((11 * Math.PI) / 180) * (base - y); // how far the top of MUGR moves right
-  return { defs, body, width: wBig + big * 0.6 + lean, height: base - y + big * 0.5, lean };
+  const w = wordWidth('MUGR.LOL', gap) * big;
+  const lean = Math.tan((11 * Math.PI) / 180) * (base - y); // how far the top of the letters moves right
+  return { defs, body, width: w + big * 0.6 + lean, height: base - y + big * 0.5, lean, w };
 }
 
 // ------------------------------------------------------------------ the badge: 64 x 64
@@ -120,24 +123,23 @@ const svg = (w, h, body, label) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${label}"><title>${label}</title>${body}</svg>\n`;
 
 // the wordmark: badge on the left, the title beside it
-const wt = title('w', 148, 16, 7.2);
+const wt = title('w', 148, 40, 6.4);
 const wordmark = svg(Math.ceil(148 + wt.width + 4), 144,
-  `<defs>${wt.defs}</defs><g transform="translate(4 8) scale(2)">${badge('w')}</g>${wt.body}`, 'MUGR DEATHMATCH');
+  `<defs>${wt.defs}</defs><g transform="translate(4 8) scale(2)">${badge('w')}</g>${wt.body}`, NAME);
 
 // stacked: badge on top, the title centred under it (for square spaces)
-const SW = 340, big = 7;
-const tw = wordWidth('MUGR', 1.1) * big;
+const SW = 340, big = 4.6;
 const st0 = title('s', 0, 178, big);
-const st = title('s', (SW - tw - st0.lean / 2) / 2, 178, big); // centred on the middle of the lean
+const st = title('s', (SW - st0.w - st0.lean / 2) / 2, 178, big); // centred on the middle of the lean
 const stacked = svg(SW, Math.ceil(178 + st.height + 6),
-  `<defs>${st.defs}</defs><g transform="translate(${SW / 2 - 80} 4) scale(2.5)">${badge('s')}</g>${st.body}`, 'MUGR DEATHMATCH');
+  `<defs>${st.defs}</defs><g transform="translate(${SW / 2 - 80} 4) scale(2.5)">${badge('s')}</g>${st.body}`, NAME);
 
 const files = {
   'logo.svg': wordmark,
   'logo-stacked.svg': stacked,
-  'badge.svg': svg(64, 64, badge('b'), 'MUGR DEATHMATCH'),
+  'badge.svg': svg(64, 64, badge('b'), NAME),
   // tiny sizes: no small details
-  'favicon.svg': svg(64, 64, badge('f', { detail: false }), 'MUGR DEATHMATCH'),
+  'favicon.svg': svg(64, 64, badge('f', { detail: false }), NAME),
 };
 for (const [name, text] of Object.entries(files)) {
   fs.writeFileSync(path.join(OUT, name), text);
