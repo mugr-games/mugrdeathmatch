@@ -2,7 +2,6 @@
 // footsteps, impacts, voices) are layered designs rendered once into buffers when audio starts, a few
 // variations each, so playing them costs one buffer voice. Every 3D sound is panned, muffled with distance
 // and sent to a room reverb, more so the farther away it is. Positions are in game units.
-import { api } from './net.js';
 import { EMOTE } from './cosmetics.js';
 
 const GUNS = {
@@ -477,9 +476,59 @@ async function bakeMusic(id, sampleRate) {
   return level(out);
 }
 
+// The menu's music: sounds/lobby.mp3 if the game has one, otherwise this "no signal" ambience: a fluorescent
+// buzz, mains hum, a slow dark drone and bursts of static. Every pitch and wobble repeats a whole number of
+// times in the loop, so it loops without a seam.
+const LOBBY_LEN = 24;
+async function bakeLobby(sampleRate) {
+  const L = LOBBY_LEN;
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const c = new OAC(1, Math.ceil(L * sampleRate), sampleRate);
+  const bus = c.createGain();
+  bus.gain.value = 0.5;
+  bus.connect(c.destination);
+  const osc = (type, f, v, to) => { const o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.value = f; g.gain.value = v; o.connect(g).connect(to || bus); o.start(0); return g; };
+  // mains hum and its harmonics, muffled
+  const hum = c.createBiquadFilter();
+  hum.type = 'lowpass'; hum.frequency.value = 420;
+  hum.connect(bus);
+  osc('sine', 60, 0.16, hum); osc('sawtooth', 120, 0.05, hum); osc('square', 180, 0.012, hum);
+  // the drone: detuned saws through a filter that opens and closes slowly
+  const pad = c.createBiquadFilter();
+  pad.type = 'lowpass'; pad.Q.value = 6; pad.frequency.value = 300;
+  pad.connect(bus);
+  const lfo = c.createOscillator(), depth = c.createGain();
+  lfo.frequency.value = 2 / L; depth.gain.value = 180;
+  lfo.connect(depth).connect(pad.frequency); lfo.start(0);
+  for (const f of [55, 55.25, 82.5, 110.125]) osc('sawtooth', f, 0.05, pad);
+  // the tube buzz: bright noise flickering at twice the mains rate
+  const nb = c.createBufferSource();
+  nb.buffer = noiseBuf(c, L); nb.loop = true;
+  const bp = c.createBiquadFilter(), flick = c.createGain();
+  bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 2.5;
+  flick.gain.value = 0.02;
+  const buzz = c.createOscillator(), bz = c.createGain();
+  buzz.type = 'square'; buzz.frequency.value = 120; bz.gain.value = 0.018;
+  buzz.connect(bz).connect(flick.gain); buzz.start(0);
+  nb.connect(bp).connect(flick).connect(bus); nb.start(0);
+  // static: a few bursts of hiss, like a dead channel catching something
+  for (const [t, d, v] of [[3.1, 0.6, 0.14], [9.4, 0.25, 0.1], [9.8, 0.9, 0.16], [15.2, 0.4, 0.12], [20.6, 1.4, 0.13]]) {
+    const src = c.createBufferSource(), hp = c.createBiquadFilter(), g = c.createGain();
+    src.buffer = noiseBuf(c, d + 0.1);
+    hp.type = 'highpass'; hp.frequency.value = 1800;
+    shape(g.gain, t, [[0, 0.0001], [0.03, v], [d * 0.7, v * 0.6], [d, 0.0001]]);
+    src.connect(hp).connect(g).connect(bus);
+    src.start(t);
+  }
+  return level(await c.startRendering());
+}
+
+// sound files come with the page (not from the game server, which may be on another address)
+const SOUNDS = new URL('../sounds/', import.meta.url).href;
+
 // an emote's song from its file, decoded and levelled like the rest
 async function loadSong(c, file) {
-  const r = await fetch(api('/sounds/emotes/' + file));
+  const r = await fetch(SOUNDS + 'emotes/' + file);
   if (!r.ok) throw new Error('no song ' + file);
   return level(await c.decodeAudioData(await r.arrayBuffer()));
 }
@@ -550,10 +599,39 @@ export class Synth {
       // the hit marker and kill sounds are recordings
       this.sfx = {};
       for (const [k, f] of [['hit', 'hitmarker.mp3'], ['crit', 'crit.mp3']]) {
-        fetch(api('/sounds/sfx/' + f)).then((r) => r.arrayBuffer()).then((a) => c.decodeAudioData(a)).then((b) => { this.sfx[k] = b; }).catch(() => {});
+        fetch(SOUNDS + 'sfx/' + f).then((r) => r.arrayBuffer()).then((a) => c.decodeAudioData(a)).then((b) => { this.sfx[k] = b; }).catch(() => {});
       }
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
+  }
+
+  // the menu's music: on while you're in the menus, fading in and out. vol: the music volume setting
+  lobby(on, vol = this.musicVol ?? 0.5) {
+    this.musicVol = vol;
+    if (!this.ctx) return;
+    const c = this.ctx;
+    if (!this.lobbyGain) {
+      this.lobbyGain = c.createGain();
+      this.lobbyGain.gain.value = 0;
+      this.lobbyGain.connect(c.destination);
+      fetch(SOUNDS + 'lobby.mp3')
+        .then((r) => { if (!r.ok) throw new Error('no lobby.mp3'); return r.arrayBuffer(); })
+        .then((a) => c.decodeAudioData(a)).then(level)
+        .catch(() => bakeLobby(c.sampleRate))
+        .then((buf) => {
+          const src = c.createBufferSource();
+          src.buffer = buf; src.loop = true;
+          src.connect(this.lobbyGain); src.start();
+        })
+        .catch((e) => console.warn('lobby music failed', e));
+    }
+    const want = on ? 0.55 * vol * this.volume : 0;
+    if (want === this.lobbyWant) return;
+    this.lobbyWant = want;
+    const g = this.lobbyGain.gain, t = c.currentTime;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(want, t + (on ? 1.5 : 0.6));
   }
 
   setVolume(v) {

@@ -318,6 +318,7 @@ body.touch #netinfo { display: none; }
 #dlg-locker { width: min(820px, calc(100vw - 32px)); }
 .lk-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
 .lk-body { display: grid; grid-template-columns: 220px 1fr; gap: 16px; }
+.lk-body > div { min-width: 0; }
 #lk-preview { width: 100%; height: 300px; display: block; background: radial-gradient(ellipse at 50% 80%, rgba(255,255,255,.08), rgba(0,0,0,.25)); border-radius: 4px; }
 #lk-look { margin-top: 10px; }
 #lk-look .row { grid-template-columns: 80px 1fr; margin-bottom: 6px; }
@@ -333,6 +334,28 @@ body.touch #netinfo { display: none; }
 .lk-sw { width: 100%; height: 6px; border-radius: 3px; }
 .lk-empty { grid-column: 1 / -1; }
 #lk-msg { min-height: 1.4em; margin-top: 8px; color: var(--text-dim); }
+/* battle pass */
+.bp-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.bp-head h3 { margin: 0; font: 700 16px var(--ui); color: #fff; }
+.bp-head small { display: block; color: var(--text-dim); font-size: 12px; }
+.bp-bar { position: relative; height: 10px; background: rgba(255,255,255,.08); border-radius: 5px; overflow: hidden; margin-bottom: 10px; }
+.bp-bar i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, var(--accent), var(--accent2, #ff7a00)); border-radius: 5px; }
+#lk-items.bp { display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; max-height: none; padding-bottom: 6px; }
+.bp-tier { flex: 0 0 104px; display: flex; flex-direction: column; gap: 4px; }
+.bp-tier > b { text-align: center; font: 700 12px var(--ui); color: var(--text-dim); }
+.bp-tier.done > b { color: var(--accent); }
+.bp-tier.next > b { color: #fff; }
+.bp-r { position: relative; display: flex; flex-direction: column; justify-content: flex-end; gap: 3px; height: 92px; padding: 8px 6px; background: var(--panel-dark); border: 1px solid rgba(255,255,255,.08); border-radius: 4px; font-size: 11px; color: #fff; cursor: default; }
+.bp-r.prem { background: linear-gradient(180deg, rgba(255,190,40,.16), var(--panel-dark)); border-color: rgba(255,190,40,.3); }
+.bp-r.got { border-color: var(--accent); }
+.bp-r.locked { opacity: .55; }
+.bp-r .lk-sw { height: 26px; border-radius: 3px; }
+.bp-r em { font-style: normal; color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.bp-r .bp-coin { font: 800 18px var(--ui); color: #ffd23a; }
+.bp-r .bp-tick { position: absolute; top: 4px; right: 6px; color: var(--accent); font-weight: 800; }
+.bp-rows { display: flex; flex-direction: column; gap: 4px; margin-right: 2px; }
+.bp-rows span { height: 92px; display: flex; align-items: center; font: 700 11px var(--ui); color: var(--text-dim); writing-mode: vertical-rl; transform: rotate(180deg); }
+.bp-rows span:first-child { height: 18px; }
 .lk-pic { grid-column: 1 / -1; } .lk-pic label { cursor: pointer; text-align: center; } .lk-pic small { color: var(--text-dim); font-size: 11px; }
 .review { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(0,0,0,.6); }
 .review[hidden] { display: none; }
@@ -794,6 +817,7 @@ html, body { font: 14px/1.45 var(--ui); }
       <button id="btn-heist" class="feature"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="13" rx="2"/><path d="M9 7V5h6v2M12 11v5M9.5 13.5h5"/></svg><span>Heist<small>2–4 player bank job</small></span></button>
       <button id="btn-shop"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h3l2.5 11h10L21 8H7"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg><span>Shop</span></button>
       <button id="btn-wardrobe"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4l-5 4 3 3 2-1v10h8V10l2 1 3-3-5-4c-1 2-2.5 3-4 3S9 6 8 4z"/></svg><span>Wardrobe</span></button>
+      <button id="btn-pass"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16v10H4z"/><path d="M8 7v10M4 12h4"/><path d="M13 10l1 2 2 .3-1.5 1.4.4 2.1-1.9-1-1.9 1 .4-2.1L10 12.3l2-.3z"/></svg><span>Battle Pass</span></button>
       <button id="btn-leaders"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8"/></svg><span>Leaderboard</span></button>
       <button id="btn-friends"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="3.5"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17" cy="8" r="2.5"/><path d="M16 13.5c3 0 5 2 5 5"/></svg><span>Friends</span><span class="badge" id="fr-badge" hidden></span></button>
       <button id="btn-voice"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span>Voice</span><span class="badge live" id="vc-badge" hidden></span></button>
@@ -872,6 +896,7 @@ html, body { font: 14px/1.45 var(--ui); }
   <div class="tabs" role="tablist">
     <button class="tab lk-tab" data-tab="shop" role="tab">Shop</button>
     <button class="tab lk-tab" data-tab="wardrobe" role="tab">Wardrobe</button>
+    <button class="tab lk-tab" data-tab="pass" role="tab">Battle Pass</button>
   </div>
   <div class="lk-body">
     <div>
@@ -1057,6 +1082,7 @@ html, body { font: 14px/1.45 var(--ui); }
   <div class="row"><label for="o-sens">Mouse sensitivity</label><div><input type="range" id="o-sens" min="0.5" max="8" step="0.1"><span class="val" id="o-sens-v"></span></div></div>
   <div class="row"><label for="o-fov">Field of view</label><div><input type="range" id="o-fov" min="75" max="110" step="1"><span class="val" id="o-fov-v"></span></div></div>
   <div class="row"><label for="o-vol">Volume</label><div><input type="range" id="o-vol" min="0" max="1" step="0.05"><span class="val" id="o-vol-v"></span></div></div>
+  <div class="row"><label for="o-music">Menu music</label><div><input type="range" id="o-music" min="0" max="1" step="0.05"><span class="val" id="o-music-v"></span></div></div>
   <div class="row"><label for="o-quality">Graphics</label><select id="o-quality"><option value="potato">Potato: for old or slow devices, plain look, fastest</option><option value="low">Low: no bloom, simple shadows</option><option value="medium">Medium: bloom, soft shadows</option><option value="high">High: adds ambient occlusion and sharper shadows</option></select></div>
   <p style="margin-top:8px">Graphics changes apply straight away from the main menu. During a match they apply the next time the page loads.</p>
   <div class="actions"><button class="btn" id="o-tutorial">How to play</button><button class="btn" id="o-controls">Controls…</button><button class="btn primary" id="o-ok">OK</button></div>

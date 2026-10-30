@@ -9,7 +9,7 @@
 //
 // Storage: JSON files by default. Hosts whose disk is wiped on restart (Render's free plan) can use a free
 // Upstash Redis database instead: set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.
-import { COSMETIC as COSMETIC_CAT } from './public/js/cosmetics.js';
+import { COSMETIC as COSMETIC_CAT, BATTLE_PASS, passTier } from './public/js/cosmetics.js';
 const COSMETIC_SLOT = Object.fromEntries(Object.entries(COSMETIC_CAT).map(([k, v]) => [k, v.slot]));
 import fs from 'node:fs';
 import path from 'node:path';
@@ -246,7 +246,26 @@ export function createProfiles(file) {
     return pr;
   }
 
-  const view = (pr) => ({ coins: pr.coins, owned: pr.owned, eq: pr.eq, name: pr.name || null, stats: pr.stats || {}, role: pr.role || null, img: pr.img || null, imgSt: pr.imgSt || null });
+  const view = (pr) => ({ coins: pr.coins, owned: pr.owned, eq: pr.eq, name: pr.name || null, stats: pr.stats || {}, role: pr.role || null, img: pr.img || null, imgSt: pr.imgSt || null, bp: passOf(pr) });
+
+  // ---------------------------------------------------------------- battle pass
+  // pr.bp: { s: season, xp, prem: bought premium, f/p: the last tier whose free/premium reward was given }.
+  // A new season starts everyone again at tier 0 (items from earlier seasons stay owned).
+  function passOf(pr) {
+    if (!pr.bp || pr.bp.s !== BATTLE_PASS.season) pr.bp = { s: BATTLE_PASS.season, xp: 0, prem: false, f: 0, p: 0 };
+    return pr.bp;
+  }
+  function grant(pr, reward, got) {
+    if (reward.startsWith('coins:')) { pr.coins += +reward.slice(6); got.push(reward); return; }
+    if (COSMETIC[reward] && !pr.owned.includes(reward)) { pr.owned.push(reward); got.push(reward); }
+  }
+  // give every reward up to the current tier that hasn't been given yet; returns what was given
+  function catchUp(pr) {
+    const bp = passOf(pr), tier = passTier(bp.xp), got = [];
+    for (; bp.f < tier; bp.f++) grant(pr, BATTLE_PASS.tiers[bp.f][0], got);
+    if (bp.prem) for (; bp.p < tier; bp.p++) grant(pr, BATTLE_PASS.tiers[bp.p][1], got);
+    return got;
+  }
   const newToken = () => crypto.randomBytes(16).toString('hex');
 
   // give the owner their coins (once) and items
@@ -372,6 +391,27 @@ export function createProfiles(file) {
     award(pr, n) {
       pr.coins += n;
       this.stat(pr, { coins: n });
+    },
+    // battle pass XP: returns { tier, got } when a tier was reached (got: the rewards given), else null
+    passXp(pr, xp) {
+      if (!pr || !(xp > 0)) return null;
+      const bp = passOf(pr), before = passTier(bp.xp);
+      bp.xp += Math.round(xp);
+      const tier = passTier(bp.xp);
+      const got = tier > before ? catchUp(pr) : [];
+      touch(pr);
+      return tier > before ? { tier, got } : null;
+    },
+    // buy the premium track (coins): every premium reward up to your tier comes at once
+    buyPass(pr) {
+      const bp = passOf(pr);
+      if (bp.prem) return 'You already have the premium pass.';
+      if (pr.coins < BATTLE_PASS.premiumPrice) return `You need ${BATTLE_PASS.premiumPrice - pr.coins} more coins.`;
+      pr.coins -= BATTLE_PASS.premiumPrice;
+      bp.prem = true;
+      catchUp(pr);
+      touch(pr);
+      return null;
     },
 
     // ---------------------------------------------------------------- owner tools

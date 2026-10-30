@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { Avatar, MODELS, SUIT_COLORS } from './avatar.js';
-import { COSMETICS, COSMETIC, COS_SLOTS } from './cosmetics.js';
+import { COSMETICS, COSMETIC, COS_SLOTS, BATTLE_PASS, passTier } from './cosmetics.js';
 import { esc } from './hud.js';
 import { api } from './net.js';
 import { loadSlot, instance } from './assets.js';
@@ -166,6 +166,15 @@ export class Locker {
     if (!$('dlg-locker').hidden) this.render();
   }
 
+  // a battle pass tier was reached while playing
+  pass(m) {
+    this.profile.coins = m.coins;
+    this.profile.bp = m.bp;
+    for (const id of m.got) if (!id.startsWith('coins:') && !this.profile.owned.includes(id)) this.profile.owned.push(id);
+    for (const fn of this.listeners) fn(this.profile);
+    if (!$('dlg-locker').hidden) this.render();
+  }
+
   // the server says the balance changed (a kill or a win)
   coins(n) {
     this.profile.coins = n;
@@ -252,11 +261,48 @@ export class Locker {
     this.preview.show(this.opts.settings.color | 0, this.opts.settings.model | 0, cos);
   }
 
+  // the battle pass: progress, then every tier's free and premium reward in a row you scroll along
+  renderPass() {
+    const P = this.profile, B = BATTLE_PASS;
+    const bp = P.bp || { xp: 0, prem: false };
+    const tier = passTier(bp.xp), max = B.tiers.length;
+    const into = tier >= max ? B.xpPerTier : bp.xp - tier * B.xpPerTier;
+    $('lk-slots').innerHTML = `<div class="bp-head"><div><h3>${esc(B.name)}</h3><small>Tier ${tier} of ${max} · ${tier >= max ? 'complete!' : `${into} / ${B.xpPerTier} XP to tier ${tier + 1}`} · earn XP from kills, wins and time in matches</small></div>${
+      bp.prem ? '<span class="lk-own">Premium unlocked</span>' : `<button type="button" class="btn${P.coins >= B.premiumPrice ? ' primary' : ''}" id="bp-buy">Unlock premium · ${B.premiumPrice}</button>`}</div>
+      <div class="bp-bar"><i style="width:${(100 * (tier + into / B.xpPerTier)) / max}%"></i></div>`;
+    const reward = (r, i, prem) => {
+      const got = i < tier && (!prem || bp.prem), locked = prem && !bp.prem;
+      const c = COSMETIC[r];
+      const body = r.startsWith('coins:') ? `<span class="bp-coin">${(+r.slice(6)).toLocaleString()}</span><span>coins</span>`
+        : `${c?.color ? `<i class="lk-sw" style="background:${c.color}"></i>` : ''}<span>${esc(c?.name || r)}</span><em>${esc(COS_SLOTS[c?.slot] || '')}</em>`;
+      return `<div class="bp-r${prem ? ' prem' : ''}${got ? ' got' : ''}${locked ? ' locked' : ''}"${c ? ` data-id="${r}"` : ''}>${got ? '<span class="bp-tick">✓</span>' : ''}${body}</div>`;
+    };
+    $('lk-items').classList.add('bp');
+    $('lk-items').innerHTML = '<div class="bp-rows"><span></span><span>FREE</span><span>PREMIUM</span></div>'
+      + B.tiers.map(([f, p], i) => `<div class="bp-tier${i < tier ? ' done' : i === tier ? ' next' : ''}"><b>${i + 1}</b>${reward(f, i, false)}${reward(p, i, true)}</div>`).join('');
+    $('lk-msg').textContent = '';
+    for (const card of $('lk-items').querySelectorAll('[data-id]')) {
+      card.onmouseenter = () => this.refreshPreview(card.dataset.id);
+      card.onmouseleave = () => this.refreshPreview();
+    }
+    // start the row at the tier you're on
+    const next = $('lk-items').querySelector('.bp-tier.next') || $('lk-items').lastElementChild;
+    if (next) $('lk-items').scrollLeft = Math.max(0, next.offsetLeft - $('lk-items').offsetLeft - 120);
+    const buy = $('bp-buy');
+    if (buy) buy.onclick = async () => {
+      const r = await this.api('pass');
+      if (r.error) $('lk-msg').textContent = r.error;
+      else { this.opts.sound?.pickup('battery'); $('lk-msg').textContent = 'Premium unlocked! Rewards for the tiers you already reached are in your wardrobe.'; }
+    };
+  }
+
   render() {
     const P = this.profile;
     for (const b of document.querySelectorAll('#dlg-locker .lk-tab')) b.classList.toggle('on', b.dataset.tab === this.tab);
     $('lk-coins').textContent = P.coins.toLocaleString();
     $('lk-look').hidden = this.tab !== 'wardrobe';
+    $('lk-items').classList.remove('bp');
+    if (this.tab === 'pass') return this.renderPass();
     $('lk-slots').innerHTML = Object.entries(COS_SLOTS).map(([k, v]) => `<button type="button" class="lk-slot${k === this.slot ? ' on' : ''}" data-slot="${k}">${v}</button>`).join('');
     for (const b of $('lk-slots').children) b.onclick = () => { this.slot = b.dataset.slot; this.render(); };
     // hidden items (the Owner cape) aren't for sale: they only show up for whoever has them

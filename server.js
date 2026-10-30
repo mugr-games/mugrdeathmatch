@@ -21,7 +21,7 @@ import { createFreeplay } from './freeplay.js';
 import { createProfiles, OWNER_NAME } from './profiles.js';
 import { checkText, badName } from './filter.js';
 import { createReporter } from './moderation.js';
-import { COIN_KILL, COIN_TEAM_WIN, COSMETIC, EMOTE, hasEmote } from './public/js/cosmetics.js';
+import { COIN_KILL, COIN_TEAM_WIN, COSMETIC, EMOTE, hasEmote, BATTLE_PASS } from './public/js/cosmetics.js';
 
 // Packed build (the standalone .exe, see tools/build_exe.mjs): game files are assets inside the executable,
 // keyed by their path from the project root ("public/index.html"). Models still load from a "models" folder beside it.
@@ -1224,8 +1224,24 @@ function broadcast(R, msg) {
 function award(p, n, why) {
   if (!p.profile) return;
   profiles.award(p.profile, n);
+  const up = profiles.passXp(p.profile, n * BATTLE_PASS.xpPerCoin);
   send(p, { t: 'coins', coins: p.profile.coins, add: n, why });
+  if (up) passUp(p, up);
 }
+
+// a battle pass tier reached: tell that player (and show any new look to the room)
+function passUp(p, up) {
+  send(p, { t: 'pass', tier: up.tier, got: up.got, coins: p.profile.coins, bp: profiles.view(p.profile).bp });
+}
+
+// battle pass XP for time spent in a match, once a minute, for real players who are actually playing
+setInterval(() => {
+  for (const R of rooms.values()) for (const p of R.players.values()) {
+    if (p.bot || !p.profile || !p.ps?.alive && !p.respawnAt) continue;
+    const up = profiles.passXp(p.profile, BATTLE_PASS.xpPerMinute);
+    if (up) passUp(p, up);
+  }
+}, 60000);
 
 // shop and wardrobe: POST { token, ... } -> the profile, or { error }
 // accounts: POST /api/register { name, password, token } or /api/login { name, password } -> { token, name, ... }
@@ -1253,6 +1269,7 @@ function profileApi(req, res, route) {
     if (!pr) return json(res, { error: 'Your save code is not valid.' });
     let error = null;
     if (route === 'buy') error = profiles.buy(pr, String(m.item || ''));
+    else if (route === 'pass') error = profiles.buyPass(pr);
     else if (route === 'equip') error = profiles.equip(pr, String(m.slot || ''), m.item === null ? null : String(m.item || ''));
     else if (route === 'image') {
       error = await profiles.setImage(pr, m.data);
@@ -1333,7 +1350,7 @@ const server = http.createServer((req, res) => {
     });
   }
   if (req.method === 'OPTIONS' && p.startsWith('/api/')) { res.writeHead(204, CORS); return res.end(); }
-  if (req.method === 'POST' && /^\/api\/(profile|buy|equip|image|register|login)$/.test(p)) return profileApi(req, res, p.slice(5));
+  if (req.method === 'POST' && /^\/api\/(profile|buy|pass|equip|image|register|login)$/.test(p)) return profileApi(req, res, p.slice(5));
   // approved pictures for image capes and flags
   if (p.startsWith('/img/')) {
     const id = p.slice(5);
@@ -1375,17 +1392,20 @@ function servePage(req, res) {
   res.end(req.method === 'HEAD' ? undefined : html);
 }
 
+// the game's files are public: a copy of the page on another address (GitHub Pages, mugr.lol) may read them too
+const FILE_CORS = { 'access-control-allow-origin': '*' };
+
 function serveFile(res, file, req, fromDisk = false) {
   const type = MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
   if (PACKED && !fromDisk) {
     let body;
     try { body = readGameFile(path.relative(ROOT, file).split(path.sep).join('/')); } catch { res.writeHead(404); return res.end('not found'); }
-    res.writeHead(200, { 'content-type': type, 'content-length': body.length, 'cache-control': 'no-cache' });
+    res.writeHead(200, { 'content-type': type, 'content-length': body.length, 'cache-control': 'no-cache', ...FILE_CORS });
     return res.end(req.method === 'HEAD' ? undefined : body);
   }
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) { res.writeHead(404); return res.end('not found'); }
-    res.writeHead(200, { 'content-type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'content-length': st.size, 'cache-control': 'no-cache' });
+    res.writeHead(200, { 'content-type': type, 'content-length': st.size, 'cache-control': 'no-cache', ...FILE_CORS });
     if (req.method === 'HEAD') return res.end();
     fs.createReadStream(file).pipe(res);
   });

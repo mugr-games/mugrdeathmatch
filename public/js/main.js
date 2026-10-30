@@ -58,7 +58,7 @@ const canvas = $('view');
 // school Chromebooks and other small machines start on the lightest graphics (Options can change it)
 const CHROMEBOOK = /CrOS/.test(navigator.userAgent || '');
 const LOW_END = CHROMEBOOK || (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
-const DEFAULTS = { name: '', color: Math.floor(Math.random() * 8), model: Math.floor(Math.random() * MODELS.length), sens: 3, fov: 90, volume: 0.7, quality: LOW_END || isTouch() ? 'low' : 'medium' };
+const DEFAULTS = { name: '', color: Math.floor(Math.random() * 8), model: Math.floor(Math.random() * MODELS.length), sens: 3, fov: 90, volume: 0.7, music: 0.5, quality: LOW_END || isTouch() ? 'low' : 'medium' };
 let settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('arena.settings') || '{}')); } catch {}
 setBinds(settings.binds);
@@ -141,6 +141,14 @@ async function boot() {
     locker.coins(m.coins);
     if (m.add) coinToast(`+${m.add} coins${m.why === 'win' ? ' · your team won!' : ''}`, m.why === 'win');
   };
+  // a battle pass tier reached: say what came with it
+  game.onPass = (m) => {
+    locker.pass(m);
+    const items = m.got.filter((r) => !r.startsWith('coins:')).map((id) => COSMETIC[id]?.name).filter(Boolean);
+    const coins = m.got.filter((r) => r.startsWith('coins:')).reduce((n, r) => n + +r.slice(6), 0);
+    const got = [...items, coins ? `${coins} coins` : ''].filter(Boolean).join(', ');
+    setTimeout(() => coinToast(`Battle pass tier ${m.tier}!${got ? ' ' + got : ''}`, true), 900);
+  };
   if (touchMode) {
     game.touch = touch = new TouchControls({
       look(dx, dy) {
@@ -213,6 +221,7 @@ function coinToast(text, big) {
 }
 $('btn-shop').onclick = () => { game?.sound.start(); locker?.open('shop'); };
 $('btn-wardrobe').onclick = () => { game?.sound.start(); locker?.open('wardrobe'); };
+$('btn-pass').onclick = () => { game?.sound.start(); locker?.open('pass'); };
 // ------------------------------------------------------------------ accounts
 let acctMode = 'login';
 function setAcctMode(mode) {
@@ -561,7 +570,7 @@ function fillOptions() {
   const ms = $('o-model');
   ms.innerHTML = MODELS.map((m, i) => `<option value="${i}">${m.name}: ${m.blurb}</option>`).join('');
   ms.value = String(settings.model | 0);
-  for (const [id, key, fmt] of [['o-sens', 'sens', (v) => v.toFixed(1)], ['o-fov', 'fov', (v) => v + '°'], ['o-vol', 'volume', (v) => Math.round(v * 100) + '%']]) {
+  for (const [id, key, fmt] of [['o-sens', 'sens', (v) => v.toFixed(1)], ['o-fov', 'fov', (v) => v + '°'], ['o-vol', 'volume', (v) => Math.round(v * 100) + '%'], ['o-music', 'music', (v) => Math.round(v * 100) + '%']]) {
     $(id).value = settings[key];
     $(id + '-v').textContent = fmt(+settings[key]);
     $(id).oninput = () => { settings[key] = +$(id).value; $(id + '-v').textContent = fmt(settings[key]); applyLive(); };
@@ -572,6 +581,7 @@ function fillOptions() {
 function applyLive() {
   if (!game) return;
   game.sound.setVolume(settings.volume);
+  game.sound.lobby(!playing, settings.music ?? 0.5);
   game.resize();
 }
 
@@ -768,6 +778,10 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 // ------------------------------------------------------------------ helpers
+// lobby music: on in the menus, off while you play. Browsers only allow sound after a click or key press.
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => game?.sound.start(), { once: true, capture: true });
+setInterval(() => game?.sound.lobby(!playing, settings.music ?? 0.5), 300);
+
 function show(id) { $(id).hidden = false; }
 function hide(id) { $(id).hidden = true; }
 function closeDialogs() { hide('dlg-binds'); if ($('dlg-tutorial')) hide('dlg-tutorial'); capture = null; hide('dlg-heist'); hide('dlg-leaders'); hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }

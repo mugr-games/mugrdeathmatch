@@ -91,6 +91,45 @@ export const COSMETICS = [
   { id: 'goated_cape', slot: 'back', name: 'GOATED cape', price: 0, hidden: true },
 ];
 
+// ---------------------------------------------------------------- battle pass
+// Season 1, "No Signal": 30 tiers of XP earned by playing (10 XP per coin earned, plus a little for every
+// minute in a match). Each tier has a free reward and a premium one; premium costs coins, never real money.
+// Rewards: an item id, or 'coins:N'. The pass items are hidden from the shop: only the pass gives them.
+const PASS_FINISHES = [
+  ['hazard', 'Hazard stripe', '#f2c40d'], ['circuit', 'Circuit board', '#0b3a1c'], ['sakura', 'Sakura', '#ffc4dc'],
+  ['zebra', 'Zebra', '#e8e8e8'], ['aurora', 'Aurora', '#1a2a5a'], ['static', 'No signal', '#8a8a8a'],
+  ['diamond', 'Diamond', '#bfe6ff'], ['void', 'Void', '#3a1060'], ['backrooms', 'Backrooms', '#d4c06a'], ['mugrhex', 'MUGR hex', '#ff8c14'],
+];
+for (const [f, name, color] of PASS_FINISHES) {
+  COSMETICS.push({ id: 'wskin_bp_' + f, slot: 'wskin', name, price: 0, finish: f, color, hidden: true, pass: true });
+  COSMETICS.push({ id: 'skin_bp_' + f, slot: 'skin', name, price: 0, finish: f, color, hidden: true, pass: true });
+}
+for (const [c, name] of [['dogtag', 'Dog tag'], ['banana', 'Banana'], ['ghost', 'Ghost'], ['controller', 'Controller'], ['tv', 'Dead TV'], ['trophy', 'Trophy']]) {
+  COSMETICS.push({ id: 'charm_bp_' + c, slot: 'charm', name, price: 0, charm: c, hidden: true, pass: true });
+}
+
+export const BATTLE_PASS = {
+  season: 1,
+  name: 'Season 1: No Signal',
+  xpPerTier: 1000,
+  xpPerCoin: 10,
+  xpPerMinute: 20,
+  premiumPrice: 950,
+  // [free, premium] for tiers 1 to 30
+  tiers: [
+    ['coins:50', 'wskin_bp_circuit'], ['charm_bp_dogtag', 'coins:100'], ['coins:50', 'skin_bp_circuit'], ['coins:75', 'charm_bp_ghost'],
+    ['coins:100', 'wskin_bp_sakura'], ['wskin_bp_hazard', 'coins:150'], ['coins:75', 'skin_bp_sakura'], ['coins:100', 'charm_bp_controller'],
+    ['coins:75', 'wskin_bp_aurora'], ['coins:200', 'skin_bp_aurora'], ['coins:75', 'coins:200'], ['skin_bp_hazard', 'wskin_bp_static'],
+    ['coins:100', 'skin_bp_static'], ['coins:100', 'charm_bp_tv'], ['coins:250', 'wskin_bp_diamond'], ['coins:100', 'coins:250'],
+    ['coins:100', 'skin_bp_diamond'], ['charm_bp_banana', 'wskin_bp_void'], ['coins:125', 'skin_bp_void'], ['coins:300', 'charm_bp_trophy'],
+    ['coins:125', 'coins:300'], ['coins:125', 'skin_bp_zebra'], ['coins:150', 'wskin_bp_backrooms'], ['coins:150', 'coins:300'],
+    ['wskin_bp_zebra', 'skin_bp_backrooms'], ['coins:150', 'coins:400'], ['coins:175', 'wskin_bp_mugrhex'], ['coins:175', 'coins:400'],
+    ['coins:200', 'coins:500'], ['coins:500', 'skin_bp_mugrhex'],
+  ],
+};
+// the tier for an amount of XP (0 to 30)
+export const passTier = (xp) => Math.min(BATTLE_PASS.tiers.length, Math.floor((xp || 0) / BATTLE_PASS.xpPerTier));
+
 export const COSMETIC = Object.fromEntries(COSMETICS.map((c) => [c.id, c]));
 
 // Emotes, picked from the wheel (0). Bought in the shop (price in coins; 0: everyone has it). bpm: the music's

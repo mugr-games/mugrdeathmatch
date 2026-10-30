@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const SF = 'https://sketchfab.com/3d-models/';
 export const SLOTS = {
@@ -101,6 +102,61 @@ export function loadSlot(slot) {
 // Each use needs its own copy; skinned models need their skeletons cloned too.
 export function instance(proto) {
   return SkeletonUtils.clone(proto.object);
+}
+
+// A model whose parts never move (a pickup, a crate, a gun in someone else's hands) drawn in a few draw calls
+// instead of one per part: every plain mesh under root becomes part of one mesh per material, in root's own
+// space. keep(o) keeps o and everything under it as it is (a charm that swings); skinned meshes and meshes
+// with several materials stay too. Changes root in place and returns it.
+export function mergeStatic(root, keep = () => false) {
+  root.updateMatrixWorld(true);
+  const inv = root.matrixWorld.clone().invert();
+  const kept = new Set();
+  root.traverse((o) => { if (o !== root && keep(o)) o.traverse((c) => kept.add(c)); });
+  const byMat = new Map(), done = [];
+  root.traverse((o) => {
+    if (!o.isMesh || o.isSkinnedMesh || o.isInstancedMesh || kept.has(o) || Array.isArray(o.material) || !o.visible || o.geometry.morphAttributes?.position) return;
+    const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k);
+    if (!g.attributes.normal) g.computeVertexNormals();
+    if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+    g.clearGroups();
+    const m = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+    g.applyMatrix4(m);
+    // a mirrored part turns inside out when baked: swap each triangle's winding back
+    if (m.determinant() < 0) for (const a of Object.values(g.attributes)) {
+      for (let i = 0; i + 2 < a.count; i += 3) for (let c = 0; c < a.itemSize; c++) { const t = a.getComponent(i + 1, c); a.setComponent(i + 1, c, a.getComponent(i + 2, c)); a.setComponent(i + 2, c, t); }
+    }
+    if (!byMat.has(o.material)) byMat.set(o.material, { geos: [], cast: false, receive: false });
+    const e = byMat.get(o.material);
+    e.geos.push(g);
+    e.cast ||= o.castShadow;
+    e.receive ||= o.receiveShadow;
+    done.push(o);
+  });
+  if (done.length < 2) return root;
+  for (const o of done) {
+    for (const c of [...o.children]) o.parent.attach(c); // anything hung on a merged part stays where it was
+    o.parent.remove(o);
+  }
+  for (const [mat, e] of byMat) {
+    const geo = mergeGeometries(e.geos, false);
+    for (const g of e.geos) g.dispose();
+    if (!geo) continue;
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = e.cast;
+    mesh.receiveShadow = e.receive;
+    mesh.userData.merged = true;
+    root.add(mesh);
+  }
+  return root;
+}
+
+// a merged copy of a model, made once per model and shared (pickups and props of the same kind)
+const mergedProtos = new WeakMap();
+export function staticInstance(proto) {
+  if (!mergedProtos.has(proto)) mergedProtos.set(proto, mergeStatic(instance(proto)));
+  return mergedProtos.get(proto).clone();
 }
 
 function prepMaterials(root) {

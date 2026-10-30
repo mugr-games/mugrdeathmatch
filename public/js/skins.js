@@ -1,11 +1,12 @@
 // Skins and charms: patterned finishes for guns and suits, and the little charms that hang off a gun.
 // A finish is drawn in the material's own shader from each point's position on the model, so any shape
-// takes it without texture coordinates. On the lowest graphics setting a finish is its plain main colour.
+// takes it without texture coordinates. On the lowest graphics setting the same pattern goes on a cheaper
+// Lambert material (no shine).
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { isPotato } from './shaders.js';
 
-// base: the main colour (and the whole look on potato); metal, rough; glsl: the pattern. It reads p (the
+// base: the main colour; metal, rough; glsl: the pattern. It reads p (the
 // point, in the model's own units times the scale) and sets col (colour), and may set emi (glow),
 // rf (roughness) and mt (metalness). Helpers: sh(p) a hash, sn(p) smooth noise, sf(p) layered noise.
 const FINISH = {
@@ -39,6 +40,36 @@ const FINISH = {
     float s = fract((p.x + p.y + p.z) * .35); col = mix(vec3(1., .42, .72), vec3(.98, .96, .98), step(.5, s)); rf = .2;` },
   toxic: { base: '#6cff3a', metal: 0.2, rough: 0.4, glsl: `
     float a = sf(p * .4); col = mix(vec3(.08, .1, .06), vec3(.3, 1., .18), smoothstep(.45, .6, a)); emi = vec3(.25, 1., .12) * smoothstep(.55, .62, a) * 1.2;` },
+  // battle pass, season 1
+  hazard: { base: '#f2c40d', metal: 0.2, rough: 0.5, glsl: `
+    float s = fract((p.x + p.y + p.z) * .22); col = mix(vec3(.98, .76, .04), vec3(.04), step(.5, s)); rf = .45 + .2 * sn(p * 3.);` },
+  circuit: { base: '#0b3a1c', metal: 0.3, rough: 0.4, glsl: `
+    vec3 q = p * .8; vec3 g = abs(fract(q) - .5); float tr = 1. - smoothstep(.0, .05, min(g.x, min(g.y, g.z)));
+    col = vec3(.02, .17, .08); emi = vec3(.2, 1., .45) * tr * step(.45, sh(floor(q))) * 1.6;
+    vec3 f = fract(q * 2.) - .5; col = mix(col, vec3(.85, .68, .28), step(.86, sh(floor(q * 2.))) * (1. - smoothstep(.12, .2, length(f))));` },
+  sakura: { base: '#ffc4dc', metal: 0, rough: 0.55, glsl: `
+    col = mix(vec3(.99, .93, .95), vec3(1., .62, .8), smoothstep(.45, .7, sf(p * .4)));
+    vec3 f = fract(p * 1.2) - .5; col = mix(col, vec3(.93, .28, .55), step(.72, sh(floor(p * 1.2))) * (1. - smoothstep(.15, .3, length(f))));` },
+  zebra: { base: '#e8e8e8', metal: 0, rough: 0.6, glsl: `
+    float s = sin(p.x * 1.6 + p.z * .3 + sf(p * .3) * 7.); col = mix(vec3(.95), vec3(.03), step(.15, s));` },
+  aurora: { base: '#0a0f24', metal: 0.2, rough: 0.35, glsl: `
+    float a = sf(p * .2 + vec3(0., 0., p.x * .1)); float band = smoothstep(.35, .55, a) * (1. - smoothstep(.6, .85, a));
+    col = vec3(.02, .03, .09); emi = mix(vec3(.1, 1., .6), vec3(.65, .2, 1.), sn(p * .12)) * band * 1.7;` },
+  static: { base: '#8a8a8a', metal: 0, rough: 0.6, glsl: `
+    float n = sh(floor(p * 6.)); col = vec3(n * .78 + .1) - step(.5, fract(p.z * 2.)) * .08;` },
+  diamond: { base: '#bfe6ff', metal: 0.6, rough: 0.08, glsl: `
+    col = mix(vec3(.78, .92, 1.), vec3(.38, .66, .95), sh(floor(p * .9))); emi = vec3(.35, .55, .8) * step(.94, sh(floor(p * 4.))) * 1.6; rf = .05; mt = .6;` },
+  void: { base: '#0a0512', metal: 0.3, rough: 0.3, glsl: `
+    float a = sf(p * .35); float e = 1. - smoothstep(.0, .06, abs(a - .5));
+    col = vec3(.02, .01, .04); emi = vec3(.55, .1, 1.) * e * 2.5 + vec3(.1, 0., .2) * sn(p * .5) * .4;` },
+  backrooms: { base: '#d4c06a', metal: 0, rough: 0.85, glsl: `
+    col = mix(vec3(.84, .76, .42), vec3(.76, .68, .34), step(.5, fract((p.x + p.y) * .6)));
+    col = mix(col, vec3(.52, .44, .22), smoothstep(.55, .8, sf(p * .18)) * .65);` },
+  mugrhex: { base: '#ff8c14', metal: 0.3, rough: 0.4, glsl: `
+    vec2 q = (p.xy + p.yz * .5) * .6, r = vec2(1., 1.732), h = r * .5;
+    vec2 a = mod(q, r) - h, b = mod(q - h, r) - h, g = dot(a, a) < dot(b, b) ? a : b;
+    float edge = smoothstep(.4, .46, max(abs(g.x) * .866 + abs(g.y) * .5, abs(g.y)));
+    col = mix(vec3(.08, .08, .09), vec3(1., .55, .08), edge); emi = vec3(1., .45, .05) * edge * .6;` },
 };
 export const FINISH_IDS = Object.keys(FINISH);
 
@@ -57,8 +88,8 @@ const GLSL_HELPERS = `
 export function finishMaterial(id, scale = 1, dim = 1) {
   const F = FINISH[id];
   if (!F) return null;
-  if (isPotato()) return new THREE.MeshLambertMaterial({ color: new THREE.Color(F.base).multiplyScalar(dim) });
-  const m = new THREE.MeshStandardMaterial({ color: F.base, metalness: F.metal, roughness: F.rough });
+  const potato = isPotato();
+  const m = potato ? new THREE.MeshLambertMaterial({ color: F.base }) : new THREE.MeshStandardMaterial({ color: F.base, metalness: F.metal, roughness: F.rough });
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vSkinP;')
@@ -75,7 +106,7 @@ export function finishMaterial(id, scale = 1, dim = 1) {
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nif (skMt >= 0.) metalnessFactor = skMt;')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += skEmi;');
   };
-  m.customProgramCacheKey = () => `skin:${id}:${scale}:${dim}`;
+  m.customProgramCacheKey = () => `skin:${id}:${scale}:${dim}:${potato}`;
   return m;
 }
 
@@ -210,6 +241,55 @@ const CHARM_BUILD = {
     add(g, cmat('#f2c14a', 0.7), 0, 0, -0.95);
     add(new RoundedBoxGeometry(1.36, 0.26, 0.26, 2, 0.1), cmat('#c27a32', 0.8), 0, 0, -0.52); // the crust
     for (const [x, z] of [[-0.2, -0.8], [0.18, -0.95], [0, -1.25]]) for (const s of [-1, 1]) add(new THREE.CylinderGeometry(0.13, 0.13, 0.04, 12), cmat('#b3261e', 0.6), x, s * 0.12, z);
+  },
+  // battle pass, season 1
+  dogtag(add) {
+    add(new RoundedBoxGeometry(0.85, 0.08, 1.35, 2, 0.04), cmat('#c9ced6', 0.3, 1), 0, 0, -1.05);
+    add(new THREE.CylinderGeometry(0.07, 0.07, 0.1, 10), cmat('#2a2d33', 0.6), 0, 0, -0.5);
+    for (const z of [-0.85, -1.05, -1.25]) add(new THREE.BoxGeometry(0.55, 0.1, 0.07), cmat('#7d838c', 0.5, 0.8), 0, 0, z);
+  },
+  banana(add) {
+    const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(-0.15, 0, -0.45), new THREE.Vector3(0.75, 0, -1.05), new THREE.Vector3(-0.1, 0, -1.65));
+    add(new THREE.TubeGeometry(curve, 12, 0.22, 8), cmat('#ffd83a', 0.5));
+    add(new THREE.CylinderGeometry(0.06, 0.09, 0.16, 6), cmat('#5a4020', 0.8), -0.15, 0, -0.38, Math.PI / 2);
+    add(sph(0.08, 6, 5), cmat('#3a2a14', 0.8), -0.1, 0, -1.67);
+  },
+  ghost(add) {
+    const white = cmat('#f2f4ff', 0.6, 0, 0.25);
+    add(sph(0.5, 16, 10), white, 0, 0, -0.95);
+    add(new THREE.CylinderGeometry(0.5, 0.56, 0.6, 16), white, 0, 0, -1.25, Math.PI / 2);
+    for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; add(new THREE.ConeGeometry(0.14, 0.25, 6), white, Math.cos(a) * 0.4, Math.sin(a) * 0.4, -1.62, -Math.PI / 2); }
+    for (const y of [-0.17, 0.17]) add(sph(0.09, 8, 6), cmat('#111111', 0.3), 0.44, y, -0.92);
+    add(sph(0.08, 8, 6).scale(1, 1, 1.4), cmat('#111111', 0.3), 0.47, 0, -1.15);
+  },
+  controller(add) {
+    const body = cmat('#22252c', 0.45);
+    add(new RoundedBoxGeometry(1.5, 0.32, 0.8, 2, 0.14), body, 0, 0, -1.0);
+    for (const x of [-0.6, 0.6]) add(new THREE.CylinderGeometry(0.26, 0.26, 0.32, 12), body, x, 0, -1.28);
+    add(new THREE.BoxGeometry(0.34, 0.1, 0.11), cmat('#d6d9de', 0.4), -0.42, 0.17, -0.98);
+    add(new THREE.BoxGeometry(0.11, 0.1, 0.34), cmat('#d6d9de', 0.4), -0.42, 0.17, -0.98);
+    for (const [c, dx, dz] of [['#3ad66a', 0, 0.12], ['#e5303a', 0.12, 0], ['#2a7aff', -0.12, 0], ['#ffd23a', 0, -0.12]]) add(sph(0.06, 8, 6), cmat(c, 0.3, 0, 0.4), 0.42 + dx, 0.17, -0.98 + dz);
+  },
+  tv(add) {
+    add(new RoundedBoxGeometry(1.3, 0.8, 1.05, 2, 0.12), cmat('#3a3530', 0.6), 0, 0, -1.08);
+    const screen = faceMat('static', (g, S) => {
+      const d = g.createImageData(S, S);
+      for (let i = 0; i < d.data.length; i += 4) { const v = Math.random() * 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; }
+      g.putImageData(d, 0, 0);
+    }, 64);
+    for (const s of [-1, 1]) {
+      const f = new THREE.PlaneGeometry(1.02, 0.8).rotateX(Math.PI / 2);
+      if (s < 0) f.rotateZ(Math.PI);
+      add(f, screen, 0, s * 0.41, -1.08);
+    }
+    for (const x of [-0.25, 0.25]) add(new THREE.CylinderGeometry(0.025, 0.025, 0.6, 5), cmat('#9a9fa8', 0.3, 1), x, 0, -0.42, Math.PI / 2, x > 0 ? 0.5 : -0.5);
+  },
+  trophy(add) {
+    const gold = cmat('#e8b021', 0.22, 1);
+    add(new THREE.CylinderGeometry(0.5, 0.2, 0.7, 16), gold, 0, 0, -0.85, Math.PI / 2);
+    add(new THREE.CylinderGeometry(0.08, 0.08, 0.35, 8), gold, 0, 0, -1.35, Math.PI / 2);
+    add(new RoundedBoxGeometry(0.62, 0.4, 0.2, 2, 0.05), cmat('#2a2016', 0.7), 0, 0, -1.6);
+    for (const s of [-1, 1]) add(new THREE.TorusGeometry(0.17, 0.05, 6, 12, Math.PI), gold, s * 0.5, 0, -0.85, 0, 0, s > 0 ? -Math.PI / 2 : Math.PI / 2);
   },
 };
 export const CHARM_IDS = Object.keys(CHARM_BUILD);

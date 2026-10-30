@@ -14,7 +14,7 @@ import { loadMap } from './maps.js';
 import { stepProj } from './projectiles.js';
 import { makeSky, haloMaterial, setPotato, setDetail } from './shaders.js';
 import { Occlusion, setDrawn, seesAny, HIDDEN_LAYER } from './occlusion.js';
-import { loadSlot, instance, WEAPON_SLOT, ITEM_SLOT } from './assets.js';
+import { loadSlot, instance, staticInstance, mergeStatic, WEAPON_SLOT, ITEM_SLOT } from './assets.js';
 import { Synth } from './synth.js';
 import { Hud } from './hud.js';
 import { Avatar, ZOMBIE_SKIN, MODELS, HOLDS, holdPoints, reachArm, avatarMaterials, markerAt } from './avatar.js';
@@ -203,7 +203,11 @@ class Character {
   async setWeapon(slot) {
     if (slot === this.wslot) return;
     this.wslot = slot;
-    if (this.weapon) { this.mount.remove(this.weapon); this.weapon = null; }
+    if (this.weapon) {
+      this.mount.remove(this.weapon);
+      this.weapon.traverse((o) => { if (o.userData.merged) o.geometry.dispose(); }); // its merged copy is its own
+      this.weapon = null;
+    }
     // zombies fight with their fists: nothing in their hands
     if (this.avatar) this.avatar.unarmed = !slot || slot === 'claws';
     if (!slot || slot === 'claws') { this.avatar?.setHold(null); return; }
@@ -213,6 +217,9 @@ class Character {
     this.weapon.position.x = 4;
     this.weapon.rotation.x = HOLDS[slot]?.spin || 0;
     gunLook(this.weapon, this.cos, proto.object?.userData.size || proto.userData?.size, HOLDS[slot]);
+    // someone else's gun never moves its parts: draw it in a few calls (the charm still swings on its own)
+    const charm = this.weapon.userData.charm;
+    mergeStatic(this.weapon, (o) => o === charm);
     this.mount.add(this.weapon);
     this.avatar?.setHold(slot, proto.object?.userData.size || proto.userData?.size, 4, proto.object);
     if (this.root.userData.drawn === false) this.weapon.traverse((o) => o.layers.set(HIDDEN_LAYER));
@@ -598,6 +605,7 @@ export class Game {
       else if (m.t === 'voice') this.onVoice?.(m);
       else if (SOCIAL.has(m.t)) this.onSocial?.(m);
       else if (m.t === 'coins' && !this.connected) this.onCoins?.(m);
+      else if (m.t === 'pass' && !this.connected) this.onPass?.(m);
       else if (m.t === 'error') this.settle(new Error(m.text));
       else if (m.t === 'left') this.connected = false;
       else if (this.connected || this.watching) this.onMessage(m);
@@ -626,15 +634,23 @@ export class Game {
   }
 
   // the kill cam (like CS): just over your killer's shoulder, looking where they look, not through walls
+  // (null when there's nothing sure to show yet: the body camera carries on instead)
   killCamera(pl, dt) {
-    const yaw = pl.yaw, pitch = Math.max(-70, Math.min(70, pl.pitch || 0));
-    const head = [pl.pos[0], pl.pos[1], pl.pos[2] + 26];
+    // where they are this frame, or their last snapshot if they haven't been placed yet
+    const snap = pl.snaps[pl.snaps.length - 1];
+    const placed = Number.isFinite(pl.yaw) && pl.pos?.every(Number.isFinite);
+    const pos = placed ? pl.pos : snap && [snap.o[0], snap.o[1], snap.o[2] + 36];
+    const yaw = placed ? pl.yaw : snap?.yaw;
+    if (!pos || !pos.every(Number.isFinite) || !Number.isFinite(yaw)) return null;
+    const pitch = Math.max(-70, Math.min(70, (placed ? pl.pitch : snap.pitch) || 0));
+    const head = [pos[0], pos[1], pos[2] + 26];
     const f = viewDir(yaw, pitch), y = yaw * DEG, right = [Math.sin(y), -Math.cos(y), 0];
     const want = [head[0] - f[0] * 88 + right[0] * 30, head[1] - f[1] * 88 + right[1] * 30, head[2] - f[2] * 88 + 14];
     const goal = this.world.trace(head, want, [-5, -5, -5], [5, 5, 5]).endpos;
-    if (!this.killEye) this.killEye = goal.slice();
+    if (!this.killEye?.every(Number.isFinite)) this.killEye = goal.slice();
     const k = Math.min(1, dt * 14);
     for (let i = 0; i < 3; i++) this.killEye[i] += (goal[i] - this.killEye[i]) * k;
+    if (!this.killEye.every(Number.isFinite)) { this.killEye = null; return null; }
     return { eye: this.killEye.slice(), yaw, pitch };
   }
 
@@ -752,6 +768,7 @@ export class Game {
       case 'join': this.info.set(m.p.id, m.p); if (m.p.id !== this.myId) this.hud.say('', `${m.p.name} joined the game`, true); break;
       case 'leave': { const i = this.info.get(m.id); if (i) this.hud.say('', `${i.name} left the game`, true); this.info.delete(m.id); this.removePlayer(m.id); break; }
       case 'coins': this.onCoins?.(m); break;
+      case 'pass': this.onPass?.(m); break;
       case 'heist': this.hv.message(m); break;
       case 'fp': this.fv.message(m); break;
       case 'info': this.info.set(m.p.id, { ...this.info.get(m.p.id), ...m.p }); this.removePlayer(m.p.id); break;
@@ -1159,7 +1176,7 @@ export class Game {
       const g = new THREE.Group();
       g.position.set(o[0], o[1], o[2]);
       if (kind === 'barrel') g.add(...explosiveBarrel());
-      else loadSlot('crate').then((proto) => g.add(instance(proto)));
+      else loadSlot('crate').then((proto) => g.add(staticInstance(proto)));
       g.visible = !!up;
       this.world.setEnabled(box, !!up);
       this.scene.add(g);
@@ -1284,7 +1301,7 @@ export class Game {
       const slot = ITEM_SLOT[kind] || WEAPON_SLOT[kind];
       loadSlot(slot).then((proto) => {
         const g = new THREE.Group();
-        const model = instance(proto);
+        const model = staticInstance(proto);
         if (kind === 'vial') model.scale.setScalar(0.6);
         if (kind === 'megahealth' || kind === 'heavyarmor') model.scale.setScalar(1.35);
         const spin = new THREE.Group();
@@ -2215,8 +2232,8 @@ export class Game {
       const rd = this.ragdolls.find((r) => r.id === this.myId);
       // the kill cam: once your body has hit the floor, watch whoever killed you until you respawn
       const kp = this.killCam && now - this.deathAt > 0.9 && this.players.get(this.killCam.id);
-      if (kp && kp.obj?.root.visible && kp.snaps.length) {
-        killCam = this.killCamera(kp, dt);
+      killCam = kp && kp.obj?.root.visible && kp.snaps.length ? this.killCamera(kp, dt) : null;
+      if (killCam) {
         eye = killCam.eye; yaw = killCam.yaw; pitch = killCam.pitch; roll = 0;
       } else if (rd) {
         // death camera: back off from your body and watch it fall, without going through walls
