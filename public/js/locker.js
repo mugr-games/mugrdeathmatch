@@ -23,8 +23,8 @@ export function saveToken() {
   return t;
 }
 
-// a small renderer of its own, only running while the dialog is open
-class Preview {
+// a small renderer of its own, only running while the dialog is open (profile cards use one too)
+export class Preview {
   constructor(canvas) {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });

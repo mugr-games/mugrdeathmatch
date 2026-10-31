@@ -33,7 +33,7 @@ import { moveAny, VEHICLES, seatPos } from './vehicle.js';
 const DEG = Math.PI / 180;
 const MUZZLE = new THREE.Vector3();
 // friends, messages, notices and moderation: handled by the page (social.js) whether or not we're in a match
-const SOCIAL = new Set(['friends', 'friend-error', 'dm', 'dms', 'sys', 'mod', 'mod-accounts', 'mod-account', 'banned', 'announce', 'refresh', 'review']);
+const SOCIAL = new Set(['friends', 'friend-error', 'dm', 'dms', 'sys', 'mod', 'mod-accounts', 'mod-account', 'banned', 'announce', 'refresh', 'review', 'profile', 'profile-error', 'blocked', 'report-sent', 'reports']);
 const INTERP = 0.1; // seconds behind the server for remote players
 const TEAM_COLOR = { red: 3, blue: 1 }; // suit colour index for each team
 const TEAM_RGB = { red: '#e0473a', blue: '#3a7fe0' };
@@ -833,7 +833,7 @@ export class Game {
       case 'heist': this.hv.message(m); break;
       case 'fp': this.fv.message(m); break;
       case 'info': this.info.set(m.p.id, { ...this.info.get(m.p.id), ...m.p }); this.removePlayer(m.p.id); break;
-      case 'chat': { const i = this.info.get(m.id); this.hud.say(i ? i.name : '?', m.text); this.sound.chat(); break; }
+      case 'chat': { const i = this.info.get(m.id); if (this.isBlocked?.(i)) break; this.hud.say(i ? i.name : '?', m.text); this.sound.chat(); break; } // blocked players' chat isn't shown
       case 'emote': {
         const pl = m.id !== this.myId && this.players.get(m.id);
         if (!pl) break;

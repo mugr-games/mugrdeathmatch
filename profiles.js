@@ -201,9 +201,11 @@ export function createProfiles(file) {
   const images = cachedStore(mk(path.join(path.dirname(file), 'images.json'), 'mugr:i:'), 'images', storage);
   // the workshop (workshop.js): published levels and charms, their ratings and the index
   const workshop = cachedStore(mk(path.join(path.dirname(file), 'workshop.json'), 'mugr:w:'), 'workshop', storage);
+  // players' reports of other players' looks, bios and names, for staff (the newest 200)
+  const reports = cachedStore(mk(path.join(path.dirname(file), 'reports.json'), 'mugr:r:'), 'reports', storage);
   console.log(`[profiles] saving coins, cosmetics and accounts to ${profiles.name}`);
   if (profiles.kind === 'file' && (process.env.RENDER || process.env.NODE_ENV === 'production')) console.warn('[profiles] WARNING: the host forgets files when it sleeps or restarts. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to keep accounts.');
-  const stores = [profiles, accounts, dms, bans, boards, images, workshop];
+  const stores = [profiles, accounts, dms, bans, boards, images, workshop, reports];
 
   // the leaderboard: the top 100 signed-in players in each category, kept as one saved document
   let board = null;
@@ -501,6 +503,8 @@ export function createProfiles(file) {
       if (!me) return 'Sign in to add friends.';
       if (!other) return `There's no player called ${String(otherName || '').slice(0, 16)}.`;
       if (okey === meKey) return 'That\'s you!';
+      if ((action === 'add' || action === 'accept') && me.blocked?.includes(okey)) return `Unblock ${other.name} first.`;
+      if ((action === 'add' || action === 'accept') && other.blocked?.includes(meKey)) return `${other.name} isn't taking friend requests.`;
       for (const a of [me, other]) { a.friends ||= []; a.incoming ||= []; a.outgoing ||= []; }
       const drop = (list, k) => { const i = list.indexOf(k); if (i >= 0) list.splice(i, 1); };
       if (action === 'add' || action === 'accept') {
@@ -523,6 +527,90 @@ export function createProfiles(file) {
       return null;
     },
     areFriends: async (a, b) => !!(await accounts.get(a))?.friends?.includes(b),
+
+    // ---------------------------------------------------------------- profiles: bio, look, blocks, reports
+    // what anyone can see of an account, or null: its bio, a few stats and the look it last played in
+    async publicProfile(name) {
+      const acc = await accounts.get(String(name || '').trim().toLowerCase());
+      const pr = acc && (await load(acc.token));
+      if (!pr) return null;
+      const s = pr.stats || {};
+      return {
+        name: acc.name, created: acc.created || 0, bio: pr.bio || '', look: pr.look || null, pr,
+        role: pr.owner ? 'owner' : pr.role || null,
+        stats: { kills: s.kills || 0, deaths: s.deaths || 0, wins: s.wins || 0, matches: s.matches || 0 },
+      };
+    },
+    setBio(pr, text) { pr.bio = text; touch(pr); },
+    // the suit colour and character someone last played as (their profile shows them like that when offline)
+    setLook(pr, color, model) {
+      if (pr.look?.c === color && pr.look?.m === model) return;
+      pr.look = { c: color, m: model };
+      touch(pr);
+    },
+    // block (on) or unblock someone: a blocked player can't ask to be friends, and any friendship or request
+    // between you ends. Returns an error or null.
+    async block(meKey, otherName, on) {
+      const me = await accounts.get(meKey);
+      const okey = String(otherName || '').trim().toLowerCase();
+      const other = NAME.test(okey) ? await accounts.get(okey) : null;
+      if (!me) return 'Sign in to block players.';
+      if (!other) return `There's no player called ${String(otherName || '').slice(0, 16)}.`;
+      if (okey === meKey) return 'You can\'t block yourself.';
+      me.blocked ||= [];
+      const i = me.blocked.indexOf(okey);
+      if (on) {
+        if (i < 0) {
+          if (me.blocked.length >= 500) return 'Your block list is full.';
+          me.blocked.push(okey);
+        }
+        for (const a of [me, other]) { a.friends ||= []; a.incoming ||= []; a.outgoing ||= []; }
+        const drop = (list, k) => { const j = list.indexOf(k); if (j >= 0) list.splice(j, 1); };
+        drop(me.friends, okey); drop(other.friends, meKey);
+        drop(me.incoming, okey); drop(other.outgoing, meKey);
+        drop(me.outgoing, okey); drop(other.incoming, meKey);
+        accounts.save(okey, other);
+      } else if (i >= 0) me.blocked.splice(i, 1);
+      accounts.save(meKey, me);
+      return null;
+    },
+    // the account keys this account has blocked
+    blockedBy: async (key) => (await accounts.get(key))?.blocked || [],
+    async addReport(rec) {
+      const list = (await reports.get('_list')) || [];
+      rec.id = crypto.randomBytes(6).toString('hex');
+      list.push(rec);
+      if (list.length > 200) list.splice(0, list.length - 200);
+      reports.save('_list', list);
+      return rec;
+    },
+    // open reports, newest first
+    listReports: async () => ((await reports.get('_list')) || []).slice().reverse().slice(0, 30),
+    async closeReport(id) {
+      const list = (await reports.get('_list')) || [];
+      const rec = list.find((r) => r.id === id);
+      reports.save('_list', list.filter((r) => r.id !== id));
+      return rec || null;
+    },
+    // staff: clear a bio, or turn down the picture on someone's cape or flag
+    async clearBio(name) {
+      const pr = await this.profileOf(name);
+      if (!pr) return null;
+      pr.bio = '';
+      touch(pr);
+      return pr;
+    },
+    async rejectImageOf(name) {
+      const pr = await this.profileOf(name);
+      if (!pr?.img) return null;
+      const rec = await images.get(pr.img);
+      if (rec) { rec.status = 'rejected'; images.save(pr.img, rec); }
+      for (const t of rec?.tokens || [tokenOf(pr)]) {
+        const o = await profiles.get(t);
+        if (o && o.img === pr.img) { o.imgSt = 'rejected'; profiles.save(t, o); }
+      }
+      return rec?.tokens || [tokenOf(pr)];
+    },
 
     // ---------------------------------------------------------------- direct messages (the last 100 per pair)
     async dmHistory(a, b) {

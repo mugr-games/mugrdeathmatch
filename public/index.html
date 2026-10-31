@@ -385,6 +385,61 @@ body.touch #netinfo { display: none; }
 /* ---------- friends, messages, moderation ---------- */
 #menu nav .badge { display: inline-block; min-width: 18px; padding: 1px 5px; margin-left: 6px; border-radius: 9px; background: #e0473a; color: #fff; font-size: 11px; text-align: center; vertical-align: middle; text-shadow: none; }
 #dlg-friends, #dlg-mod, #dlg-voice { width: min(820px, calc(100vw - 32px)); }
+/* profile cards */
+#dlg-profile { width: min(720px, calc(100vw - 32px)); z-index: 32; }
+.pf-body { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 18px; }
+.pf-look { border: 1px solid var(--line); border-radius: 12px; background: radial-gradient(circle at 50% 38%, rgba(255,255,255,.08), rgba(0,0,0,.3) 70%); overflow: hidden; }
+.pf-look canvas { display: block; width: 100%; height: 320px; }
+#pf-name { margin: 2px 0 6px; font: 700 22px var(--ui); color: #fff; overflow-wrap: anywhere; }
+.pf-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.pf-tags span { padding: 2px 9px; border-radius: 999px; background: rgba(255,255,255,.08); color: var(--text-dim); font: 600 11px var(--ui); }
+.pf-tags .on { color: #6dff95; } .pf-tags .role { color: var(--accent); }
+#pf-bio p { margin: 0 0 12px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+#pf-bio p.empty { color: var(--text-dim); font-style: italic; }
+#pf-bio textarea { width: 100%; min-height: 76px; resize: vertical; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(0,0,0,.35); color: #fff; font: 14px/1.45 var(--ui); outline: none; }
+#pf-bio textarea:focus { border-color: var(--accent); }
+.pf-bio-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0 12px; }
+.pf-bio-row small { color: var(--text-dim); }
+.pf-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0 0 14px; }
+.pf-stats:empty { display: none; }
+.pf-stats div { padding: 7px 6px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.04); text-align: center; }
+.pf-stats b { display: block; color: #fff; font: 700 17px var(--num); }
+.pf-stats small { color: var(--text-dim); font: 600 10px var(--ui); letter-spacing: .08em; text-transform: uppercase; }
+.pf-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf-actions .btn.danger, #pf-report .btn.danger, .review .btn.danger { border-color: rgba(224,71,58,.75); color: #ffb0a6; }
+#pf-report { margin-top: 12px; padding: 12px 14px; border: 1px solid rgba(224,71,58,.45); border-radius: 10px; background: rgba(224,71,58,.07); }
+#pf-report p { margin: 4px 0 8px; }
+#pf-report .pf-what { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 10px; }
+#pf-report .pf-what label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+#pf-report input[type=text] { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(0,0,0,.35); color: #fff; outline: none; }
+#pf-report .actions { margin-top: 10px; }
+#pf-msg { min-height: 1.3em; margin: 10px 0 0; color: var(--text-dim); }
+#pf-msg.err { color: #ff7a6a; }
+.pf-link { cursor: pointer; }
+.pf-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+#menu .account #acct-name { cursor: pointer; }
+#menu .account #acct-name:hover { text-decoration: underline; text-underline-offset: 3px; }
+#dlg-players { width: min(520px, calc(100vw - 32px)); }
+#dlg-players .hint { margin-top: -6px; }
+.pls-row { cursor: pointer; border-radius: 6px; }
+.pls-row:hover { background: rgba(255,255,255,.05); }
+.pls-score { min-width: 2.5ch; text-align: right; font: 700 14px var(--num); color: #fff; margin-right: 6px; }
+.pls-blocked { padding: 1px 6px; border-radius: 999px; background: rgba(224,71,58,.25); color: #ffb0a6; font: 600 10px var(--ui); }
+.rp-list { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
+.rp-item { padding: 10px 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: rgba(255,255,255,.03); }
+.rp-item small { color: #9aa0aa; }
+.rp-item blockquote { margin: 8px 0; padding: 6px 10px; border-left: 3px solid #e0473a; background: rgba(0,0,0,.25); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rp-item .rp-note { margin: 6px 0; color: #c8ccd4; }
+.rp-item > span { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+@media (max-width: 640px) {
+  .pf-body { grid-template-columns: 1fr; }
+  .pf-look canvas { height: 220px; }
+  .pf-stats { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-height: 500px) and (min-width: 600px) {
+  #dlg-profile .pf-body { grid-template-columns: 200px minmax(0, 1fr); }
+  .pf-look canvas { height: calc(100vh - 110px); }
+}
 /* ---------- the heist ---------- */
 #dlg-heist { width: min(560px, calc(100vw - 32px)); }
 .hz-choices { display: grid; gap: 8px; margin: 14px 0 6px; }
@@ -940,6 +995,7 @@ body.touch.fp-on #chatlog { top: calc(222px + env(safe-area-inset-top)); }
     <nav>
       <button id="btn-resume" class="big" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg><span>Resume</span></button>
       <button id="btn-join" class="big" disabled><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg><span>Play</span></button>
+      <button id="btn-players" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c.6-3.3 3-5 6-5s5.4 1.7 6 5"/><path d="M16 4.6a3 3 0 0 1 0 6.3M18 14.4c1.7.7 2.8 2.2 3 4.6"/></svg><span>Players</span></button>
       <button id="btn-invite" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>Copy invite</span></button>
       <button id="btn-disconnect" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg><span>Leave game</span></button>
       <button id="btn-freeroam" class="feature"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 16l1.5-5a2 2 0 0 1 2-1.5h7a2 2 0 0 1 2 1.5L19 16"/><rect x="3" y="15" width="18" height="4" rx="1.5"/><circle cx="7.5" cy="19.5" r="1.5"/><circle cx="16.5" cy="19.5" r="1.5"/><path d="M8 6l2-2h4l2 2"/></svg><span>Free Roam<small>Mugr County: cars, cops, robberies</small></span></button>
@@ -1154,6 +1210,27 @@ body.touch.fp-on #chatlog { top: calc(222px + env(safe-area-inset-top)); }
   <div class="actions"><button type="button" class="btn" id="vc-close">Close</button></div>
 </div>
 
+<div class="dialog" id="dlg-profile" hidden role="dialog" aria-labelledby="pf-name">
+  <div class="pf-body">
+    <div class="pf-look"><canvas id="pf-canvas" aria-label="How they look"></canvas></div>
+    <div class="pf-info">
+      <h2 id="pf-name"></h2>
+      <p class="pf-tags" id="pf-tags"></p>
+      <div id="pf-bio"></div>
+      <div class="pf-stats" id="pf-stats"></div>
+      <div class="pf-actions" id="pf-actions"></div>
+      <div id="pf-report" hidden></div>
+      <p id="pf-msg" role="status"></p>
+    </div>
+  </div>
+  <div class="actions"><button type="button" class="btn" id="pf-close">Close</button></div>
+</div>
+<div class="dialog" id="dlg-players" hidden role="dialog" aria-labelledby="pls-title">
+  <h2 id="pls-title">Players in this game</h2>
+  <p class="hint">Click someone to see their profile, add them as a friend, block or report them.</p>
+  <ul class="fr-list" id="pls-list"></ul>
+  <div class="actions"><button type="button" class="btn" id="pls-close">Close</button></div>
+</div>
 <div class="dialog" id="dlg-friends" hidden role="dialog" aria-labelledby="dlg-friends-title">
   <h2 id="dlg-friends-title">Friends</h2>
   <div id="fr-guest" hidden>

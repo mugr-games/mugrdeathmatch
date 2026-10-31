@@ -209,10 +209,15 @@ export class Voice {
     this.live = live && !!this.stream;
   }
 
+  // someone was blocked or unblocked
+  refreshBlocks() {
+    for (const p of this.peers.values()) this.volume(p);
+  }
+
   volume(p) {
     if (!p.audio) return;
     // nobody hears a listen-only member, whatever their browser sends
-    p.audio.muted = this.deaf || p.listen;
+    p.audio.muted = this.deaf || p.listen || !!this.opts.blocked?.(p.name); // and nobody you've blocked
     p.audio.volume = this.prefs.volumes[p.name] ?? 1;
   }
 

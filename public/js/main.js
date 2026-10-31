@@ -17,6 +17,7 @@ import { DEVLOG } from './devlog.js';
 import { api, pageUrl, SERVER } from './net.js';
 import { LevelEditor } from './editor.js';
 import { WorkshopView } from './workshopview.js';
+import { ProfileCard, PROFILE_TYPES } from './profile.js';
 
 // the emote wheel (0)
 const wheel = new EmoteWheel((id) => game?.emote(id), (id) => ownsEmote(id));
@@ -76,6 +77,7 @@ let pad = null;
 let social = null;
 let voice = null; // voice chat channels
 let heistMenu = null; // the heist dialog and planning screen
+let profileCard = null; // the card you get by clicking a player
 let editor = null; // the level editor (draws instead of the game while it's open)
 let workshop = null; // the Workshop screen
 let serverInfo = null;
@@ -100,7 +102,7 @@ async function boot() {
   game.onLockedEmote = (id) => status(`${EMOTE[id].name} is in the shop (Emotes) for ${EMOTE[id].price} coins.`);
   locker = new Locker({ settings, save, sound: game.sound, onLook: (color, model) => game.send({ t: 'color', color, model }), onTheme: menuTheme });
   game.token = locker.token;
-  voice = new Voice({ game, account: () => account, signIn: () => $('btn-account').click() });
+  voice = new Voice({ game, account: () => account, signIn: () => $('btn-account').click(), blocked: (name) => !!profileCard?.isBlocked(name) });
   game.setThirdPerson(!!settings.thirdPerson);
   heistMenu = new HeistMenu({
     game: () => game, play, resume, status, name: () => settings.name, leave: () => { $('btn-disconnect').click(); closeLobby(); show('menu'); },
@@ -128,7 +130,12 @@ async function boot() {
   social = new Social({
     game, account: () => account, join: (code) => play({ t: 'join', room: code }, $('l-err'), code),
     refresh: () => locker?.load(), maps: () => serverInfo?.maps || [], cosmetics: COSMETICS,
+    profile: (who) => profileCard?.open(who),
   });
+  // profile cards: clicking a player shows how they look, their bio, and friend, block and report buttons
+  profileCard = new ProfileCard({ game, social, voice, account: () => account, signIn: () => $('btn-account').click() });
+  const toSocial = game.onSocial;
+  game.onSocial = (m) => (PROFILE_TYPES.has(m.t) ? profileCard.receive(m) : toSocial(m));
   game.pad = pad = new GamepadInput({
     sens: () => settings.sens / 3,
     look(dyaw, dpitch) {
@@ -212,7 +219,7 @@ async function boot() {
     openMenu();
     $('room-tag').hidden = true;
     $('btn-join').querySelector('span').textContent = 'Play';
-    $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = true;
+    $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = $('btn-players').hidden = true;
     status('Disconnected from the server.');
   };
   // new players: how to play, buying guns and the loadout (once; again from Options → How to play)
@@ -249,7 +256,7 @@ function openEditor() {
     game.leave();
     $('room-tag').hidden = true;
     $('btn-join').querySelector('span').textContent = 'Play';
-    $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = true;
+    $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = $('btn-players').hidden = true;
   }
   // the menu's background game stops while you build
   clearInterval(game.watchTimer);
@@ -341,8 +348,9 @@ function renderBoard() {
   const list = lbData?.[lbTab] || [];
   const fmt = (v) => (lbTab === 'kd' ? v.toFixed(2) : lbTab === 'parkour' ? `${Math.floor(v / 60)}:${(v % 60).toFixed(2).padStart(5, '0')}` : v.toLocaleString());
   $('lb-list').innerHTML = lbData === null ? '<li class="empty">Loading…</li>' : lbData.error ? `<li class="empty">${esc(lbData.error)}</li>`
-    : list.map((e, i) => `<li class="${e.n === account ? 'me' : ''}"><span class="rank">${i + 1}</span><span class="who">${esc(e.n)}</span><span class="val">${fmt(e.v)}</span></li>`).join('')
+    : list.map((e, i) => `<li class="${e.n === account ? 'me' : ''}"><span class="rank">${i + 1}</span><span class="who pf-link" data-profile="${esc(e.n)}">${esc(e.n)}</span><span class="val">${fmt(e.v)}</span></li>`).join('')
       || `<li class="empty">Nobody here yet${BOARDS.find((b) => b[0] === lbTab)[2] ? ` (${BOARDS.find((b) => b[0] === lbTab)[2].toLowerCase()})` : ''}. Play a match to get on the board!</li>`;
+  for (const el of $('lb-list').querySelectorAll('[data-profile]')) el.onclick = () => profileCard?.open({ name: el.dataset.profile });
   const s = locker?.profile.stats || {};
   const kd = (s.kills || 0) / Math.max(1, s.deaths || 0);
   const rows = [['Kills', s.kills], ['Deaths', s.deaths], ['K/D', kd.toFixed(2)], ['Headshots', s.headshots], ['Wins', s.wins], ['Matches', s.matches], ['Best streak', s.streak], ['Zombie kills', s.zkills], ['Best zombie round', s.round], ['Coins earned', s.coins], ['Goals', s.goals], ['Parkour finishes', s.finishes]];
@@ -553,7 +561,7 @@ async function play(action, errEl, code) {
   hide('dlg-create');
   hide('dlg-pass');
   $('btn-join').querySelector('span').textContent = 'Find another game';
-  $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = false;
+  $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = $('btn-players').hidden = false;
   resume();
 }
 
@@ -578,7 +586,7 @@ async function spectate(room, errEl, password) {
   closeDialogs();
   hide('menu');
   $('room-tag').hidden = true;
-  $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = true;
+  $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = $('btn-players').hidden = true;
   $('btn-join').querySelector('span').textContent = 'Play';
 }
 function stopSpectating(text) {
@@ -596,6 +604,14 @@ function showRoom(room) {
 }
 
 $('btn-resume').onclick = resume;
+// everyone in your game, each with their profile card
+$('btn-players').onclick = () => profileCard?.openPlayers();
+// your own card: your look and your bio
+$('acct-name').onclick = () => {
+  if (account) return profileCard?.open({ name: account });
+  if (game?.connected) return profileCard?.open({ id: game.myId });
+  profileCard?.show({ name: settings.name || 'Guest', me: true, account: false, online: true, color: settings.color, model: settings.model, cos: locker?.profile?.eq || {} });
+};
 $('btn-invite').onclick = async () => {
   if (!game?.room) return;
   const link = `${pageUrl()}#${game.room.code}`;
@@ -611,7 +627,7 @@ $('btn-disconnect').onclick = () => {
   game.watch();
   $('room-tag').hidden = true;
   $('btn-join').querySelector('span').textContent = 'Play';
-  $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = true;
+  $('btn-resume').hidden = $('btn-disconnect').hidden = $('btn-invite').hidden = $('btn-players').hidden = true;
   game.hud.show(false);
   openLobby();
 };

@@ -23,7 +23,7 @@ import { createProfiles, OWNER_NAME } from './profiles.js';
 import { createWorkshop } from './workshop.js';
 import { checkText, badName } from './filter.js';
 import { createReporter } from './moderation.js';
-import { COIN_KILL, COIN_TEAM_WIN, COSMETIC, EMOTE, hasEmote, BATTLE_PASS } from './public/js/cosmetics.js';
+import { COIN_KILL, COIN_TEAM_WIN, COSMETIC, COS_SLOTS, EMOTE, hasEmote, BATTLE_PASS } from './public/js/cosmetics.js';
 
 // Packed build (the standalone .exe, see tools/build_exe.mjs): game files are assets inside the executable,
 // keyed by their path from the project root ("public/index.html"). Models still load from a "models" folder beside it.
@@ -379,7 +379,7 @@ function emote(p, m) {
 }
 
 function info(p) {
-  return { id: p.id, name: p.name, color: p.color, model: p.model | 0, cos: cosOf(p.profile), team: p.team || null, frags: p.frags, deaths: p.deaths, caps: p.caps || 0, ping: p.ping, bot: p.bot ? 1 : 0, points: p.points | 0 };
+  return { id: p.id, name: p.name, color: p.color, model: p.model | 0, cos: cosOf(p.profile), team: p.team || null, frags: p.frags, deaths: p.deaths, caps: p.caps || 0, ping: p.ping, bot: p.bot ? 1 : 0, points: p.points | 0, acct: p.profile?.name ? 1 : 0 };
 }
 
 // ------------------------------------------------------------------ players
@@ -1508,8 +1508,105 @@ async function hello(ws, token) {
     online.get(key).add(ws);
     pushFriends(key);
     presence(key);
+    wsSend(ws, { t: 'blocked', list: await profiles.blockedBy(key) });
   }
 }
+
+// ------------------------------------------------------------------ profiles: the card you see when you click a player
+const BIO_MAX = 160;
+const REPORT_WHAT = { skin: 'look', bio: 'bio', name: 'name' };
+// a player's card, as `ws` sees it. m: { name } for an account, or { id } for someone in a game (guests and bots
+// only exist there). An account shows its bio and stats; someone in a game shows how they look right now.
+async function profilePayload(ws, m) {
+  let pl = null;
+  if (m.id != null) for (const R of rooms.values()) { const x = R.players.get(Number(m.id)); if (x) { pl = x; break; } }
+  const name = pl ? (pl.profile?.name || null) : String(m.name || '').trim();
+  const pub = name ? await profiles.publicProfile(name) : null;
+  if (!pl && !pub) return { t: 'profile', error: `There's no player called ${String(m.name || '').slice(0, 16)}.` };
+  const key = pub ? pub.name.toLowerCase() : null;
+  if (!pl && key) for (const s of online.get(key) || []) { const x = playerOf(s); if (x) { pl = x; break; } }
+  const me = !!(key && key === ws.acct) || (!!pl && pl.ws === ws);
+  let friend = null, blocked = false;
+  if (key && ws.acct && !me) {
+    const f = await profiles.friendsOf(ws.acct);
+    const has = (list) => list.some((n) => n.toLowerCase() === key);
+    friend = has(f.friends) ? 'friends' : has(f.incoming) ? 'incoming' : has(f.outgoing) ? 'outgoing' : null;
+    blocked = (await profiles.blockedBy(ws.acct)).includes(key);
+  }
+  const look = pl ? { color: pl.color, model: pl.model | 0, cos: cosOf(pl.profile) } : { color: pub.look?.c ?? 0, model: pub.look?.m ?? 0, cos: cosOf(pub.pr) };
+  const R = pl?.room;
+  return {
+    t: 'profile', name: pub?.name || pl.name, account: !!pub, id: pl?.id ?? null, me, bot: !!pl?.bot,
+    bio: pub?.bio || '', stats: pub?.stats || null, joined: pub?.created || 0, role: pub?.role || null,
+    ...look, friend, blocked, online: !!pl || !!(key && online.get(key)?.size),
+    room: R ? (R.settings.private ? 'a private game' : R.settings.name) : null,
+  };
+}
+
+// what a look is, in words, for a report
+function describeLook(cos) {
+  const items = Object.entries(cos || {}).filter(([k]) => COS_SLOTS[k]).map(([, id]) => COSMETIC[id]?.name || id);
+  return (items.length ? items.join(', ') : 'No cosmetics') + (cos?.img && cos.img.length > 2 ? ` · custom picture ${cos.img}` : '');
+}
+
+async function profileMessage(ws, m) {
+  if (m.t === 'profile') return wsSend(ws, await profilePayload(ws, m));
+  if (m.t === 'bio') {
+    if (!ws.acct || !ws.profile) return wsSend(ws, { t: 'profile-error', text: 'Sign in to write a bio.' });
+    const now = Date.now();
+    if (now - (ws.bioAt || 0) < 3000) return wsSend(ws, { t: 'profile-error', text: 'Wait a moment before changing it again.' });
+    ws.bioAt = now;
+    const text = String(m.text || '').replace(/\s+/g, ' ').trim().slice(0, BIO_MAX);
+    const f = checkText(text);
+    if (f.level) reporter.flagged({ kind: 'bio', who: ws.profile.name, account: ws.acct, where: 'Profile', text, level: f.level });
+    if (f.level === 2) return wsSend(ws, { t: 'profile-error', text: 'The filter blocked that bio. Try something else.' });
+    profiles.setBio(ws.profile, f.clean);
+    return wsSend(ws, await profilePayload(ws, { name: ws.profile.name }));
+  }
+  if (m.t === 'block') {
+    if (!ws.acct) return wsSend(ws, { t: 'profile-error', text: 'Sign in to block players.' });
+    const err = await profiles.block(ws.acct, m.name, !!m.on);
+    if (err) return wsSend(ws, { t: 'profile-error', text: err });
+    pushFriends(ws.acct);
+    pushFriends(String(m.name || '').trim().toLowerCase());
+    wsSend(ws, { t: 'blocked', list: await profiles.blockedBy(ws.acct) });
+    return wsSend(ws, await profilePayload(ws, { name: m.name }));
+  }
+  if (m.t === 'report') {
+    if (!REPORT_WHAT[m.what]) return;
+    const now = Date.now();
+    ws.reportTimes = (ws.reportTimes || []).filter((t) => now - t < 10 * 60 * 1000);
+    if (ws.reportTimes.length >= 6) return wsSend(ws, { t: 'profile-error', text: 'You\'ve sent a lot of reports. Try again in a few minutes.' });
+    const target = await profilePayload(ws, m);
+    if (target.error || target.me || target.bot) return;
+    ws.reportTimes.push(now);
+    const by = ws.profile?.name || playerOf(ws)?.name || 'a guest';
+    const note = checkText(String(m.note || '').replace(/\s+/g, ' ').trim().slice(0, 200)).clean;
+    const look = describeLook(target.cos);
+    await profiles.addReport({ what: m.what, name: target.name, account: target.account, bio: target.bio, look, img: target.cos?.img?.length > 2 ? target.cos.img : null, note, by, at: now });
+    reporter.report({ what: m.what, name: target.name, account: target.account, by, note, bio: target.bio, look });
+    return wsSend(ws, { t: 'report-sent', text: `Thanks. Staff will look at ${target.name}'s ${REPORT_WHAT[m.what]}.` });
+  }
+  // staff: work through the reports
+  if (m.t === 'report-act') {
+    const role = roleOf(ws);
+    if (!role || !CAN[role].includes('reports')) return sys(ws, 'Only staff can handle reports.');
+    const rec = await profiles.closeReport(String(m.id || ''));
+    if (rec && m.action === 'clearbio') {
+      const pr = await profiles.clearBio(rec.name);
+      sys(ws, pr ? `Cleared ${rec.name}'s bio.` : `${rec.name} has no account, so there's no bio to clear.`);
+    } else if (rec && m.action === 'picture') {
+      const tokens = await profiles.rejectImageOf(rec.name);
+      if (!tokens) sys(ws, `${rec.name} has no custom picture.`);
+      else for (const R of rooms.values()) for (const p of R.players.values()) if (p.profile && tokens.includes(p.profile._token)) {
+        broadcast(R, { t: 'info', p: info(p) });
+        if (p.ws) wsSend(p.ws, { t: 'refresh' });
+      }
+    }
+    return wsSend(ws, { t: 'reports', items: await profiles.listReports() });
+  }
+}
+const PROFILE_MSGS = new Set(['profile', 'bio', 'block', 'report', 'report-act']);
 
 function bounce(ws, ban, kicked) {
   wsSend(ws, { t: 'banned', kicked: !!kicked, reason: ban.reason || '' });
@@ -1581,6 +1678,7 @@ const CAN = {
   admin: ['kick', 'ban', 'unban', 'bans', 'givecash', 'images'],
   mod: ['kick', 'bans', 'images'],
 };
+for (const list of Object.values(CAN)) list.push('reports'); // every staff role handles player reports
 async function command(ws, text) {
   const [cmd, name, ...rest] = text.slice(1).split(/\s+/);
   const reason = rest.join(' ');
@@ -1617,6 +1715,12 @@ async function command(ws, text) {
     const items = await profiles.pendingImages();
     if (!items.length) return sys(ws, 'No pictures are waiting for review.');
     return wsSend(ws, { t: 'review', items });
+  }
+  // /reports: what players have reported, with buttons to clear a bio or take a picture down
+  if (c === 'reports') {
+    const items = await profiles.listReports();
+    if (!items.length) return sys(ws, 'No reports are waiting.');
+    return wsSend(ws, { t: 'reports', items });
   }
   if (c === 'bans') {
     const list = await profiles.listBans();
@@ -1826,6 +1930,7 @@ wss.on('connection', (ws, req) => {
     try { m = JSON.parse(data); } catch { return; }
     if (m.t === 'hello') return void hello(ws, m.token).catch((e) => console.error('[hello]', e.message));
     if (SOCIAL.has(m.t)) return void social(ws, m).catch((e) => sys(ws, e.message || 'Something went wrong. Try again.'));
+    if (PROFILE_MSGS.has(m.t)) return void profileMessage(ws, m).catch((e) => sys(ws, e.message || 'Something went wrong. Try again.'));
     if (m.t === 'watch') {
       if (p && p.room) return;
       unwatch(ws);
@@ -1894,6 +1999,7 @@ wss.on('connection', (ws, req) => {
           let changed = Object.keys(pr.eq).length > 0;
           // signed in: play under the account name. A guest using someone's account name gets a guest name.
           if (pr.name && me.name !== pr.name) { me.name = pr.name; changed = true; }
+          if (pr.name) profiles.setLook(pr, me.color, me.model); // how their profile shows them
           else if (!pr.name && (await profiles.nameTaken(me.name))) { me.name = 'Player' + Math.floor(100 + Math.random() * 900); changed = true; }
           if (me.room && changed) broadcast(me.room, { t: 'info', p: info(me) });
         });

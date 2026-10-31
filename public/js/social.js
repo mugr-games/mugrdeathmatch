@@ -132,17 +132,18 @@ export class Social {
     const btn = (label, act, name, cls = '') => `<button type="button" class="btn ${cls}" data-act="${act}" data-name="${esc(name)}">${label}</button>`;
     const friends = [...d.friends].sort((a, b) => b.online - a.online || a.name.localeCompare(b.name));
     $('fr-list').innerHTML = [
-      ...d.incoming.map((n) => row(`<span class="fr-who"><b>${esc(n)}</b><small>wants to be friends</small></span>${btn('Accept', 'accept', n, 'primary')}${btn('Decline', 'decline', n)}`)),
+      ...d.incoming.map((n) => row(`<span class="fr-who"><b class="pf-link" data-profile="${esc(n)}">${esc(n)}</b><small>wants to be friends</small></span>${btn('Accept', 'accept', n, 'primary')}${btn('Decline', 'decline', n)}`)),
       ...friends.map((f) => {
         const un = this.unread.get(f.name);
         const where = f.online ? (f.room ? `Playing ${esc(f.room.name)} · ${esc(f.room.map)}` : 'In the menus') : 'Offline';
-        return row(`<span class="fr-who"><i class="dot${f.online ? ' on' : ''}"></i><b>${esc(f.name)}</b><small>${where}</small></span>`
+        return row(`<span class="fr-who"><i class="dot${f.online ? ' on' : ''}"></i><b class="pf-link" data-profile="${esc(f.name)}">${esc(f.name)}</b><small>${where}</small></span>`
           + (f.room ? btn('Join', 'join', f.room.code, 'primary') : '')
           + btn(`Message${un ? ` (${un})` : ''}`, 'chat', f.name)
           + btn('×', 'remove', f.name, 'x'));
       }),
-      ...d.outgoing.map((n) => row(`<span class="fr-who"><b>${esc(n)}</b><small>request sent</small></span>${btn('Cancel', 'remove', n)}`)),
+      ...d.outgoing.map((n) => row(`<span class="fr-who"><b class="pf-link" data-profile="${esc(n)}">${esc(n)}</b><small>request sent</small></span>${btn('Cancel', 'remove', n)}`)),
     ].join('') || '<li class="empty">No friends yet. Add someone by their account name.</li>';
+    for (const b of $('fr-list').querySelectorAll('[data-profile]')) b.onclick = () => this.opts.profile?.({ name: b.dataset.profile });
     for (const b of $('fr-list').querySelectorAll('button')) {
       b.onclick = () => {
         const { act, name } = b.dataset;

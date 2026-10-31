@@ -2,6 +2,16 @@
 export const DEVLOG = [
   {
     date: '2026-10-31',
+    title: 'Player profiles',
+    notes: [
+      'Click a player to see their profile: their look, turning, plus their bio and stats. Works from Friends, the Leaderboard, the new Players button in the pause menu, and your own name in the menu.',
+      'Write a bio of your own (up to 160 letters) on your profile. You need an account.',
+      'Add friends, message them, or block players right from a profile. Blocking hides their chat and voice; with an account it also stops their messages and friend requests.',
+      'Report a player’s look, bio or name from their profile. Staff see the reports with /reports.',
+    ],
+  },
+  {
+    date: '2026-10-31',
     title: 'Costumes: Captain Clark and Lord Verity',
     notes: [
       'Two new suit skins that are whole costumes, 1500 coins each in the shop. They replace your character’s body while you wear them, hat and all.',

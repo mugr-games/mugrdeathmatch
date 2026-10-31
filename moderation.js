@@ -56,6 +56,20 @@ export function createReporter(url) {
         ],
       });
     },
+    // a player reporting another player's look, bio or name
+    report({ what, name, account, by, note, bio, look }) {
+      console.log(`[moderation] report: ${by} reported ${name}'s ${what}`);
+      post({
+        title: `Report: ${safe(name, 32)}'s ${what === 'skin' ? 'look' : what}`,
+        color: 0xc0392b,
+        description: what === 'bio' ? '```\n' + (safe(bio, 900) || '(empty)') + '\n```' : what === 'skin' ? safe(look, 900) : safe(name, 64),
+        fields: [
+          { name: 'Reported', value: `${safe(name, 64)} (${account ? 'account' : 'guest'})`, inline: true },
+          { name: 'By', value: safe(by, 64) || '?', inline: true },
+          { name: 'Note', value: safe(note, 300) || '(none)', inline: false },
+        ],
+      });
+    },
     // owner actions: bans, unbans, kicks
     action(title, text) {
       console.log(`[moderation] ${title}: ${text}`);
