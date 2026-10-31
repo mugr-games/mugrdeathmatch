@@ -50,6 +50,9 @@ export const COSMETICS = [
   { id: 'skin_galaxy', slot: 'skin', name: 'Galaxy', price: 1600, finish: 'galaxy', color: '#5a2a9a' },
   { id: 'skin_chrome', slot: 'skin', name: 'Chrome', price: 1800, finish: 'chrome', color: '#dfe4ea' },
   { id: 'skin_gold', slot: 'skin', name: 'Gold plated', price: 2000, finish: 'gold', color: '#e8b021' },
+  // costumes: a whole outfit instead of a finish (costume: the body in avatar.js), still with the visor
+  { id: 'skin_clark', slot: 'skin', name: 'Captain Clark', price: 1500, costume: 'clark', color: '#d9c56f' },
+  { id: 'skin_verity', slot: 'skin', name: 'Lord Verity', price: 1500, costume: 'verity', color: '#eceae4' },
   // gun skins: every gun you hold, in a finish
   { id: 'wskin_woodland', slot: 'wskin', name: 'Woodland camo', price: 250, finish: 'woodland', color: '#4d5a32' },
   { id: 'wskin_arctic', slot: 'wskin', name: 'Arctic camo', price: 300, finish: 'arctic', color: '#dfe6ea' },

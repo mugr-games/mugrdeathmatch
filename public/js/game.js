@@ -18,7 +18,7 @@ import { Occlusion, setDrawn, seesAny, HIDDEN_LAYER } from './occlusion.js';
 import { loadSlot, instance, staticInstance, mergeStatic, WEAPON_SLOT, ITEM_SLOT } from './assets.js';
 import { Synth } from './synth.js';
 import { Hud } from './hud.js';
-import { Avatar, ZOMBIE_SKIN, MODELS, HOLDS, holdPoints, reachArm, avatarMaterials, markerAt } from './avatar.js';
+import { Avatar, ZOMBIE_SKIN, MODELS, HOLDS, holdPoints, reachArm, avatarMaterials, costumeMaterials, markerAt } from './avatar.js';
 import { EMOTE, COSMETIC } from './cosmetics.js';
 import { held } from './binds.js';
 import { applyGunSkin, addCharm, swingCharm, finishMaterial } from './skins.js';
@@ -1447,12 +1447,13 @@ export class Game {
     const vm = this.vm;
     const info = this.info.get(this.myId);
     const color = this.colorFor(info);
-    const skin = COSMETIC[this.cosFor(info).skin]?.finish;
-    if (vm.arms && vm.armsColor === color + '|' + skin) return;
+    const skin = COSMETIC[this.cosFor(info).skin]?.finish, costume = COSMETIC[this.cosFor(info).skin]?.costume;
+    if (vm.arms && vm.armsColor === color + '|' + skin + '|' + costume) return;
     if (vm.arms) { this.vmScene.remove(vm.arms.root); vm.arms.root.traverse((o) => o.geometry?.dispose()); }
-    vm.armsColor = color + '|' + skin;
+    vm.armsColor = color + '|' + skin + '|' + costume;
     const M = avatarMaterials(color);
     if (skin) { M.suit = finishMaterial(skin, 0.45); M.pad = finishMaterial(skin, 0.45, 0.62); }
+    if (costume) { costumeMaterials(costume, M); M.dark = M.hand; } // the costume's hands or gloves
     for (const m of Object.values(M)) if (m) { m.fog = false; }
     const root = new THREE.Group();
     root.matrixAutoUpdate = false;

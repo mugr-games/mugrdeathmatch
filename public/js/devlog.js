@@ -1,6 +1,16 @@
 // The in-game devlog (main menu → Devlog), newest first. Add an entry at the top for each update.
 export const DEVLOG = [
   {
+    date: '2026-10-31',
+    title: 'Costumes: Captain Clark and Lord Verity',
+    notes: [
+      'Two new suit skins that are whole costumes, 1500 coins each in the shop. They replace your character’s body while you wear them, hat and all.',
+      'Captain Clark: a tricorn hat, a gold-trimmed yellow waistcoat and coat over a teal shirt, a sash under a big buckled belt, a black beard and boots.',
+      'Lord Verity: a wide white hat with a yellow band, a white tailcoat with long tails, a yellow waistcoat and tie, striped sleeves, yellow gloves and a very wide grin.',
+      'Like other suit skins, costumes aren’t shown in team games, where your team colour has to show.',
+    ],
+  },
+  {
     date: '2026-10-30',
     title: 'Level editor and the Workshop',
     notes: [

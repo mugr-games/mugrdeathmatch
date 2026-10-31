@@ -10,6 +10,7 @@ import { COSMETIC } from './cosmetics.js';
 import { api } from './net.js';
 import { emotePose, clearPose } from './emotes.js';
 import { finishMaterial } from './skins.js';
+import { COSTUME_IDS, COSTUME_BUILD, COSTUME_LOOKS } from './costumes.js';
 
 // the picture on an image cape or flag: the approved upload, a local preview (a data URL), or a sign while it
 // waits for a moderator
@@ -315,6 +316,24 @@ export function avatarMaterials(colorIndex) {
   };
 }
 
+// costume suit skins (costumes.js): each is a body of its own after the four characters, BUILD[4] onwards
+for (const id of COSTUME_IDS) BUILD.push((add) => COSTUME_BUILD[id](add, { CHEST, visor: (x, z) => visor(add, x, z) }));
+export const COSTUMES = Object.fromEntries(COSTUME_IDS.map((id, i) => [id, MODELS.length + i]));
+// a costume's materials, put into a character's material set M (from avatarMaterials)
+export function costumeMaterials(id, M) {
+  const look = COSTUME_LOOKS[id];
+  if (!look) return M;
+  const potato = isPotato();
+  for (const k of ['suit', 'pad', 'armor']) if (look[k]) M[k]?.dispose();
+  for (const [k, [hex, rough = 0.8, metal = 0, weave]] of Object.entries(look)) {
+    const c = new THREE.Color(hex);
+    const m = potato ? new THREE.MeshLambertMaterial({ color: c }) : new THREE.MeshStandardMaterial({ color: c, roughness: rough, metalness: metal });
+    m.side = THREE.DoubleSide; // open coats and brims are seen from inside too
+    M[k] = weave ? fabric(m, weave) : m;
+  }
+  return M;
+}
+
 // the head of a character as its own group (for ragdolls); origin at the neck, facing +X
 // How each weapon is held, as fractions of the model's length (x, along the barrel) and height (z), with y in
 // game units (left is +): where the right hand grips, where the left hand supports it (null: one hand), and
@@ -407,8 +426,8 @@ export function headGroup(model, mats) {
 
 // ------------------------------------------------------------------ cosmetics
 // where hats sit (top of each character's head) and back items hang (behind each character's back)
-const HEAD_TOP = [14.2, 14.2, 14.4, 15.2];
-const BACK_X = [-13.8, -9.2, -13.4, -9.8];
+const HEAD_TOP = [14.2, 14.2, 14.4, 15.2, 18.6, 18.6];
+const BACK_X = [-13.8, -9.2, -13.4, -9.8, -8.4, -8.8];
 const cosMats = new Map();
 function cmat(color, rough = 0.6, metal = 0, glow = 0) {
   const key = [color, rough, metal, glow, isPotato()].join();
@@ -626,8 +645,12 @@ function buildZombie(av) {
 
 export class Avatar {
   constructor(colorIndex, model = 0, cos = {}) {
+    // a costume skin (Captain Clark) is a whole body of its own, whichever character was picked
+    const costume = colorIndex !== ZOMBIE_SKIN && COSMETIC[cos?.skin]?.slot === 'skin' && COSMETIC[cos.skin].costume;
+    if (costume) model = COSTUMES[costume];
     this.model = model;
     const mats = (this.matSet = avatarMaterials(colorIndex));
+    if (costume) costumeMaterials(costume, mats);
     // a suit skin from the shop: the suit, padding and armour in its finish (the rest stays as it is)
     const skin = colorIndex !== ZOMBIE_SKIN && COSMETIC[cos?.skin]?.slot === 'skin' && COSMETIC[cos.skin].finish;
     if (skin) {
@@ -708,7 +731,7 @@ export class Avatar {
   wear(cos = {}) {
     this.cos = {};
     const ok = (slot) => (COSMETIC[cos?.[slot]]?.slot === slot ? cos[slot] : null);
-    if (ok('hat')) Object.assign(this.cos, buildHat(cos.hat, HEAD_TOP[this.model] ?? 14, this.head, this.matSet));
+    if (ok('hat') && this.model < MODELS.length) Object.assign(this.cos, buildHat(cos.hat, HEAD_TOP[this.model] ?? 14, this.head, this.matSet));
     if (ok('back')) Object.assign(this.cos, buildBack(cos.back, BACK_X[this.model] ?? -12, this.torso, cos.img));
     if (ok('body') && cos.body === 'big_butt') {
       // two big round cheeks on the back of the hips, in the suit's own material, that jiggle as you move
