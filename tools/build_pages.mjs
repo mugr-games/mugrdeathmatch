@@ -35,6 +35,6 @@ fs.writeFileSync(path.join(out, '.nojekyll'), '');
 console.log(`Built ${out} for the game server at ${server}`);
 
 function withPageUrl(text, base) {
-  return text.replace('<meta property="og:image" content="og.png">', `<meta property="og:image" content="${base}/og.png">`)
+  return text.replace('<meta property="og:image" content="preview.png">', `<meta property="og:image" content="${base}/preview.png">`)
     .replace('<meta property="og:url" content="">', `<meta property="og:url" content="${base}/">`);
 }

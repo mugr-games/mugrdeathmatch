@@ -1426,7 +1426,7 @@ function servePage(req, res) {
   const proto = String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
   if (/^[a-z0-9.:-]+$/i.test(host) && /^https?$/.test(proto)) {
     const base = `${proto}://${host}`;
-    html = html.replace('<meta property="og:image" content="og.png">', `<meta property="og:image" content="${base}/og.png">`)
+    html = html.replace('<meta property="og:image" content="preview.png">', `<meta property="og:image" content="${base}/preview.png">`)
       .replace('<meta property="og:url" content="">', `<meta property="og:url" content="${base}/">`);
   }
   res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-cache' });
