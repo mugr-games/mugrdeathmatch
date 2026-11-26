@@ -1,0 +1,142 @@
+# Builds the phone apps from app/: an Android APK and an iOS IPA that open the game at mugr.lol, then publishes
+# them on a GitHub release. The site's "Get the app" links point at releases/latest/download/mugr.apk and
+# mugr.ipa, so they always give the newest build.
+#
+# Android: signed with the key in the repository secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD and
+# ANDROID_KEY_ALIAS when they are set (then each new APK installs over the last one). Without them the APK is
+# signed with a throwaway debug key, so a newer build has to replace the app rather than update it.
+# iOS: the IPA is unsigned. People install it with a sideloading tool (AltStore, Sideloadly) that signs it with
+# their own Apple ID; publishing on the App Store would need an Apple developer account.
+name: Build the phone apps
+
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/apps.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apps
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npx cap add android
+      - name: Icons and splash screens
+        run: npx -y @capacitor/assets@4 generate --android --assetPath assets --iconBackgroundColor '#0b0d10' --iconBackgroundColorDark '#0b0d10' --splashBackgroundColor '#0b0d10' --splashBackgroundColorDark '#0b0d10'
+      - name: Landscape, full screen, microphone, version
+        run: node scripts/patch-android.mjs ${{ github.run_number }}
+      - run: npx cap sync android
+      - name: Build the APK
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          cd android
+          chmod +x gradlew
+          if [ -n "$KEYSTORE" ]; then
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+            ./gradlew assembleRelease
+            BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+            "$BT/zipalign" -f 4 app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" sign --ks "$RUNNER_TEMP/release.jks" --ks-pass env:KS_PASS --ks-key-alias "$KS_ALIAS" --out ../mugr.apk "$RUNNER_TEMP/aligned.apk"
+          else
+            ./gradlew assembleDebug
+            cp app/build/outputs/apk/debug/app-debug.apk ../mugr.apk
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: app/mugr.apk
+          if-no-files-found: error
+
+  ios:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx cap add ios
+      - name: Icons and splash screens
+        run: npx -y @capacitor/assets@4 generate --ios --assetPath assets --iconBackgroundColor '#0b0d10' --splashBackgroundColor '#0b0d10' --splashBackgroundColorDark '#0b0d10'
+      - name: Landscape, full screen, microphone, version
+        run: |
+          P=ios/App/App/Info.plist
+          B=/usr/libexec/PlistBuddy
+          for key in UISupportedInterfaceOrientations 'UISupportedInterfaceOrientations~ipad'; do
+            $B -c "Delete :$key" $P || true
+            $B -c "Add :$key array" $P
+            $B -c "Add :$key:0 string UIInterfaceOrientationLandscapeRight" $P
+            $B -c "Add :$key:1 string UIInterfaceOrientationLandscapeLeft" $P
+          done
+          $B -c "Delete :NSMicrophoneUsageDescription" $P || true
+          $B -c "Add :NSMicrophoneUsageDescription string Voice chat with other players" $P
+          $B -c "Delete :UIStatusBarHidden" $P || true
+          $B -c "Add :UIStatusBarHidden bool true" $P
+          $B -c "Delete :UIViewControllerBasedStatusBarAppearance" $P || true
+          $B -c "Add :UIViewControllerBasedStatusBarAppearance bool false" $P
+          $B -c "Delete :UIRequiresFullScreen" $P || true
+          $B -c "Add :UIRequiresFullScreen bool true" $P
+          $B -c "Set :CFBundleVersion ${{ github.run_number }}" $P
+          $B -c "Set :CFBundleShortVersionString 1.0.${{ github.run_number }}" $P
+      - run: npx cap sync ios
+      - name: Build the IPA (unsigned)
+        run: |
+          cd ios/App
+          if [ -d App.xcworkspace ]; then TARGET="-workspace App.xcworkspace"; else TARGET="-project App.xcodeproj"; fi
+          xcodebuild $TARGET -scheme App -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry ../../mugr.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: app/mugr.ipa
+          if-no-files-found: error
+
+  release:
+    needs: [android, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-1.0.${{ github.run_number }}
+          name: Mugr.lol app 1.0.${{ github.run_number }}
+          make_latest: true
+          files: |
+            out/mugr.apk
+            out/mugr.ipa
+          body: |
+            The Mugr.lol game as a phone app. It opens mugr.lol, so it always plays the newest version of the game.
+
+            **Android:** download `mugr.apk` on your phone and open it. Allow your browser to install apps if asked.
+
+            **iPhone / iPad:** `mugr.ipa` isn't signed by Apple, so it doesn't install by tapping it. Install it with a sideloading tool such as AltStore or Sideloadly, which signs it with your own Apple ID. With a free Apple ID it has to be refreshed every 7 days. You can also play in Safari and choose Share → Add to Home Screen.

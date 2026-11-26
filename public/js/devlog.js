@@ -1,6 +1,15 @@
 // The in-game devlog (main menu → Devlog), newest first. Add an entry at the top for each update.
 export const DEVLOG = [
   {
+    date: '2026-11-26',
+    title: 'Mugr.lol on your phone',
+    notes: [
+      'Get the app (in the menu): an Android APK and an iPhone / iPad IPA. The app always plays the newest version of the game.',
+      'It plays sideways and full screen, and voice chat works in it.',
+      'iPhone and iPad: install the IPA with a sideloading tool such as AltStore or Sideloadly, or add mugr.lol to your Home Screen from Safari.',
+    ],
+  },
+  {
     date: '2026-10-31',
     title: 'Player profiles',
     notes: [

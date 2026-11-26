@@ -1,0 +1,6 @@
+node_modules/
+# made fresh by the build (npx cap add android / ios)
+android/
+ios/
+*.apk
+*.ipa

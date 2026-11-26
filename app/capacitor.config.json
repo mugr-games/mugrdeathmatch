@@ -1,0 +1,18 @@
+{
+  "appId": "lol.mugr.game",
+  "appName": "Mugr.lol",
+  "webDir": "www",
+  "backgroundColor": "#0b0d10",
+  "server": {
+    "url": "https://mugr.lol",
+    "androidScheme": "https",
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "backgroundColor": "#0b0d10"
+  },
+  "ios": {
+    "backgroundColor": "#0b0d10",
+    "contentInset": "never"
+  }
+}

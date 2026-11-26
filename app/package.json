@@ -1,0 +1,15 @@
+{
+  "name": "mugr-app",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Mugr.lol for Android and iOS: the game at mugr.lol in an app. Built by .github/workflows/apps.yml.",
+  "type": "module",
+  "dependencies": {
+    "@capacitor/android": "^8.6.3",
+    "@capacitor/core": "^8.6.3",
+    "@capacitor/ios": "^8.6.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.3"
+  }
+}

@@ -669,6 +669,10 @@ function openMenu() {
 }
 
 // ------------------------------------------------------------------ credits
+// the phone apps (built by .github/workflows/apps.yml); not offered inside the app itself
+if (window.Capacitor?.isNativePlatform?.()) $('btn-app').hidden = true;
+$('btn-app').onclick = () => show('dlg-app');
+$('app-close').onclick = () => hide('dlg-app');
 $('btn-credits').onclick = () => {
   const rows = Object.entries(SLOTS).filter(([, d]) => d.credit).map(([slot, d]) => [d.credit, hasModel(slot)]);
   const maps = Object.values(MAP_CREDITS).map((c) => [c, true]);
@@ -914,7 +918,7 @@ setInterval(() => game?.sound.lobby(!playing && !game.spec, settings.music ?? 0.
 
 function show(id) { $(id).hidden = false; }
 function hide(id) { $(id).hidden = true; }
-function closeDialogs() { workshop?.close(); hide('dlg-binds'); if ($('dlg-tutorial')) hide('dlg-tutorial'); capture = null; hide('dlg-heist'); hide('dlg-leaders'); hide('dlg-options'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
+function closeDialogs() { workshop?.close(); hide('dlg-binds'); if ($('dlg-tutorial')) hide('dlg-tutorial'); capture = null; hide('dlg-heist'); hide('dlg-leaders'); hide('dlg-options'); hide('dlg-app'); hide('dlg-credits'); hide('dlg-devlog'); hide('dlg-account'); hide('dlg-friends'); hide('dlg-mod'); locker?.close(); hide('dlg-create'); hide('dlg-pass'); closeLobby(); }
 function status(t) { $('menu-status').textContent = t; }
 function loading(t) { $('loading').hidden = !t; $('loading-text').textContent = t; }
 
