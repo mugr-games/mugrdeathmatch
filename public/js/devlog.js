@@ -1,6 +1,16 @@
 // The in-game devlog (main menu → Devlog), newest first. Add an entry at the top for each update.
 export const DEVLOG = [
   {
+    date: '2026-11-27',
+    title: 'Safer accounts',
+    notes: [
+      'Every sign-in now gets its own secret key, and the server keeps only a scrambled (hashed) copy of it. Old save codes no longer open an account, so everyone signs in again once.',
+      'Account → Sign out everywhere: signs out every other phone and browser, and this one stays signed in.',
+      'Account → Change password: needs your current password, and signs everyone else out too.',
+      'Sign out now really ends that sign-in on the server.',
+    ],
+  },
+  {
     date: '2026-11-26',
     title: 'Mugr.lol on your phone',
     notes: [

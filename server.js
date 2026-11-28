@@ -1284,6 +1284,8 @@ setInterval(() => {
 
 // shop and wardrobe: POST { token, ... } -> the profile, or { error }
 // accounts: POST /api/register { name, password, token } or /api/login { name, password } -> { token, name, ... }
+// POST /api/logout { token } ends this browser's sign-in; /api/logout-all { token } ends every sign-in of the
+// account and answers { token } with a new one for this browser
 const loginTries = new Map();
 setInterval(() => { const now = Date.now(); for (const [ip, t] of loginTries) if (t.every((x) => now - x > 60000)) loginTries.delete(ip); }, 60000);
 function profileApi(req, res, route) {
@@ -1292,7 +1294,7 @@ function profileApi(req, res, route) {
   req.on('end', async () => {
     let m;
     try { m = JSON.parse(body || '{}'); } catch { return json(res, { error: 'Bad request.' }); }
-    if (route === 'register' || route === 'login') {
+    if (route === 'register' || route === 'login' || route === 'password') {
       // a few tries a minute per address, so passwords can't be guessed quickly
       const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
       const now = Date.now(), tries = (loginTries.get(ip) || []).filter((t) => now - t < 60000);
@@ -1300,12 +1302,26 @@ function profileApi(req, res, route) {
       tries.push(now);
       loginTries.set(ip, tries);
       try {
+        if (route === 'password') {
+          const { key, ...r } = await profiles.changePassword(m.token, m.password, m.next);
+          if (key) signOutSockets(key); // every other sign-in ended: their open games drop it now
+          return json(res, r);
+        }
         const r = route === 'register' ? await profiles.register(m.name, m.password, m.token) : await profiles.login(m.name, m.password, m.token);
         return json(res, r);
       } catch (e) { return json(res, { error: e.message }); }
     }
-    const pr = await profiles.load(m.token);
-    if (!pr) return json(res, { error: 'Your save code is not valid.' });
+    if (route === 'logout' || route === 'logout-all') {
+      try {
+        const r = await profiles.logout(m.token, route === 'logout-all');
+        if (!r) return json(res, { error: 'You were already signed out.', signedOut: true });
+        // the account's open games and menus everywhere drop their sign-in at once
+        if (route === 'logout-all') signOutSockets(r.key);
+        return json(res, { ok: true, token: r.token || null });
+      } catch (e) { return json(res, { error: e.message }); }
+    }
+    const { pr, out } = await profiles.open(m.token);
+    if (!pr) return json(res, out ? { error: 'You were signed out. Sign in again.', signedOut: true } : { error: 'The server can\'t reach its database right now. Try again in a moment.' });
     let error = null;
     if (route === 'buy') error = profiles.buy(pr, String(m.item || ''));
     else if (route === 'pass') error = profiles.buyPass(pr);
@@ -1389,7 +1405,7 @@ const server = http.createServer((req, res) => {
     });
   }
   if (req.method === 'OPTIONS' && p.startsWith('/api/')) { res.writeHead(204, CORS); return res.end(); }
-  if (req.method === 'POST' && /^\/api\/(profile|buy|pass|equip|image|register|login)$/.test(p)) return profileApi(req, res, p.slice(5));
+  if (req.method === 'POST' && /^\/api\/(profile|buy|pass|equip|image|register|login|logout|logout-all|password)$/.test(p)) return profileApi(req, res, p.slice(5));
   if (p === '/api/workshop' && req.method === 'GET') return workshop.http(req, res, 'list', json, url);
   if (req.method === 'POST' && /^\/api\/workshop\/(get|publish|rate|delete|equip)$/.test(p)) return workshop.http(req, res, p.slice(14), json, url);
   // approved pictures for image capes and flags
@@ -1459,7 +1475,19 @@ wss.on('error', () => {}); // listen errors are handled on the http server below
 // signed-in sockets by account key (lower-case name). A socket says who it is with 'hello' as soon as it opens.
 const online = new Map();
 const ipOf = (req) => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-const banKeys = (ws, token) => [ws.acct && 'a:' + ws.acct, (token || ws.token) && 't:' + (token || ws.token), ws.ip && 'i:' + ws.ip];
+const banKeys = (ws, pr = ws.profile) => [(ws.acct || pr?.name) && 'a:' + (ws.acct || pr.name.toLowerCase()), (pr?._token || ws.token) && 't:' + (pr?._token || ws.token), ws.ip && 'i:' + ws.ip];
+// every connection signed in to an account loses its sign-in (after "sign out everywhere" or /signout):
+// the connection closes, so the game drops back to the menu and a page reload asks them to sign in
+function signOutSockets(key) {
+  for (const s of [...(online.get(key) || [])]) {
+    sys(s, 'This account was signed out everywhere.');
+    s.profile = null;
+    const p = playerOf(s);
+    if (p) p.profile = null;
+    try { s.close(4001, 'signed out'); } catch {}
+  }
+  online.delete(key);
+}
 const isOwner = (ws) => ws.acct === OWNER_NAME && !!ws.profile?.owner;
 const sys = (ws, text) => wsSend(ws, { t: 'sys', text });
 
@@ -1497,7 +1525,7 @@ async function hello(ws, token) {
   const pr = await profiles.load(token);
   const key = pr && pr.name ? pr.name.toLowerCase() : null;
   if (ws.acct && ws.acct !== key) { online.get(ws.acct)?.delete(ws); presence(ws.acct); }
-  ws.token = pr ? token : null;
+  ws.token = pr ? pr._token : null; // the profile's own key (for bans), not the browser's session key
   ws.profile = pr;
   ws.acct = key;
   voice.recheck([ws]);
@@ -1669,11 +1697,11 @@ async function modAction(ws, action, name, reason) {
   }
 }
 
-// owner chat commands: /kick name [reason], /ban name [reason], /unban name, /bans
+// owner chat commands: /kick name [reason], /ban name [reason], /unban name, /bans, /signout name
 // staff ranks: the owner, then the co-owner, admins and mods (set by the owner with /role)
 const roleOf = (ws) => (isOwner(ws) ? 'owner' : ws.profile?.role || null);
 const CAN = {
-  owner: ['kick', 'ban', 'unban', 'bans', 'givecash', 'role', 'coowner', 'images'],
+  owner: ['kick', 'ban', 'unban', 'bans', 'givecash', 'role', 'coowner', 'images', 'signout'],
   coowner: ['kick', 'ban', 'unban', 'bans', 'givecash', 'role', 'images'],
   admin: ['kick', 'ban', 'unban', 'bans', 'givecash', 'images'],
   mod: ['kick', 'bans', 'images'],
@@ -1702,6 +1730,13 @@ async function command(ws, text) {
     return sys(ws, `${r.name} is the co-owner: they sign in with that name and password, and the GOATED cape is theirs.`);
   }
   if (c === 'kick' || c === 'ban' || c === 'unban') return modAction(ws, c, name, reason);
+  // /signout name: end every sign-in of that account (they sign in again with their password)
+  if (c === 'signout') {
+    const who = await profiles.endAllSessions(name);
+    if (!who) return sys(ws, `There's no account called ${name || '(no name)'}.`);
+    signOutSockets(who.toLowerCase());
+    return sys(ws, `${who} is signed out everywhere.`);
+  }
   // free roam money: /givecash name amount (a negative amount takes it away)
   if (c === 'givecash') {
     const amount = Math.round(Number(rest[0]));
@@ -1726,7 +1761,7 @@ async function command(ws, text) {
     const list = await profiles.listBans();
     return sys(ws, list.length ? 'Banned: ' + list.map((b) => b.name).join(', ') : 'Nobody is banned.');
   }
-  sys(ws, 'Commands: /kick name [reason], /ban name [reason], /unban name, /bans, /givecash name amount, /role name admin|mod|none, /coowner name password');
+  sys(ws, 'Commands: /kick name [reason], /ban name [reason], /unban name, /bans, /givecash name amount, /role name admin|mod|none, /coowner name password, /signout name');
 }
 
 // mutes, by account and address, until a time (kept in memory: a restart lifts them)
@@ -1955,7 +1990,7 @@ wss.on('connection', (ws, req) => {
     if (m.t === 'join' || m.t === 'create') {
       unwatch(ws);
       // banned people (by account, save code or address) can't play
-      return void profiles.isBanned(banKeys(ws, m.token)).then(async (ban) => {
+      return void profiles.load(m.token).catch(() => null).then((pr) => profiles.isBanned(banKeys(ws, pr || ws.profile))).then(async (ban) => {
         if (ban) return bounce(ws, ban);
         let R;
         if (m.t === 'create') {

@@ -1,8 +1,10 @@
 // Player profiles and accounts, kept on the server so nobody can edit their own balance.
 //
-// A profile (coins, owned cosmetics, what's equipped) belongs to a random secret token. Guests just keep
-// the token in their browser. Registering ties a username and password to the token, so logging in on
-// any device hands that token back. Passwords are stored only as salted scrypt hashes.
+// A profile (coins, owned cosmetics, what's equipped) is saved under a random secret key. Guests keep that
+// key in their browser. Registering ties a username and password to it, and from then on the key alone no
+// longer opens the profile: each sign-in gets its own session key instead, which the server stores only as
+// a SHA-256 hash (so a copy of the database can't be used to sign in). Signing out ends that session;
+// "sign out everywhere" ends them all. Passwords are stored only as salted scrypt hashes.
 //
 // The owner account ("watermelon") can't be registered: the server creates it at start-up from the
 // OWNER_PASSWORD environment variable, with a million coins and the Owner cape.
@@ -17,7 +19,11 @@ import crypto from 'node:crypto';
 import { COSMETIC, COS_SLOTS } from './public/js/cosmetics.js';
 import { badName } from './filter.js';
 
-const TOKEN = /^[a-f0-9]{32}$/;
+const TOKEN = /^[a-f0-9]{32}$/; // a guest's save code (and, inside the server, every profile's key)
+const SESSION = /^[a-f0-9]{64}$/; // a signed-in browser's session key
+const SESSION_DAYS = 90; // then sign in again
+const MAX_SESSIONS = 10; // signed-in browsers per account; signing in on an 11th ends the oldest
+const sessionHash = (key) => crypto.createHash('sha256').update('mugr.session:' + key).digest('hex');
 const NAME = /^[A-Za-z0-9_]{3,16}$/;
 const MAX_PROFILES = 100000;
 export const OWNER_NAME = 'watermelon';
@@ -205,7 +211,9 @@ export function createProfiles(file) {
   const reports = cachedStore(mk(path.join(path.dirname(file), 'reports.json'), 'mugr:r:'), 'reports', storage);
   console.log(`[profiles] saving coins, cosmetics and accounts to ${profiles.name}`);
   if (profiles.kind === 'file' && (process.env.RENDER || process.env.NODE_ENV === 'production')) console.warn('[profiles] WARNING: the host forgets files when it sleeps or restarts. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to keep accounts.');
-  const stores = [profiles, accounts, dms, bans, boards, images, workshop, reports];
+  // signed-in browsers: sha256(session key) -> { a: account key, at: when }
+  const sessions = cachedStore(mk(path.join(path.dirname(file), 'sessions.json'), 'mugr:s:'), 'sessions', storage);
+  const stores = [profiles, accounts, dms, bans, boards, images, workshop, reports, sessions];
 
   // the leaderboard: the top 100 signed-in players in each category, kept as one saved document
   let board = null;
@@ -241,13 +249,47 @@ export function createProfiles(file) {
   const tokenOf = (pr) => pr._token;
   const touch = (pr) => profiles.save(tokenOf(pr), pr);
 
-  // the profile for a token, created on first use; null for a malformed token
-  async function load(token) {
+  // the profile saved under a key, created on first use (inside the server only: never on a browser's word)
+  async function loadKey(token) {
     if (typeof token !== 'string' || !TOKEN.test(token)) return null;
     let pr;
     try { pr = await profiles.get(token, () => (profiles.count() >= MAX_PROFILES ? null : { coins: 0, owned: [], eq: {} })); } catch { return null; }
     if (pr && !pr._token) Object.defineProperty(pr, '_token', { value: token, enumerable: false });
     return pr;
+  }
+
+  // what a browser's key opens: { pr }, or { out: true } when the key no longer signs anyone in (ended,
+  // expired, or an account's old save code), or { pr: null } when the database can't be reached
+  async function open(token) {
+    if (typeof token !== 'string') return { pr: null, out: true };
+    if (SESSION.test(token)) {
+      const h = sessionHash(token);
+      let s, acc;
+      try { s = await sessions.get(h); acc = s && (await accounts.get(s.a)); } catch { return { pr: null }; }
+      if (!s || !acc || !(acc.sessions || []).includes(h) || Date.now() - s.at > SESSION_DAYS * 86400000) return { pr: null, out: true };
+      return { pr: await loadKey(acc.token) };
+    }
+    if (!TOKEN.test(token)) return { pr: null, out: true };
+    const pr = await loadKey(token);
+    if (pr && pr.name) return { pr: null, out: true }; // an account's save is opened only by signing in
+    return { pr };
+  }
+  const load = async (token) => (await open(token)).pr;
+
+  // a new sign-in for an account: returns the session key (the browser keeps it; the server keeps its hash)
+  function startSession(key, acc) {
+    const t = crypto.randomBytes(32).toString('hex'), h = sessionHash(t);
+    acc.sessions = [...(acc.sessions || []), h];
+    while (acc.sessions.length > MAX_SESSIONS) sessions.save(acc.sessions.shift(), null);
+    sessions.save(h, { a: key, at: Date.now() });
+    accounts.save(key, acc);
+    return t;
+  }
+  // end every sign-in of an account
+  function endSessions(key, acc) {
+    for (const h of acc.sessions || []) sessions.save(h, null);
+    acc.sessions = [];
+    accounts.save(key, acc);
   }
 
   const view = (pr) => ({ coins: pr.coins, owned: pr.owned, eq: pr.eq, name: pr.name || null, stats: pr.stats || {}, role: pr.role || null, img: pr.img || null, imgSt: pr.imgSt || null, bp: passOf(pr), wc: pr.wc || null });
@@ -291,15 +333,16 @@ export function createProfiles(file) {
       console.log(`[accounts] created the owner account "${OWNER_NAME}"`);
     } else if (!(await checkPassword(acc, password))) {
       Object.assign(acc, await hashPassword(password)); // OWNER_PASSWORD changed: the new one wins
-      accounts.save(OWNER_NAME, acc);
+      endSessions(OWNER_NAME, acc); // and everyone signed in with the old one is signed out
       console.log(`[accounts] updated the owner account's password`);
     }
-    ownerPerks(await load(acc.token));
+    ownerPerks(await loadKey(acc.token));
   }
   const ready = setupOwner().catch((e) => console.error('[accounts] owner setup failed', e.message));
 
   return {
     load,
+    open,
     view,
     ready,
     // keep changes made to a profile elsewhere (free roam money and garage)
@@ -325,13 +368,13 @@ export function createProfiles(file) {
       if (await accounts.get(key)) return { error: 'That name is taken.' };
       let pr = await load(guestToken);
       const token = pr && !pr.name ? guestToken : newToken(); // a save code already tied to an account can't be reused
-      if (!pr || pr.name) pr = await load(token);
+      if (!pr || pr.name) pr = await loadKey(token);
       if (!pr) return { error: 'The server is full.' };
-      accounts.save(key, { name, token, created: Date.now(), ...(await hashPassword(password)) });
+      const acc = { name, token, created: Date.now(), ...(await hashPassword(password)) };
       pr.name = name;
       touch(pr);
       rank(pr);
-      return { token, ...view(pr) };
+      return { token: startSession(key, acc), ...view(pr) };
     },
     // staff: the owner makes someone an admin, a mod or the co-owner; each comes with its own free cosmetic,
     // put on straight away. role null takes it away.
@@ -340,7 +383,7 @@ export function createProfiles(file) {
       const acc = NAME.test(key) ? await accounts.get(key) : null;
       if (!acc) return { error: `No account called ${name}.` };
       if (key === OWNER_NAME) return { error: 'That is the owner.' };
-      const pr = await load(acc.token);
+      const pr = await loadKey(acc.token);
       if (!pr) return { error: 'That save could not be loaded.' };
       acc.role = role || null;
       accounts.save(key, acc);
@@ -361,7 +404,7 @@ export function createProfiles(file) {
       if (key === OWNER_NAME) return { error: 'That name is reserved.' };
       if (await accounts.get(key)) return this.setRole(name, role); // already there: just make them staff
       const token = newToken();
-      const pr = await load(token);
+      const pr = await loadKey(token);
       if (!pr) return { error: 'The server is full.' };
       accounts.save(key, { name, token, created: Date.now(), ...(await hashPassword(password)) });
       pr.name = name;
@@ -372,10 +415,10 @@ export function createProfiles(file) {
       const key = String(name || '').trim().toLowerCase();
       const acc = NAME.test(key) ? await accounts.get(key) : null;
       if (!acc || !(await checkPassword(acc, String(password || '')))) return { error: 'Wrong username or password.' };
-      const pr = await load(acc.token);
+      const pr = await loadKey(acc.token);
       if (!pr) return { error: 'The server can\'t reach its database right now. Try again in a moment.' };
       // coins and items this browser earned as a guest join the account (once: the guest is emptied)
-      const guest = guestToken !== acc.token ? await load(guestToken) : null;
+      const guest = TOKEN.test(String(guestToken || '')) ? await load(guestToken) : null;
       if (guest && !guest.name && (guest.coins > 0 || guest.owned.length || Object.values(guest.stats || {}).some(Boolean))) {
         pr.coins += guest.coins;
         for (const id of guest.owned) if (!pr.owned.includes(id)) pr.owned.push(id);
@@ -391,7 +434,44 @@ export function createProfiles(file) {
         touch(pr);
         rank(pr);
       }
-      return { token: acc.token, ...view(pr) };
+      return { token: startSession(key, acc), ...view(pr) };
+    },
+    // sign out: this browser's session ends. everywhere: every session of the account ends, and this browser
+    // gets a new one. Returns { key, token? }, or null when the key wasn't a working session
+    async logout(token, everywhere) {
+      if (!SESSION.test(String(token || ''))) return null;
+      const h = sessionHash(token);
+      const s = await sessions.get(h);
+      const acc = s && (await accounts.get(s.a));
+      if (!acc || !(acc.sessions || []).includes(h)) return null;
+      if (everywhere) { endSessions(s.a, acc); return { key: s.a, token: startSession(s.a, acc) }; }
+      acc.sessions = acc.sessions.filter((x) => x !== h);
+      sessions.save(h, null);
+      accounts.save(s.a, acc);
+      return { key: s.a };
+    },
+    // a new password (the current one is needed): every other sign-in ends, and this browser gets a new one
+    async changePassword(token, current, next) {
+      if (!SESSION.test(String(token || ''))) return { error: 'You were signed out. Sign in again.', signedOut: true };
+      const h = sessionHash(token);
+      const s = await sessions.get(h);
+      const acc = s && (await accounts.get(s.a));
+      if (!acc || !(acc.sessions || []).includes(h)) return { error: 'You were signed out. Sign in again.', signedOut: true };
+      if (s.a === OWNER_NAME) return { error: 'The owner\'s password is set on the server (OWNER_PASSWORD). Change it there.' };
+      next = String(next || '');
+      if (next.length < 6 || next.length > 100) return { error: 'Passwords need at least 6 characters.' };
+      if (!(await checkPassword(acc, String(current || '')))) return { error: 'Your current password is wrong.' };
+      Object.assign(acc, await hashPassword(next));
+      endSessions(s.a, acc);
+      return { ok: true, key: s.a, token: startSession(s.a, acc) };
+    },
+    // the owner ends every sign-in of someone's account
+    async endAllSessions(name) {
+      const key = String(name || '').trim().toLowerCase();
+      const acc = NAME.test(key) ? await accounts.get(key) : null;
+      if (!acc) return null;
+      endSessions(key, acc);
+      return acc.name;
     },
     award(pr, n) {
       pr.coins += n;
@@ -431,13 +511,13 @@ export function createProfiles(file) {
     async accountDetail(name) {
       const acc = await accounts.get(String(name || '').toLowerCase());
       if (!acc) return null;
-      const pr = await load(acc.token);
+      const pr = await loadKey(acc.token);
       return { name: acc.name, created: acc.created || 0, coins: pr.coins, owned: pr.owned, eq: pr.eq, stats: pr.stats || {}, friends: (acc.friends || []).length };
     },
     // the profile behind an account name (for the server to notify and refresh them)
     async profileOf(name) {
       const acc = await accounts.get(String(name || '').toLowerCase());
-      return acc ? load(acc.token) : null;
+      return acc ? loadKey(acc.token) : null;
     },
     // mode: give, take or set; returns the new balance or an error
     async adjustCoins(name, mode, amount) {
@@ -532,7 +612,7 @@ export function createProfiles(file) {
     // what anyone can see of an account, or null: its bio, a few stats and the look it last played in
     async publicProfile(name) {
       const acc = await accounts.get(String(name || '').trim().toLowerCase());
-      const pr = acc && (await load(acc.token));
+      const pr = acc && (await loadKey(acc.token));
       if (!pr) return null;
       const s = pr.stats || {};
       return {

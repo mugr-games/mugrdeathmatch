@@ -1123,7 +1123,18 @@ body.touch.fp-on #chatlog { top: calc(222px + env(safe-area-inset-top)); }
   </div>
   <div id="acct-in" hidden>
     <p>Signed in as <b id="acct-who"></b>. Your coins and cosmetics are saved to this account.</p>
-    <div class="actions"><button type="button" class="btn" id="acct-logout">Sign out</button><button type="button" class="btn primary" id="acct-close">Close</button></div>
+    <p class="hint">Think someone else is signed in to your account? <b>Sign out everywhere</b> signs out every other phone and browser, and this one stays signed in. If they might know your password, change it below: that signs everyone else out too.</p>
+    <details id="acct-pw">
+      <summary>Change password</summary>
+      <form id="acct-pw-form" autocomplete="on">
+        <input type="text" name="username" autocomplete="username" hidden>
+        <div class="row"><label for="acct-pw-cur">Current password</label><input type="password" id="acct-pw-cur" autocomplete="current-password" maxlength="100" required></div>
+        <div class="row"><label for="acct-pw-new">New password</label><input type="password" id="acct-pw-new" autocomplete="new-password" minlength="6" maxlength="100" required></div>
+        <div class="actions"><button type="submit" class="btn" id="acct-pw-go">Change password</button></div>
+      </form>
+    </details>
+    <div class="err" id="acct-out-err" role="alert"></div>
+    <div class="actions"><button type="button" class="btn" id="acct-logout-all">Sign out everywhere</button><button type="button" class="btn" id="acct-logout">Sign out</button><button type="button" class="btn primary" id="acct-close">Close</button></div>
   </div>
 </div>
 

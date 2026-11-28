@@ -4,7 +4,7 @@ import { SUIT_COLORS, MODELS } from './avatar.js';
 import { SLOTS, MAP_CREDITS, setAvailable, hasModel } from './assets.js';
 import { esc } from './hud.js';
 import { TouchControls, isTouch } from './touch.js';
-import { Locker, setSaveToken } from './locker.js';
+import { Locker, setSaveToken, signedOut } from './locker.js';
 import { GamepadInput } from './gamepad.js';
 import { Social } from './social.js';
 import { Voice } from './voice.js';
@@ -102,6 +102,15 @@ async function boot() {
   game.onLockedEmote = (id) => status(`${EMOTE[id].name} is in the shop (Emotes) for ${EMOTE[id].price} coins.`);
   locker = new Locker({ settings, save, sound: game.sound, onLook: (color, model) => game.send({ t: 'color', color, model }), onTheme: menuTheme });
   game.token = locker.token;
+  game.onSignedOut = () => { if (!keepPage) signedOut(); };
+  try {
+    if (sessionStorage.getItem('arena.signedOut')) {
+      sessionStorage.removeItem('arena.signedOut');
+      // open the sign-in box with the reason
+      $('btn-account').click();
+      $('acct-err').textContent = 'You were signed out. Sign in again to use your account.';
+    }
+  } catch {}
   voice = new Voice({ game, account: () => account, signIn: () => $('btn-account').click(), blocked: (name) => !!profileCard?.isBlocked(name) });
   game.setThirdPerson(!!settings.thirdPerson);
   heistMenu = new HeistMenu({
@@ -305,6 +314,8 @@ $('btn-account').onclick = () => {
   $('acct-out').hidden = !!account;
   $('acct-in').hidden = !account;
   $('acct-who').textContent = account || '';
+  document.querySelector('#acct-pw-form [name=username]').value = account || ''; // for password managers
+  $('acct-out-err').textContent = '';
   setAcctMode('login');
   show('dlg-account');
   if (!account) $('acct-user').focus();
@@ -325,8 +336,37 @@ $('acct-form').onsubmit = async (e) => {
   save();
   location.reload();
 };
-$('acct-logout').onclick = () => {
-  // a fresh guest save code; the account's coins stay with the account
+let keepPage = false; // true while this page signs out everywhere (its own connection closes too)
+$('acct-logout-all').onclick = async () => {
+  $('acct-out-err').textContent = '';
+  $('acct-logout-all').disabled = true;
+  keepPage = true;
+  const r = await fetch(api('/api/logout-all'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: locker?.token }) })
+    .then((x) => x.json()).catch(() => ({ error: 'Can\'t reach the server.' }));
+  $('acct-logout-all').disabled = false;
+  if (r.signedOut) return signedOut();
+  if (r.error || !r.token) { keepPage = false; $('acct-out-err').textContent = r.error || 'That didn\'t work. Try again.'; return; }
+  setSaveToken(r.token); // every other sign-in has ended; this browser has a new one
+  location.reload();
+};
+$('acct-pw-form').onsubmit = async (e) => {
+  e.preventDefault();
+  $('acct-out-err').textContent = '';
+  $('acct-pw-go').disabled = true;
+  keepPage = true;
+  const body = { token: locker?.token, password: $('acct-pw-cur').value, next: $('acct-pw-new').value };
+  const r = await fetch(api('/api/password'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    .then((x) => x.json()).catch(() => ({ error: 'Can\'t reach the server.' }));
+  $('acct-pw-go').disabled = false;
+  if (r.signedOut) return signedOut();
+  if (r.error || !r.token) { keepPage = false; $('acct-out-err').textContent = r.error || 'That didn\'t work. Try again.'; return; }
+  setSaveToken(r.token); // the new password is set and every other sign-in has ended
+  location.reload();
+};
+$('acct-logout').onclick = async () => {
+  // end this sign-in on the server too, then use a fresh guest save code; the account's coins stay with the account
+  keepPage = true;
+  await fetch(api('/api/logout'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: locker?.token }) }).catch(() => {});
   try { localStorage.removeItem('arena.token'); } catch {}
   settings.name = 'Player' + Math.floor(100 + Math.random() * 900);
   save();

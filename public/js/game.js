@@ -588,7 +588,8 @@ export class Game {
     // say who we are first (for friends, messages and bans), then do what was asked
     ws.onopen = () => { ws.send(JSON.stringify({ t: 'hello', token: this.token })); go(); };
     ws.onerror = () => this.settle(new Error('Could not reach the server.'));
-    ws.onclose = () => {
+    ws.onclose = (e) => {
+      if (e?.code === 4001) this.onSignedOut?.(); // the account was signed out everywhere
       this.ws = null;
       const was = this.connected;
       this.connected = false;

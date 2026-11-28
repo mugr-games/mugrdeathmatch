@@ -12,11 +12,11 @@ import { HOLDS } from './avatar.js';
 
 const $ = (id) => document.getElementById(id);
 
-// this browser's save code (keep it secret: it is what owns the coins)
+// this browser's key: a guest's save code (32 hex), or a signed-in session (64 hex). Keep it secret.
 export function saveToken() {
   let t = null;
   try { t = localStorage.getItem('arena.token'); } catch {}
-  if (!/^[a-f0-9]{32}$/.test(t || '')) {
+  if (!/^(?:[a-f0-9]{32}|[a-f0-9]{64})$/.test(t || '')) {
     t = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
     try { localStorage.setItem('arena.token', t); } catch {}
   }
@@ -126,6 +126,12 @@ function looksUnsafe(px) {
   return skin / n > 0.45;
 }
 
+// this browser's sign-in has ended: forget it, say so after the reload, and start again as a guest
+export function signedOut() {
+  try { localStorage.removeItem('arena.token'); sessionStorage.setItem('arena.signedOut', '1'); } catch {}
+  location.reload();
+}
+
 // switch this browser to another save code (after logging in or registering)
 export function setSaveToken(t) {
   try { localStorage.setItem('arena.token', t); } catch {}
@@ -186,6 +192,8 @@ export class Locker {
     try {
       const r = await fetch(api('/api/' + route), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: this.token, ...body }) });
       const p = await r.json();
+      // the sign-in ended (signed out everywhere, expired, or an old save code): carry on as a guest
+      if (p.signedOut) { signedOut(); return p; }
       this.set(p);
       return p;
     } catch {
